@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>drone_3d_sim</name>
+  <version>0.1.0</version>
+  <description>Velocity-controlled multicopter and a complex three-dimensional SDF flight course.</description>
+  <maintainer email="maintainer@example.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>wheel_car_4w_sim</exec_depend>
+  <exec_depend>litesim_models</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>litesim3d_interfaces</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

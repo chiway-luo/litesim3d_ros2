@@ -1,0 +1,65 @@
+# SDF supplies geometry, initial pose, time step and target real-time factor.
+schema_version: 1
+units: m_rad_s
+simulation:
+  seed: 42
+  odom_rate: 50.0
+  command_timeout: 0.5
+  threads: 2
+  collision_budget_enabled: false
+robot:
+  id: quadrotor
+  base_link: base_link
+  motion_model: multicopter
+  sensor_geometry: visual
+  drive:
+    # max_v / acceleration / deceleration limit the whole XYZ vector, not each axis.
+    max_v: 2.0
+    max_w: 1.2
+    acceleration: 1.0
+    deceleration: 2.0
+    angular_acceleration: 2.0
+    unlimited_acceleration: false
+    support_links: []
+terrain:
+  enabled: false
+lidars:
+- name: roof_lidar
+  link: lidar_link
+  topic: points_raw
+  rate_hz: 10.0
+  columns: 256
+  rings: 16
+  vertical_angles_deg: [-30, -25, -20, -15, -10, -5, -2, 0, 2, 5, 10, 15, 20, 25, 30, 40]
+  min_range_m: 0.1
+  max_range_m: 50.0
+  horizontal_start_deg: -180.0
+  horizontal_end_deg: 180.0
+  scan_mode: rolling
+  point_layout: xyzirt_v1
+  self_filter: robot
+  publish_range_boundary: true
+  range_sigma_m: 0.005
+imus:
+- name: body_imu
+  link: imu_link
+  topic: imu/data_raw
+  rate_hz: 200.0
+cameras:
+- name: front_camera
+  enabled: false
+  type: rgb
+  link: camera_optical_frame
+  topic: camera/front
+  width: 640
+  height: 480
+  rate_hz: 15.0
+  horizontal_fov_deg: 80.0
+  near_clip_m: 0.1
+  far_clip_m: 40.0
+odom:
+  mode: ideal
+entity_bindings:
+  ground:
+    support: false
+    reflectivity: 0.35

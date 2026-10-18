@@ -368,6 +368,8 @@ private:
         o.child_frame_id = prefix_ + sim_->config().base_link;
         o.pose.pose = poseMsg(e.snapshot.odom_base);
         o.twist.twist.linear.x = e.snapshot.odom_v;
+        o.twist.twist.linear.y = e.snapshot.lateral;
+        o.twist.twist.linear.z = e.snapshot.vertical;
         o.twist.twist.angular.z = e.snapshot.odom_w;
         o.pose.covariance = sim_->config().pose_covariance;
         o.twist.covariance = sim_->config().twist_covariance;

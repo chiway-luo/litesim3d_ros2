@@ -1,6 +1,6 @@
 # wheel_car_4w：四轮小车完整仿真示例
 
-本示例在一个 launch 中启动 **四轮小车模型、三维雷达、IMU、里程计、场景、ROS 2 接口和独立三维查看窗口**。首次使用先按仓库 [README](../../README.md) 安装依赖并构建。
+本示例在一个 launch 中启动 **四轮小车模型、三维雷达、IMU、里程计、场景、ROS 2 接口和独立三维查看窗口**。默认地图为 28 × 22 米办公区，包含工位、会议室、接待区、走廊和机房；不设屋顶，方便观察。`world:=warehouse.sdf` 保留原小型测试场景。首次使用先按仓库 [README](../../README.md) 安装依赖并构建。
 
 ## 1. 目录与职责
 
@@ -50,7 +50,7 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false
 ```
 
-默认场景有地面、两面墙、箱体、立柱和悬空障碍。小车车头的红色标记朝 +x；轮毂色条便于观察四轮转动。按完整 launch 所在终端的 Ctrl+C 退出；RSP/仿真子进程意外退出会使 launch 清理其他进程并以非零状态结束。
+默认办公区包含多个房间、走廊、桌椅、隔断、沙发、机柜和带贴图的箱体。小车车头的红色标记朝 +x；轮毂色条便于观察四轮转动。按完整 launch 所在终端的 Ctrl+C 退出；RSP/仿真子进程意外退出会使 launch 清理其他进程并以非零状态结束。
 
 独立窗口只允许左键旋转、中键或右键平移、滚轮缩放；无模型选择和仿真控制入口。底部自动显示实际 RTF、目标倍率、FPS 和碰撞预算状态。关闭窗口后仿真继续，可用 `ros2 run litesim3d_gui viewer` 重连。需要点云/TF 图层时显式加 `rviz:=true`。
 
@@ -147,7 +147,7 @@ SDF 四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 lin
 
 默认 SDF 模式使用以下文件：
 
-- [warehouse.sdf](litesim_models/worlds/warehouse.sdf)：场景模型、初始位姿、灯光、步长和默认目标速率。
+- [office.sdf](litesim_models/worlds/office.sdf)：场景模型、初始位姿、灯光、步长和默认目标速率。
 - [model.sdf](litesim_models/models/wheel_car_4w/model.sdf)：四轮车 link/joint、visual/collision 和材质。
 - [runtime.yaml](wheel_car_4w_sim/config/runtime.yaml)：底盘、传感器、噪声和地形支持绑定。
 - [ros.yaml](wheel_car_4w_sim/config/ros.yaml)：命令类型、QoS、TF、暂停和 RSP 参数。
@@ -194,7 +194,7 @@ python3 docs/examples/ros_client.py --stamped --drive --duration 5
 
 | 参数 | 默认与用途 |
 | --- | --- |
-| assets_root / world | litesim_models share / warehouse.sdf |
+| assets_root / world | litesim_models share / office.sdf |
 | runtime | 安装的 config/runtime.yaml |
 | gui | true；仅查看三维场景，false 无窗口 |
 | collision_budget_enabled | false；仅关闭预算，保留碰撞检测 |

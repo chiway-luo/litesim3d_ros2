@@ -217,21 +217,6 @@ entity_bindings:
   ground:
     support: true
     reflectivity: 0.35
-  front_wall:
-    support: false
-    reflectivity: 0.8
-  left_wall:
-    support: false
-    reflectivity: 0.6
-  obstacle_box:
-    support: false
-    reflectivity: 0.5
-  column:
-    support: false
-    reflectivity: 0.7
-  overhead:
-    support: false
-    reflectivity: 0.5
 mimic_joints:
   front_left_wheel_joint:
     joint: rear_left_wheel_joint

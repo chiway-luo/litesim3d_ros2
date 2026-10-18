@@ -2,6 +2,8 @@
 
 四轮小车默认使用 SDF 世界和 `litesim_models` 资源包。运行时通过 ament 获取包 share 路径，launch 将 `models/`、`worlds/` 加入本次进程树的 `GZ_SIM_RESOURCE_PATH`，不修改 shell 或系统设置。
 
+无人机的速度模型、复杂场景和传感器配置见 [无人机示例](../../examples/drone_3d/README.md)。
+
 ## 启动与查看
 
 激活 ROS 2 Humble、构建并 source 安装环境后：
@@ -35,19 +37,19 @@ examples/wheel_car_4w/litesim_models/
 │   ├── model.sdf
 │   ├── meshes/
 │   └── materials/textures/
-└── worlds/warehouse.sdf
+└── worlds/{office,drone_arena,warehouse}.sdf
 ```
 
 包使用 ament 安装到 `share/litesim_models`；`get_package_share_directory("litesim_models")` 依据安装索引定位，不依赖源码位于哪个 `src` 的旁边。资源可以搬迁后重新构建或重新 source。
 
-SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光。`<physics>` 的 `max_step_size`、`real_time_factor` 提供积分步长及默认目标速率；这里只使用计时参数，仍是运动学内核，不执行 Ode/Bullet 刚体求解。
+SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光。可选 `<gui><camera><pose>` 指定世界坐标系下的观察初始视角，仅影响查看器；不引入其他交互控件。`<physics>` 的 `max_step_size`、`real_time_factor` 提供积分步长及默认目标速率；这里只使用计时参数，仍是运动学内核，不执行 Ode/Bullet 刚体求解。
 
 `wheel_car_4w_sim/config/runtime.yaml` 提供底盘绑定、传感器扫描与噪声、ROS 话题、地形支持、`entity_bindings` 和 mimic 扩展。不能再次定义几何、初始位姿、步长或目标速率。固定、转动、滑动关节来自 SDF；派生 URDF 只用于现有内核和 RSP，完整视觉材质直接交给渲染器。
 
 | launch 参数 | 默认和含义 |
 | --- | --- |
 | `assets_root` | `litesim_models` 包 share 路径；覆盖时目录下仍需有 models/worlds |
-| `world` | `warehouse.sdf`；单文件名相对 assets_root/worlds，也可指定显式文件路径 |
+| `world` | `office.sdf`；单文件名相对 assets_root/worlds，也可指定显式文件路径 |
 | `runtime` | 安装的 config/runtime.yaml |
 | `gui` | true；false 关闭三维观察窗口，相机渲染由 cameras 配置独立决定 |
 | `cameras` | 空表示沿用 runtime 中 enabled；true/false 只覆盖所有已定义相机的开关，不改变各自类型；示例类型默认 rgb |

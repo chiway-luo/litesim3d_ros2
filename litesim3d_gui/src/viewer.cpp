@@ -58,6 +58,14 @@ public:
     camera_->SetHFOV(1.05);camera_->SetNearClipPlane(.02);camera_->SetFarClipPlane(1000);camera_->SetAntiAliasing(0);
     camera_->SetLocalPose({-4,-6,4.2,0,.47,.98});root->AddChild(camera_);
     orbit_=std::make_unique<render::OrbitViewController>(camera_);orbit_->SetTarget({1,0,.4});
+    if(description_.contains("view_pose")) {
+      const auto view=pose(description_.at("view_pose"));
+      camera_->SetLocalPose(view);
+      const auto forward=view.Rot().RotateVector(math::Vector3d::UnitX);
+      const double distance=forward.Z() < -1e-6 && view.Pos().Z() > 0
+          ? view.Pos().Z() / -forward.Z() : 10.0;
+      orbit_->SetTarget(view.Pos()+forward*distance);
+    }
     // No publishers, service clients, simulation actions, key shortcuts or
     // picking handlers exist in this process. Only camera transforms change.
     states_=node_->create_subscription<std_msgs::msg::String>("/sim/scene_state",rclcpp::QoS(1).best_effort(),[this](std_msgs::msg::String::ConstSharedPtr msg){

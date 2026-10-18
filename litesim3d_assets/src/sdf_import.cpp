@@ -314,6 +314,14 @@ int main(int argc,char **argv) {
       importer.description["ambient"]=color(scene->Ambient());
       importer.description["background"]=color(scene->Background());
     }
+    // The SDF GUI camera supplies only the initial observation pose. It does
+    // not enable any Gazebo controls, plugins, selection or simulation actions.
+    if(auto gui=world->Element()->FindElement("gui"))
+      if(auto camera=gui->FindElement("camera")) {
+        auto value=camera->Get<P>("pose",P::Zero);
+        require(value.second,"invalid SDF GUI camera pose");
+        importer.description["view_pose"]=pose(value.first);
+      }
     require(world->ActorCount()==0,"animated actors are unsupported");
     for(uint64_t i=0;i<world->ModelCount();++i)importer.model(*world->ModelByIndex(i),P::Zero,"");
     require(importer.foundRobot,"runtime robot.id does not match a world model: "+importer.robotName);

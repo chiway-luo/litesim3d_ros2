@@ -37,7 +37,8 @@ def stamp(message):
 class Example:
     serial = 0
 
-    def __init__(self, directory, *, monitor_only=False):
+    def __init__(self, directory, *, monitor_only=False, package="wheel_car_4w_sim",
+                 launch_file="wheel_car_4w.launch.py"):
         self.directory = directory
         directory.mkdir(parents=True, exist_ok=True)
         Example.serial += 1
@@ -45,7 +46,8 @@ class Example:
         os.environ["ROS_LOCALHOST_ONLY"] = "1"
         os.environ["ROS_LOG_DIR"] = str(directory / "ros-logs")
         self.environment = os.environ.copy()
-        self.share = Path(get_package_share_directory("wheel_car_4w_sim"))
+        self.package, self.launch_file = package, launch_file
+        self.share = Path(get_package_share_directory(package))
         self.context = Context()
         rclpy.init(context=self.context)
         self.node = Node("wheel_car_example_test", context=self.context)
@@ -90,7 +92,7 @@ class Example:
             path.write_text(yaml.safe_dump(params))
             arguments["params"] = str(path)
         self.log = (self.directory / "launch.log").open("w")
-        command = ["ros2", "launch", "wheel_car_4w_sim", "wheel_car_4w.launch.py",
+        command = ["ros2", "launch", self.package, self.launch_file,
                    "manifest:=" + str(self.directory / "manifest.json")]
         command.extend(f"{name}:={value}" for name, value in {"rviz": "false", "gui": "false", **arguments}.items())
         self.process = subprocess.Popen(command, env=self.environment, cwd=self.directory,

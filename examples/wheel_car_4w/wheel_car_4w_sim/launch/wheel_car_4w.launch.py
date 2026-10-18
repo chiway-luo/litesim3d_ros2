@@ -247,7 +247,7 @@ def generate_launch_description():
     models = Path(get_package_share_directory("litesim_models"))
     return LaunchDescription([
         DeclareLaunchArgument("assets_root", default_value=str(models)),
-        DeclareLaunchArgument("world", default_value="warehouse.sdf"),
+        DeclareLaunchArgument("world", default_value="office.sdf"),
         DeclareLaunchArgument("runtime", default_value=str(share / "config/runtime.yaml")),
         DeclareLaunchArgument("gui", default_value="true", description="Read-only 3D window"),
         DeclareLaunchArgument("cameras", default_value="", description="Empty uses runtime; true/false enables/disables configured cameras"),

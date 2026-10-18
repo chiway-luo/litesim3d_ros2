@@ -87,7 +87,8 @@ Json CameraConfig::json() const {
           {"horizontal_fov_deg",horizontal_fov*180/pi},{"near_clip_m",near_clip},{"far_clip_m",far_clip}};
 }
 void Drive::validate() const {
-  require(model == "differential_drive" || model == "ackermann", "unsupported motion_model");
+  require(model == "differential_drive" || model == "ackermann" || model == "multicopter",
+          "unsupported motion_model");
   require(std::isfinite(wheelbase) && wheelbase > 0 && std::isfinite(max_steering) &&
           max_steering > 0 && max_steering < pi / 2, "invalid Ackermann wheelbase/steering");
   for (double v : {wheel_radius, wheel_separation, max_v, max_w, acceleration, deceleration,
@@ -116,6 +117,11 @@ void Config::validate() const {
   drive.validate();
   terrain.validate();
   odom_error.validate();
+  if (drive.model == "multicopter") {
+    require(!terrain.enabled, "multicopter requires terrain.enabled=false");
+    require(!odom_error.enabled, "multicopter currently requires ideal odometry");
+    require(drive.support_links.empty(), "multicopter cannot have ground support links");
+  }
   require(threads >= 1 && threads <= 4, "threads must be in [1,4]");
   require(history_limit >= 4 && history_limit <= 65536 && journal_limit >= 1 && journal_limit <= 65536,
           "invalid history/journal budget");
@@ -231,6 +237,7 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
     cfg.robot_id = get<std::string>(r, "id", "robot_0");
     cfg.base_link = get<std::string>(r, "base_link", "base_link");
     cfg.drive.model = get<std::string>(r, "motion_model", "differential_drive");
+    if (cfg.drive.model == "multicopter") cfg.drive.support_links.clear();
     cfg.urdf = resolveResource(r["urdf"].as<std::string>(), base);
     cfg.initial_pose = position(r["initial_pose"]);
     cfg.model_options.allow_visual_only = get(r, "allow_visual_only", false);

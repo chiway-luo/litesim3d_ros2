@@ -14,14 +14,15 @@
   <a href="#准备环境">准备环境</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#文档">文档</a> ·
-  <a href="examples/wheel_car_4w/README.md">四轮小车示例</a>
+  <a href="examples/wheel_car_4w/README.md">四轮小车示例</a> ·
+  <a href="examples/drone_3d/README.md">无人机示例</a>
 </p>
 
 ---
 
 基于 C++17 的轻量三维运动学仿真器，在 CPU 上计算运动、碰撞、雷达和 IMU 数据，通过 ROS 2 发布点云、IMU、里程计、TF 和仿真时钟。四轮车默认从 SDF 导入场景，在独立三维窗口查看模型材质、贴图和实际仿真速率；也可无界面运行。
 
-支持 URDF、差速/理想 Ackermann 底盘、三维几何碰撞、连续坡面、滚动扫描、测量噪声、动态障碍、1–4 台同构机器人和单机会话重置。随附可直接启动的四轮小车，以及 VLP-16、Mid-360、Mid-40 扫描预设。它采用运动学和几何约束，不模拟接触力、悬架或轮胎动力学；雷达预设的建模范围见 [雷达说明](examples/wheel_car_4w/雷达配置说明.md)。
+支持 URDF、差速/理想 Ackermann 底盘、速度控制无人机、三维几何碰撞、连续坡面、滚动扫描、测量噪声、动态障碍、1–4 台同构机器人和单机会话重置。随附可直接启动的四轮小车，以及 VLP-16、Mid-360、Mid-40 扫描预设。它采用运动学和几何约束，不模拟接触力、悬架、轮胎、电机推力或飞控动力学；雷达预设的建模范围见 [雷达说明](examples/wheel_car_4w/雷达配置说明.md)。
 
 ## 准备环境
 
@@ -54,7 +55,7 @@ export ROS_DOMAIN_ID=160 ROS_LOCALHOST_ONLY=1
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```
 
-完整构建成功应显示 **8 packages finished**。启动后独立窗口显示四轮小车和场景，仅支持鼠标左键旋转、中键或右键平移、滚轮缩放；底部显示实际 RTF、目标 RTF、FPS 和预算状态。没有图形桌面时，把最后一条命令改为：
+完整构建成功应显示 **9 packages finished**。启动后独立窗口显示四轮小车和场景，仅支持鼠标左键旋转、中键或右键平移、滚轮缩放；底部显示实际 RTF、目标 RTF、FPS 和预算状态。没有图形桌面时，把最后一条命令改为：
 
 ```bash
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false
@@ -88,9 +89,23 @@ ros2 topic echo /points_raw --once --field header --qos-reliability best_effort
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py lidar_profile:=mid360
 ```
 
+小车默认进入带工位、会议室、接待区、走廊和机房的**办公区**。原小型场景可通过 `world:=warehouse.sdf` 选择。
+
+退出小车 launch 后，可启动**无人机三维示例**：
+
+```bash
+ros2 launch drone_3d_sim drone_3d.launch.py
+```
+
+无人机初始悬停在起降区上方 1.2 米；24 × 24 米场地含高低门框、立柱、平台、货架和悬空障碍。`linear.x/y/z` 控制机体三轴平移，`angular.z` 控制偏航，机体保持水平。超时后减速悬停，碰撞停止全部速度；相机与碰撞预算默认关闭。控制指令、传感器话题、运动限制及 RGB/深度配置见 [无人机示例](examples/drone_3d/README.md)。
+
 更多控制、参数、暂停/单步、录包和模型修改步骤见 [四轮小车示例](examples/wheel_car_4w/README.md)。
 
 模型包位于 `examples/wheel_car_4w/litesim_models`，通过安装后的包 share 路径定位。碰撞预算默认关闭，碰撞检测保持启用；增加 `collision_budget_enabled:=true` 可启用复杂度检查。SDF 格式范围、材质兼容表和自定义场景用法见 [SDF 与独立窗口](docs/usage/SDF与独立窗口.md)。
+
+| 办公区 / 四轮小车 | 三维飞行场地 / 无人机 |
+| --- | --- |
+| ![Office simulation](docs/images/office.png) | ![Drone simulation](docs/images/drone-arena.png) |
 
 ## 文档
 
@@ -110,6 +125,7 @@ litesim3d_ros2/
 ├── litesim3d_interfaces/    # ROS 消息和服务定义
 ├── litesim3d_ros2/          # ROS 节点、launch、RViz、会话管理与集成测试
 ├── examples/wheel_car_4w/  # litesim_models、description、sim 三个示例包
+├── examples/drone_3d/      # 无人机配置、launch 和集成测试
 ├── standalone/             # 不启用 ROS 桥接的 CMake 入口
 ├── scripts/                # 构建、测试、检查与报告工具
 ├── docs/{usage,testing,design}/

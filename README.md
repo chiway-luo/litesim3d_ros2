@@ -14,14 +14,15 @@
   <a href="#prerequisites">Prerequisites</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#documentation">Documentation</a> ·
-  <a href="examples/wheel_car_4w/README.md">Four-wheel example</a>
+  <a href="examples/wheel_car_4w/README.md">Four-wheel example</a> ·
+  <a href="examples/drone_3d/README.md">Drone example</a>
 </p>
 
 ---
 
 LiteSim 3D is a lightweight, C++17 kinematic simulator. It computes motion, collisions, LiDAR, and IMU data on the CPU and publishes point clouds, IMU readings, odometry, TF, and simulation time through ROS 2. The four-wheel example loads its scene from SDF and displays materials, textures, and the actual simulation rate in a standalone 3D viewer. It can also run without a viewer.
 
-Features include URDF support, differential-drive and ideal Ackermann robots, 3D geometric collisions, continuous slopes, rolling scans, measurement noise, dynamic obstacles, one to four identical robots, and single-robot session resets. A ready-to-run four-wheel robot and VLP-16, Mid-360, and Mid-40 scan presets are included. The simulator uses kinematics and geometric constraints; contact forces, suspension, and tire dynamics are outside its scope. See the [LiDAR guide](examples/wheel_car_4w/雷达配置说明.md) for the modeling scope of each preset.
+Features include URDF support, differential-drive, ideal Ackermann, and velocity-controlled multicopter robots, 3D geometric collisions, continuous slopes, rolling scans, measurement noise, dynamic obstacles, one to four identical robots, and single-robot session resets. Ready-to-run office and complex aerial-course examples, plus VLP-16, Mid-360, and Mid-40 scan presets are included. The simulator uses kinematics and geometric constraints; contact forces, suspension, tire dynamics, motor thrust, and flight-controller dynamics are outside its scope. See the [LiDAR guide](examples/wheel_car_4w/雷达配置说明.md) for the modeling scope of each preset.
 
 ## Prerequisites
 
@@ -54,7 +55,7 @@ export ROS_DOMAIN_ID=160 ROS_LOCALHOST_ONLY=1
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```
 
-A full successful build reports **8 packages finished**. The standalone viewer shows the robot and scene. Drag with the left mouse button to orbit, the middle or right button to pan, and use the wheel to zoom. The status bar shows the actual and target real-time factor (RTF), viewer FPS, and collision-budget status. Without a graphical desktop, replace the last command with:
+A full successful build reports **9 packages finished**. The standalone viewer shows the robot and scene. Drag with the left mouse button to orbit, the middle or right button to pan, and use the wheel to zoom. The status bar shows the actual and target real-time factor (RTF), viewer FPS, and collision-budget status. Without a graphical desktop, replace the last command with:
 
 ```bash
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false
@@ -90,7 +91,21 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py lidar_profile:=mid360
 
 For controls, parameters, pause/step operations, bag recording, and model changes, see the [four-wheel example](examples/wheel_car_4w/README.md).
 
+The car now starts in a furnished **office** with workstations, meeting rooms, a reception area, corridors, and a server room. The original small scene remains available with `world:=warehouse.sdf`.
+
+For the **drone example**, stop the car launch and run:
+
+```bash
+ros2 launch drone_3d_sim drone_3d.launch.py
+```
+
+The drone starts hovering 1.2 m above its pad in a 24 × 24 m flight course with elevated gates, pillars, platforms, shelves, and overhead obstacles. `linear.x/y/z` commands body-frame translation and `angular.z` controls yaw; roll and pitch remain level. The velocity watchdog brakes to a hover, and collisions stop all axes. Cameras and the collision budget remain disabled by default. See the [drone guide](examples/drone_3d/README.md) for commands, topics, limits, and RGB/depth camera settings.
+
 Models live in the `examples/wheel_car_4w/litesim_models` resource package and are resolved through its installed package share directory. The collision budget is disabled by default; collision detection remains enabled. Add `collision_budget_enabled:=true` to enforce complexity limits. See [SDF and the standalone viewer](docs/usage/SDF与独立窗口.md) for supported SDF features, materials, and custom scenes.
+
+| Office / four-wheel car | Aerial course / drone |
+| --- | --- |
+| ![Office simulation](docs/images/office.png) | ![Drone simulation](docs/images/drone-arena.png) |
 
 ## Documentation
 
@@ -112,6 +127,7 @@ litesim3d_ros2/
 ├── litesim3d_interfaces/    # ROS message and service definitions
 ├── litesim3d_ros2/          # ROS nodes, launch, RViz, sessions, and integration tests
 ├── examples/wheel_car_4w/  # litesim_models, description, and sim example packages
+├── examples/drone_3d/      # Multicopter configuration, launch, and integration tests
 ├── standalone/             # CMake entry point without the ROS bridge
 ├── scripts/                # Build, test, validation, and reporting tools
 ├── docs/{usage,testing,design}/

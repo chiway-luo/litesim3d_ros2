@@ -35,7 +35,9 @@ def example(tmp_path):
 @pytest.mark.parametrize("target", [.25, .5, 1, 2, 0])
 def test_actual_rtf_matches_committed_clock_and_target(example, target):
     car, runtime = example
-    car.start(runtime=str(runtime), real_time_factor=str(target), paused="false")
+    # Rate-control precision uses the small reference scene, independently of
+    # the more expensive office example (which may legitimately run below 1x).
+    car.start(world="warehouse.sdf", runtime=str(runtime), real_time_factor=str(target), paused="false")
     samples = []
     scene_samples = []
     sub = car.node.create_subscription(String, "/sim/stats",

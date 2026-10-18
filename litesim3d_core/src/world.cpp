@@ -91,7 +91,7 @@ std::vector<Simulator::DynamicContact> Simulator::dynamicContacts(double dt) con
               .norm() +
           extent(part) - part.transform.translation().norm();
       const double speed =
-          std::abs(current_.v) + std::abs(current_.w) * radius + dynamic_speed;
+          current_.linearVelocity().norm() + std::abs(current_.w) * radius + dynamic_speed;
       const double distance =
           gap(part, part.transform, obstacle, obstacle.at(current_.stamp));
       if (distance <= speed * dt +

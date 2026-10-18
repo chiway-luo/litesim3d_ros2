@@ -15,6 +15,14 @@ Pose integrate(const Pose &initial, double v, double w, double dt) {
   delta.translation() = Vec3(v * dt * sinc, v * dt * cosc, 0);
   return initial * delta;
 }
+Pose integrateFlight(const Pose &initial, const Vec3 &velocity, double yaw_rate, double dt) {
+  require(velocity.allFinite(), "integrateFlight: invalid velocity");
+  Pose delta = integrate(Pose::Identity(), 1, yaw_rate, dt);
+  const double x = delta.translation().x(), y = delta.translation().y();
+  delta.translation() = Vec3(velocity.x() * x - velocity.y() * y,
+                            velocity.x() * y + velocity.y() * x, velocity.z() * dt);
+  return initial * delta;
+}
 namespace {
 uint64_t eventTime(uint64_t index, double rate) {
   return 1 + static_cast<uint64_t>(
@@ -67,49 +75,51 @@ Simulator::Simulator(Config config, Model model, Scene scene)
     for (auto &link : l.excluded_links)
       require(model_.links.count(link), "lidar filter: unknown link " + link);
   }
-  for (auto &name : {config_.drive.left_joint, config_.drive.right_joint}) {
-    require(model_.joints.count(name), "wheel joint not found: " + name);
-    const auto &j = model_.joints.at(name);
-    require(j.type == "continuous" && j.mimic.empty(),
-            "wheel joint must be continuous and independently driven: " + name);
-    require(j.velocity >=
-                (config_.drive.max_v + config_.drive.max_w * config_.drive.wheel_separation / 2) /
-                    config_.drive.wheel_radius,
-            "wheel velocity limit incompatible with drive limits: " + name);
-    bool cylinder = false;
-    for (auto &g : model_.collision)
-      if (g.link == j.child && g.shape->kind == Shape::Kind::Cylinder) {
-        require(std::abs(g.shape->size.x() - config_.drive.wheel_radius) < 1e-6,
-                "wheel_radius differs from URDF");
-        cylinder = true;
-      }
-    require(cylinder, "drive wheel requires a cylindrical collision shape: " + name);
-  }
   auto transforms = model_.fk(current_.joints);
-  const auto &left = model_.joints.at(config_.drive.left_joint);
-  const auto &right = model_.joints.at(config_.drive.right_joint);
-  const Pose base_inv = transforms.at(config_.base_link).inverse();
-  Vec3 l = (base_inv * transforms.at(left.child)).translation(),
-       r = (base_inv * transforms.at(right.child)).translation();
-  require(std::abs((l - r).norm() - config_.drive.wheel_separation) < 1e-6 && l.y() > r.y(),
-          "wheel_separation/order differs from URDF");
-  for (const auto *joint : {&left, &right}) {
-    const Vec3 axis =
-        (base_inv * transforms.at(joint->parent) * joint->origin).linear() * joint->axis;
-    require((axis - Vec3::UnitY()).norm() < 1e-6,
-            "wheel axis must point along base +y: " + joint->name);
-    for (const auto &g : model_.collision)
-      if (g.link == joint->child) {
-        require(g.shape->kind == Shape::Kind::Cylinder && g.transform.translation().norm() < 1e-9 &&
-                    std::abs(g.transform.linear().col(2).dot(joint->axis)) > 1 - 1e-9,
-                "driven wheel collision must be a centered coaxial cylinder: " + joint->name);
-      }
-    for (const auto &[name, other] : model_.joints)
-      require(other.parent != joint->child,
-              "M1 driven wheel links must be leaves of the kinematic tree: " + joint->name);
+  if (config_.drive.model != "multicopter") {
+    for (auto &name : {config_.drive.left_joint, config_.drive.right_joint}) {
+      require(model_.joints.count(name), "wheel joint not found: " + name);
+      const auto &j = model_.joints.at(name);
+      require(j.type == "continuous" && j.mimic.empty(),
+              "wheel joint must be continuous and independently driven: " + name);
+      require(j.velocity >=
+                  (config_.drive.max_v + config_.drive.max_w * config_.drive.wheel_separation / 2) /
+                      config_.drive.wheel_radius,
+              "wheel velocity limit incompatible with drive limits: " + name);
+      bool cylinder = false;
+      for (auto &g : model_.collision)
+        if (g.link == j.child && g.shape->kind == Shape::Kind::Cylinder) {
+          require(std::abs(g.shape->size.x() - config_.drive.wheel_radius) < 1e-6,
+                  "wheel_radius differs from URDF");
+          cylinder = true;
+        }
+      require(cylinder, "drive wheel requires a cylindrical collision shape: " + name);
+    }
+    const auto &left = model_.joints.at(config_.drive.left_joint);
+    const auto &right = model_.joints.at(config_.drive.right_joint);
+    const Pose base_inv = transforms.at(config_.base_link).inverse();
+    Vec3 l = (base_inv * transforms.at(left.child)).translation(),
+         r = (base_inv * transforms.at(right.child)).translation();
+    require(std::abs((l - r).norm() - config_.drive.wheel_separation) < 1e-6 && l.y() > r.y(),
+            "wheel_separation/order differs from URDF");
+    for (const auto *joint : {&left, &right}) {
+      const Vec3 axis =
+          (base_inv * transforms.at(joint->parent) * joint->origin).linear() * joint->axis;
+      require((axis - Vec3::UnitY()).norm() < 1e-6,
+              "wheel axis must point along base +y: " + joint->name);
+      for (const auto &g : model_.collision)
+        if (g.link == joint->child) {
+          require(g.shape->kind == Shape::Kind::Cylinder && g.transform.translation().norm() < 1e-9 &&
+                      std::abs(g.transform.linear().col(2).dot(joint->axis)) > 1 - 1e-9,
+                  "driven wheel collision must be a centered coaxial cylinder: " + joint->name);
+        }
+      for (const auto &[name, other] : model_.joints)
+        require(other.parent != joint->child,
+                "M1 driven wheel links must be leaves of the kinematic tree: " + joint->name);
+    }
+    for (auto &name : config_.drive.support_links)
+      require(model_.links.count(name), "unknown support link: " + name);
   }
-  for (auto &name : config_.drive.support_links)
-    require(model_.links.count(name), "unknown support link: " + name);
   if (config_.terrain.enabled) {
     origin_ = supportedPose(scene_, origin_, origin_.translation().z(),
                             config_.terrain, supportPoints());
@@ -164,7 +174,8 @@ bool Simulator::command(const Command &cmd) {
   for (double x : {cmd.v, cmd.w, cmd.lateral, cmd.vertical, cmd.roll_rate, cmd.pitch_rate})
     if (!std::isfinite(x))
       return reject("non-finite velocity command");
-  if (cmd.lateral != 0 || cmd.vertical != 0 || cmd.roll_rate != 0 || cmd.pitch_rate != 0)
+  if (cmd.roll_rate != 0 || cmd.pitch_rate != 0 ||
+      (config_.drive.model != "multicopter" && (cmd.lateral != 0 || cmd.vertical != 0)))
     return reject("unsupported non-planar velocity command");
   if (!cmd.frame.empty() && cmd.frame != config_.base_link)
     return reject("wrong command frame");
@@ -234,23 +245,28 @@ std::optional<Contact> Simulator::clearance(const Pose &p, double &nearest) cons
   return contact;
 }
 void Simulator::move(double dt, uint64_t end_stamp) {
-  if (forced_stop_) { current_.v = 0; current_.w = 0; target_ = Command{}; }
+  if (forced_stop_) {
+    current_.v = current_.w = current_.lateral = current_.vertical = 0;
+    target_ = Command{};
+  }
   const Pose initial = current_.world_base;
   const double v = current_.v, w = current_.w;
+  const Vec3 velocity = current_.linearVelocity();
+  const bool flying = config_.drive.model == "multicopter";
   double radius = 0;
   for (auto &g :
        model_.placed(model_.collision, Pose::Identity(), config_.base_link, current_.joints)) {
     const auto b = g.worldBounds();
     radius = std::max(radius, b.lo.cwiseAbs().cwiseMax(b.hi.cwiseAbs()).norm());
   }
-  const double speed = std::abs(v) + std::abs(w) * radius;
+  const double speed = (flying ? velocity.stableNorm() : std::abs(v)) + std::abs(w) * radius;
   double elapsed = 0;
   bool blocked = forced_stop_;
   Pose accepted = initial;
   std::string terrain_error;
   const auto support_points = config_.terrain.enabled ? supportPoints() : std::vector<Vec3>{};
   auto at = [&](double time) {
-    Pose p = integrate(initial, v, w, time);
+    Pose p = flying ? integrateFlight(initial, velocity, w, time) : integrate(initial, v, w, time);
     if (config_.terrain.enabled)
       p = supportedPose(scene_, p, p.translation().z(), config_.terrain, support_points);
     return p;
@@ -312,18 +328,21 @@ void Simulator::move(double dt, uint64_t end_stamp) {
     } catch (const std::exception &e) {
       blocked = true; terrain_error = e.what(); accepted = initial; elapsed = 0;
     }
-  } else if (!config_.terrain.enabled) accepted = integrate(initial, v, w, elapsed);
+  } else if (!config_.terrain.enabled) accepted = at(elapsed);
   current_.world_base = accepted;
-  const double wl = (v - w * config_.drive.wheel_separation / 2) / config_.drive.wheel_radius;
-  const double wr = (v + w * config_.drive.wheel_separation / 2) / config_.drive.wheel_radius;
-  current_.joints[config_.drive.left_joint] += wl * elapsed;
-  current_.joints[config_.drive.right_joint] += wr * elapsed;
-  current_.joints = model_.positions(current_.joints);
-  current_.joint_velocities[config_.drive.left_joint] = blocked ? 0 : wl;
-  current_.joint_velocities[config_.drive.right_joint] = blocked ? 0 : wr;
+  if (!flying) {
+    const double wl = (v - w * config_.drive.wheel_separation / 2) / config_.drive.wheel_radius;
+    const double wr = (v + w * config_.drive.wheel_separation / 2) / config_.drive.wheel_radius;
+    current_.joints[config_.drive.left_joint] += wl * elapsed;
+    current_.joints[config_.drive.right_joint] += wr * elapsed;
+    current_.joints = model_.positions(current_.joints);
+    current_.joint_velocities[config_.drive.left_joint] = blocked ? 0 : wl;
+    current_.joint_velocities[config_.drive.right_joint] = blocked ? 0 : wr;
+  }
   if (blocked) {
     current_.v = 0;
     current_.w = 0;
+    current_.lateral = current_.vertical = 0;
     target_ = Command{};
     last_error_ = terrain_error.empty() ? "collision stop" : terrain_error;
     ++discontinuities_;
@@ -359,9 +378,16 @@ void Simulator::beginStep() {
                        {"accepted_time_ns", accepted_stamp_},
                        {"v", target_.v},
                        {"w", target_.w}});
+    if (config_.drive.model == "multicopter") {
+      inputs_.back()["lateral"] = target_.lateral;
+      inputs_.back()["vertical"] = target_.vertical;
+    }
     if (inputs_.size() > config_.journal_limit) { inputs_.erase(inputs_.begin()); ++evicted_inputs_; }
   }
-  if (forced_stop_) { target_ = Command{}; current_.v = 0; current_.w = 0; }
+  if (forced_stop_) {
+    target_ = Command{};
+    current_.v = current_.w = current_.lateral = current_.vertical = 0;
+  }
 }
 uint64_t Simulator::nextEvent(uint64_t end) const {
   uint64_t next = std::min(end, eventTime(odom_index_, config_.odom_rate));
@@ -399,6 +425,21 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
                            ? tw
                            : old_w + std::clamp(tw - old_w, -d.angular_acceleration * dt,
                                                 d.angular_acceleration * dt);
+  if (d.model == "multicopter") {
+    const Vec3 old = current_.linearVelocity();
+    Vec3 desired(target_.v, target_.lateral, target_.vertical);
+    if (desired.stableNorm() > d.max_v) desired *= d.max_v / desired.stableNorm();
+    Vec3 delta = desired - old;
+    const double max_delta = (desired.dot(old) < 0 || desired.stableNorm() < old.stableNorm()
+                                 ? d.deceleration : d.acceleration) * dt;
+    if (!d.unlimited_acceleration && delta.stableNorm() > max_delta)
+      delta *= max_delta / delta.stableNorm();
+    const Vec3 next_velocity = old + delta;
+    const Vec3 mid = d.unlimited_acceleration ? next_velocity : Vec3((old + next_velocity) / 2);
+    current_.v = mid.x(); current_.lateral = mid.y(); current_.vertical = mid.z();
+    current_.w = d.unlimited_acceleration ? new_w : (old_w + new_w) / 2;
+    return {old_v, old_w, next_velocity.x(), new_w, current_.world_base, old, next_velocity};
+  }
   if (d.model == "ackermann") {
     const double turn_limit = std::abs(new_v) * std::tan(d.max_steering) / d.wheelbase;
     new_w = std::clamp(new_w, -turn_limit, turn_limit);
@@ -413,17 +454,21 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
   return {old_v, old_w, new_v, new_w, old_pose};
 }
 std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &motion) {
-  const auto &[old_v, old_w, new_v, new_w, old_pose] = motion;
+  const auto &[old_v, old_w, new_v, new_w, old_pose, old_linear, new_linear] = motion;
   const double dt = double(next - current_.stamp) * 1e-9;
   const auto &d = config_.drive;
   move(dt, next);
   if (!motion_blocked_) {
     current_.v = new_v;
     current_.w = new_w;
-    current_.joint_velocities[d.left_joint] =
-        (new_v - new_w * d.wheel_separation / 2) / d.wheel_radius;
-    current_.joint_velocities[d.right_joint] =
-        (new_v + new_w * d.wheel_separation / 2) / d.wheel_radius;
+    if (d.model == "multicopter") {
+      current_.lateral = new_linear.y(); current_.vertical = new_linear.z();
+    } else {
+      current_.joint_velocities[d.left_joint] =
+          (new_v - new_w * d.wheel_separation / 2) / d.wheel_radius;
+      current_.joint_velocities[d.right_joint] =
+          (new_v + new_w * d.wheel_separation / 2) / d.wheel_radius;
+    }
   }
   // Mimic positions already follow their source in Model::positions(). Keep
   // their reported velocities consistent too, including chains and stops.
@@ -455,6 +500,17 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
     kinematics_.acceleration = rotation.col(1) * (current_.v * current_.w);
     kinematics_.alpha.setZero();
     if (!motion_blocked_) ++discontinuities_;
+  }
+  if (d.model == "multicopter") {
+    const Vec3 velocity = current_.linearVelocity();
+    const Vec3 centripetal = Vec3(0, 0, current_.w).cross(velocity);
+    kinematics_.acceleration = rotation * ((velocity - old_linear) / dt + centripetal);
+    if (motion_blocked_ || (d.unlimited_acceleration &&
+        (old_linear != new_linear || old_w != new_w))) {
+      kinematics_.acceleration = rotation * centripetal;
+      kinematics_.alpha.setZero();
+      if (!motion_blocked_ && old_v == new_v && old_w == new_w) ++discontinuities_;
+    }
   }
   history_.push_back({next, current_.world_base});
   require(history_.size() <= config_.history_limit, "trajectory history budget exceeded");
@@ -602,6 +658,7 @@ void Simulator::fault(const std::string &reason) {
   pending_.reset();
   current_.v = 0;
   current_.w = 0;
+  current_.lateral = current_.vertical = 0;
 }
 void Simulator::exit() {
   state_ = State::Exited;

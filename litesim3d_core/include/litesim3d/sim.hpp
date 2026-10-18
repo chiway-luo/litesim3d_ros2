@@ -262,6 +262,8 @@ struct Drive {
   void validate() const;
 };
 Pose integrate(const Pose &initial, double v, double w, double dt);
+// Level, velocity-controlled multicopter: body XYZ translation and yaw.
+Pose integrateFlight(const Pose &initial, const Vec3 &velocity, double yaw_rate, double dt);
 struct Config {
   uint64_t step_ns = 5000000, seed = 42;
   bool collision_budget_enabled = false;
@@ -298,7 +300,9 @@ struct Snapshot {
   Pose world_base = Pose::Identity(), odom_base = Pose::Identity(), odom_root = Pose::Identity();
   std::map<std::string, double> joints, joint_velocities;
   double v = 0, w = 0;
+  double lateral = 0, vertical = 0;
   double odom_v = 0, odom_w = 0;
+  Vec3 linearVelocity() const { return Vec3(v, lateral, vertical); }
 };
 struct Event {
   Snapshot snapshot;
@@ -350,6 +354,7 @@ private:
   struct MotionStep {
     double old_v, old_w, new_v, new_w;
     Pose old_pose;
+    Vec3 old_linear = Vec3::Zero(), new_linear = Vec3::Zero();
   };
   void beginStep();
   uint64_t nextEvent(uint64_t end) const;

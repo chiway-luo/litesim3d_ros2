@@ -25,7 +25,12 @@ record['m3_launch_exit']=run('world-launch',['launch_test',str(ROOT/'litesim3d_r
 record['adapter_exit']=run('pcl',[sys.executable,'-m','pytest','-q',
     str(ROOT/'litesim3d_ros2/test/test_m3_ros.py')+'::test_EXT06_vendor_bytes_nan_timing_and_actual_pcl_read',
     '--basetemp',str(out/'pcl'),'--junitxml',str(out/'pcl.xml'),'-o',f'cache_dir={out / "pytest-cache"}'])
-record['status']='PASS' if record['m3_launch_exit']==record['adapter_exit']==0 else 'FAIL'
+record['sdf_examples_exit']=run('sdf-examples',[sys.executable,'-m','pytest','-q',
+    str(ROOT/'litesim3d_assets/test/test_sdf_import.py')+'::test_complex_examples_import_from_installed_resources',
+    str(ROOT/'examples/drone_3d/drone_3d_sim/test/test_drone.py')+'::test_flight_xyz_yaw_sensors_pause_and_watchdog',
+    str(ROOT/'examples/drone_3d/drone_3d_sim/test/test_drone.py')+'::test_descent_stops_at_floor_with_budget_disabled',
+    '--basetemp',str(out/'sdf-examples'),'--junitxml',str(out/'sdf-examples.xml'),'-o',f'cache_dir={out / "pytest-cache"}'])
+record['status']='PASS' if record['m3_launch_exit']==record['adapter_exit']==record['sdf_examples_exit']==0 else 'FAIL'
 (out/'install-check.json').write_text(json.dumps(record,indent=2))
 print(json.dumps(record,indent=2))
 raise SystemExit(int(record['status']!='PASS'))

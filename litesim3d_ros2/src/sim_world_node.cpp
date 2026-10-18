@@ -355,6 +355,8 @@ private:
         o.child_frame_id = c.prefix + r.config().base_link;
         o.pose.pose = pose(e.snapshot.odom_base);
         o.twist.twist.linear.x = e.snapshot.odom_v;
+        o.twist.twist.linear.y = e.snapshot.lateral;
+        o.twist.twist.linear.z = e.snapshot.vertical;
         o.twist.twist.angular.z = e.snapshot.odom_w;
         o.pose.covariance = r.config().pose_covariance;
         o.twist.covariance = r.config().twist_covariance;
