@@ -94,9 +94,14 @@ def test_session_sensor_qos_defaults_and_reliable_option(h, reliable):
     process,directory=start_session(h,sensor_reliable=reliable)
     expected=ReliabilityPolicy.RELIABLE if reliable else ReliabilityPolicy.BEST_EFFORT
     for topic in ['/points_raw','/imu/data_raw']:
-        publishers=h.node.get_publishers_info_by_topic(topic)
-        consumers=[s for s in h.node.get_subscriptions_info_by_topic(topic) if s.node_name=='m2_consumer']
-        assert len(publishers)==1 and len(consumers)==1
+        def endpoints():
+            return (h.node.get_publishers_info_by_topic(topic),
+                    [s for s in h.node.get_subscriptions_info_by_topic(topic)
+                     if s.node_name=='m2_consumer'])
+        # The session and this observer have independent DDS graph caches.
+        # Session readiness does not make the observer's graph update atomic.
+        h.until(lambda:all(len(group)==1 for group in endpoints()))
+        publishers,consumers=endpoints()
         assert publishers[0].qos_profile.reliability==consumers[0].qos_profile.reliability==expected
     h.pause(False)
     state=directory/'epoch-0001/consumer.json'
