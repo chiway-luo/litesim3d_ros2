@@ -29,9 +29,14 @@ static_assert(sizeof(ObservedPoint) == 48 && offsetof(ObservedPoint, t) == 20 &&
 class Probe : public rclcpp::Node {
 public:
   Probe() : Node("sim_cloud_probe") {
-    output_ = create_publisher<std_msgs::msg::String>("probe_status", 10);
+    // Retain results for a consumer whose discovery completes after the first
+    // input cloud; single-step validation must not lose its only observation.
+    output_ = create_publisher<std_msgs::msg::String>(
+        "probe_status", rclcpp::QoS(10).reliable().transient_local());
+    auto sensor_qos = rclcpp::SensorDataQoS();
+    if (declare_parameter<bool>("sensor_reliable", false)) sensor_qos.reliable();
     input_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-        "points_ouster", rclcpp::SensorDataQoS(),
+        "points_ouster", sensor_qos,
         [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr m) {
           try {
             const char *names[] = {"x",         "y",       "z",

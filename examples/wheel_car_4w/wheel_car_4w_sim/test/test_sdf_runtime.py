@@ -17,7 +17,9 @@ from test_wheel_car_4w import Example
 
 @pytest.fixture
 def example(tmp_path):
-    car = Example(tmp_path)
+    # RTF=0 can saturate a Python TF/IMU observer. This fixture measures wall
+    # statistics and committed time; sensor and TF delivery have separate tests.
+    car = Example(tmp_path, monitor_only=True)
     car.subscribe("stats", String, "/sim/stats")
     car.subscribe("scene_state", String, "/sim/scene_state")
     data = yaml.safe_load((car.share / "config/runtime.yaml").read_text())

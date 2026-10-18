@@ -37,7 +37,7 @@ def stamp(message):
 class Example:
     serial = 0
 
-    def __init__(self, directory):
+    def __init__(self, directory, *, monitor_only=False):
         self.directory = directory
         directory.mkdir(parents=True, exist_ok=True)
         Example.serial += 1
@@ -52,18 +52,19 @@ class Example:
         self.executor = SingleThreadedExecutor(context=self.context)
         self.executor.add_node(self.node)
         self.buffer = Buffer()
-        self.listener = TransformListener(self.buffer, self.node, spin_thread=False)
+        self.listener = None if monitor_only else TransformListener(self.buffer, self.node, spin_thread=False)
         self.messages = {}
         self.subscriptions = []
         self.process = None
         self.log = None
         self.subscribe("status", DiagnosticArray, "/sim/status", 10)
         self.subscribe("clock", Clock, "/clock")
-        self.subscribe("cloud", PointCloud2, "/points_raw")
-        self.subscribe("boundary", PointCloud2, "/points_raw/range_boundary")
-        self.subscribe("imu", Imu, "/imu/data_raw")
-        self.subscribe("odom", Odometry, "/odom", 10)
-        self.subscribe("joints", JointState, "/joint_states", 10)
+        if not monitor_only:
+            self.subscribe("cloud", PointCloud2, "/points_raw")
+            self.subscribe("boundary", PointCloud2, "/points_raw/range_boundary")
+            self.subscribe("imu", Imu, "/imu/data_raw")
+            self.subscribe("odom", Odometry, "/odom", 10)
+            self.subscribe("joints", JointState, "/joint_states", 10)
 
     def subscribe(self, key, kind, topic, qos=qos_profile_sensor_data):
         self.messages[key] = deque(maxlen=200 if key in {"joints", "odom"} else 20)
@@ -156,7 +157,8 @@ class Example:
         finally:
             if self.log:
                 self.log.close()
-            self.listener.unregister()
+            if self.listener:
+                self.listener.unregister()
             self.executor.shutdown()
             self.node.destroy_node()
             self.context.shutdown()

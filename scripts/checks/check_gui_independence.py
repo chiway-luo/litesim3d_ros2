@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from paths import REPO_ROOT, EVIDENCE_DIR
 import struct
 import subprocess
+import shutil
+import time
 import xml.etree.ElementTree as ET
 
 ROOT = REPO_ROOT
@@ -92,7 +94,7 @@ def message_records(directory, label, messages):
     return records
 
 
-def close_test_window(process):
+def close_test_window(process, config):
     """Use Qt's normal close path on the explicitly isolated Xvfb display.
 
     Humble RViz can segfault when SIGINT shuts down its ROS context while Qt
@@ -100,7 +102,8 @@ def close_test_window(process):
     finish first. Never manipulate windows on a user's desktop here.
     """
     assert sys.platform == "linux" and os.environ.get("LWS_PRIVATE_TEST_DISPLAY") == "1"
-    from Xlib import X, display, protocol
+    from Xlib import X, XK, display, protocol
+    from Xlib.ext import xtest
 
     connection = display.Display()
     try:
@@ -114,11 +117,29 @@ def close_test_window(process):
             if pid is not None and list(pid.value) == [process.pid] and delete in supported:
                 windows.append(window)
         assert len(windows) == 1, f"Expected one RViz window for PID {process.pid}, found {len(windows)}"
+        # RViz may mark a loaded config as modified. Save only this test's
+        # disposable copy before closing so the save-confirmation dialog cannot
+        # block shutdown. Never write the installed or source configuration.
+        before = config.stat().st_mtime_ns
+        windows[0].set_input_focus(X.RevertToParent, X.CurrentTime)
+        control = connection.keysym_to_keycode(XK.string_to_keysym("Control_L"))
+        save = connection.keysym_to_keycode(XK.string_to_keysym("s"))
+        for event, key in ((X.KeyPress, control), (X.KeyPress, save),
+                           (X.KeyRelease, save), (X.KeyRelease, control)):
+            xtest.fake_input(connection, event, key)
+        connection.flush()
+        deadline = time.monotonic() + 5
+        while config.stat().st_mtime_ns == before and time.monotonic() < deadline:
+            time.sleep(.05)
+        assert config.stat().st_mtime_ns != before, "RViz did not save its disposable config"
         windows[0].send_event(protocol.event.ClientMessage(
             window=windows[0], client_type=protocols,
             data=(32, [delete, X.CurrentTime, 0, 0, 0])), event_mask=X.NoEventMask)
         connection.flush()
         assert process.wait(timeout=10) == 0, f"RViz window close exited {process.returncode}"
+        (config.parent / "rviz-close.json").write_text(json.dumps({
+            "method": "save disposable config then WM_DELETE_WINDOW",
+            "pid": process.pid, "exit_code": process.returncode}) + "\n")
     finally:
         connection.close()
 
@@ -142,7 +163,8 @@ def run_case(directory, gui):
         h.ready()
         if gui:
             exe = Path(get_package_prefix("rviz2")) / "lib/rviz2/rviz2"
-            config = Path(get_package_share_directory("litesim3d_ros2")) / "rviz/demo.rviz"
+            config = directory / "rviz-test.rviz"
+            shutil.copyfile(Path(get_package_share_directory("litesim3d_ros2")) / "rviz/demo.rviz", config)
             rviz = h.process("rviz", [str(exe), "-d", str(config), "--ros-args", "-p", "use_sim_time:=true"])
             h.until(lambda: "OpenGl version" in (directory / "rviz.log").read_text(), timeout=15)
             assert rviz.poll() is None
@@ -193,7 +215,7 @@ def run_case(directory, gui):
         (directory / "message-hashes.json").write_text(json.dumps(records, indent=2) + "\n")
         (directory / "last-cloud.bin").write_bytes(bytes(frames[-1].data))
         if gui and sys.platform == "linux" and os.environ.get("LWS_PRIVATE_TEST_DISPLAY") == "1":
-            close_test_window(rviz)
+            close_test_window(rviz, config)
     finally:
         h.close()
     exits = json.loads((directory / "processes.json").read_text())

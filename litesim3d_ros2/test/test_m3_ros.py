@@ -255,14 +255,21 @@ def test_EXT01_dynamic_ros_points_and_visual_time(h):
 
 def test_EXT06_vendor_bytes_nan_timing_and_actual_pcl_read(h):
     m2_config(h)
-    h.subscribe('source',PointCloud2,'/points_raw',reliable=False)
-    h.subscribe('vendor',PointCloud2,'/points_ouster',reliable=False)
-    h.subscribe('probe',String,'/probe_status')
+    h.subscribe('source',PointCloud2,'/points_raw')
+    h.subscribe('vendor',PointCloud2,'/points_ouster')
+    h.subscribe('probe',String,'/probe_status',durable=True)
     h.subscribe('adapter',String,'/adapter_status')
-    h.process('adapter',[executable('sim_ouster_adapter')])
-    h.process('pcl',[executable('sim_cloud_probe')])
-    h.rsp();h.sim(start_paused=True);h.ready()
-    h.until(lambda:h.node.count_subscribers('/points_ouster')>=2 and h.node.count_subscribers('/points_raw')>=2)
+    h.process('adapter',[executable('sim_ouster_adapter'),'--ros-args','-p','sensor_reliable:=true'])
+    h.process('pcl',[executable('sim_cloud_probe'),'--ros-args','-p','sensor_reliable:=true'])
+    h.rsp();h.sim(start_paused=True,sensor_reliable=True);h.ready()
+    # Graph discovery alone does not guarantee writer-side DDS matching.
+    def pipeline_ready():
+        if not h.messages['adapter']: return False
+        adapter=json.loads(h.messages['adapter'][-1].data)
+        matches=json.loads(h.status().get('subscription_matches','{}'))
+        return (adapter['input_publishers']>=1 and adapter['output_subscribers']>=2
+                and matches.get('/points_raw',0)>=2)
+    h.until(pipeline_ready)
     assert h.step(20,'adapter-first').success
     h.until(lambda:bool(h.messages['source']) and bool(h.messages['vendor']) and bool(h.messages['probe']))
     s,v=h.messages['source'][0],h.messages['vendor'][0]
@@ -289,7 +296,7 @@ def test_EXT06_vendor_bytes_nan_timing_and_actual_pcl_read(h):
     assert result['max_t_ns']==math.floor(31/32*.1*1e9+.5) or abs(result['max_t_ns']-31/32*.1*1e9)<5
     (h.directory/'pcl-result.json').write_text(json.dumps(result,indent=2))
     # Invalid payloads are rejected; a subsequent valid cloud still reaches the real algorithm.
-    pub=h.node.create_publisher(PointCloud2,'/points_raw',qos_profile_sensor_data)
+    pub=h.node.create_publisher(PointCloud2,'/points_raw',10)
     h.until(lambda:pub.get_subscription_count()>=2)
     bad=[]
     for attribute,value in [('is_bigendian',True),('point_step',23),('row_step',1),('height',0),('width',0),('data',bytes(3))]:

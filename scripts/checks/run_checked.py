@@ -28,7 +28,11 @@ def run(command,timeout,xml,log):
             status=127;message=str(error)
     suite=ET.Element('testsuite',name='required_command',tests='1',failures=str(int(status!=0)))
     case=ET.SubElement(suite,'testcase',name=' '.join(command),time=str(time.monotonic()-start))
-    if status:ET.SubElement(case,'failure',message=message).text=log.read_text()[-6000:]
+    if status:
+        detail=log.read_text()[-6000:]
+        ET.SubElement(case,'failure',message=message).text=detail
+        # Also expose the failure in the CI step log, before artifact upload.
+        print(f'{message}; log: {log}\n{detail}',file=sys.stderr,flush=True)
     ET.ElementTree(suite).write(xml,encoding='utf-8',xml_declaration=True)
     return status if status>=0 else 1
 
