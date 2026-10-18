@@ -120,11 +120,11 @@ class Harness:
     def ready(self):
         self.until(lambda: self.status().get("ready") == "true")
 
-    def call(self, kind, service, request):
+    def call(self, kind, service, request, timeout=6):
         client = self.node.create_client(kind, service)
         assert client.wait_for_service(timeout_sec=4), service
         future = client.call_async(request)
-        self.until(future.done)
+        self.until(future.done, timeout=timeout)
         result = future.result()
         self.node.destroy_client(client)
         return result

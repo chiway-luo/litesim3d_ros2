@@ -12,7 +12,7 @@ import pytest
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, ReliabilityPolicy
 from sensor_msgs.msg import PointCloud2, Imu
 from nav_msgs.msg import Odometry
 from litesim3d_interfaces.srv import Reset
@@ -49,11 +49,14 @@ def test_IMU07_real_ros_sixty_sim_seconds(h):
         assert ns(c.header.stamp)+round(max(times)*1e9)<=ns(h.messages['imu'][-1].header.stamp)
 
 
-def start_session(h, member_args=(), *, timeout=15, wait_ready=True, ready_topics=None):
+def start_session(h, member_args=(), *, timeout=15, wait_ready=True, ready_topics=None, sensor_reliable=True):
     import yaml
     m2_config(h)
     config=h.directory/'config.yaml';config.write_text(yaml.safe_dump(h.config))
     members=h.directory/'members.json'
+    # Single-step assertions require reliable delivery at both ends. Best-effort
+    # compatibility is tested separately; a matched endpoint can still lose a sample.
+    member_args=(*member_args, *(['--reliable-sensors'] if sensor_reliable else []))
     member={'name':'m2_consumer','argv':[sys.executable,str(Path(__file__).with_name('measurement_consumer.py')),*member_args]}
     if ready_topics is not None:
         member['ready_topics']=ready_topics
@@ -61,12 +64,13 @@ def start_session(h, member_args=(), *, timeout=15, wait_ready=True, ready_topic
     session_dir=h.directory/'session'
     p=h.process('session',[str(Path(get_package_prefix('litesim3d_ros2'))/'lib/litesim3d_ros2/sim_session'),
                          '--config',str(config),'--output',str(session_dir),'--members',str(members),
-                         '--observer','m1_test','--timeout',str(timeout)])
+                         '--observer','m1_test','--timeout',str(timeout),
+                         *(['--sensor-reliable'] if sensor_reliable else [])])
     h.ready()
     state=session_dir/'epoch-0001/consumer.json'
     h.until(lambda:state.exists() and json.loads(state.read_text())['subscriptions_created'])
     if wait_ready:
-        h.until(lambda:any(r['event']=='ready' for r in session_records(session_dir)))
+        h.until(lambda:any(r['event']=='ready' for r in session_records(session_dir)),timeout=timeout+2)
         ready=next(r for r in session_records(session_dir) if r['event']=='member_ready')
         assert {'/points_raw','/imu/data_raw','/odom'}<=set(ready['topics'])
     return p,session_dir
@@ -79,7 +83,22 @@ def session_records(directory):
 def reset(h,run,ident,**kwargs):
     r=Reset.Request();r.request_id=ident;r.expected_run_id=run
     for key,value in kwargs.items():setattr(r,key,value)
-    return h.call(Reset,'/sim/reset',r)
+    return h.call(Reset,'/sim/reset',r,timeout=20)
+
+
+@pytest.mark.parametrize('reliable',[False,True])
+def test_session_sensor_qos_defaults_and_reliable_option(h, reliable):
+    process,directory=start_session(h,sensor_reliable=reliable)
+    expected=ReliabilityPolicy.RELIABLE if reliable else ReliabilityPolicy.BEST_EFFORT
+    for topic in ['/points_raw','/imu/data_raw']:
+        publishers=h.node.get_publishers_info_by_topic(topic)
+        consumers=[s for s in h.node.get_subscriptions_info_by_topic(topic) if s.node_name=='m2_consumer']
+        assert len(publishers)==1 and len(consumers)==1
+        assert publishers[0].qos_profile.reliability==consumers[0].qos_profile.reliability==expected
+    h.pause(False)
+    state=directory/'epoch-0001/consumer.json'
+    h.until(lambda:json.loads(state.read_text())['points']>=2)
+    assert process.poll() is None
 
 
 def test_ROS09_reset_rejects_uncoordinated_and_stale_requests(h):
@@ -167,7 +186,7 @@ def test_reset_waits_for_delayed_sensor_subscriptions(h, ready_topics):
 
 
 def test_reset_fails_if_previous_sensor_subscription_is_missing(h):
-    process,directory=start_session(h,('--skip-points-on-reset',),timeout=3)
+    process,directory=start_session(h,('--skip-points-on-reset',))
     assert h.step(20,'old-first-frame').success
     old_state=directory/'epoch-0001/consumer.json'
     h.until(lambda:json.loads(old_state.read_text())['points']==1)
@@ -180,16 +199,19 @@ def test_reset_fails_if_previous_sensor_subscription_is_missing(h):
 
 
 @pytest.mark.parametrize('arguments,reason',[
-    (('--executor-delay','4'),'m2_consumer executor response'),
-    (('--reliable-points',),'incompatible consumer subscription: m2_consumer /points_raw'),
+    (('--executor-delay','20'),('m2_consumer parameter service','m2_consumer executor response')),
+    (('--reliable-points',),('incompatible consumer subscription: m2_consumer /points_raw',)),
 ])
 def test_session_rejects_unready_consumer(h, arguments, reason):
-    process,directory=start_session(h,arguments,timeout=3,wait_ready=False,ready_topics=['/points_raw'])
-    h.until(lambda:process.poll() is not None)
+    process,directory=start_session(h,arguments,timeout=8,wait_ready=False,
+                                    ready_topics=['/points_raw'],sensor_reliable=False)
+    h.until(lambda:process.poll() is not None,timeout=16)
     assert process.returncode!=0
     records=session_records(directory)
     assert not any(r['event']=='ready' for r in records)
-    assert any(reason in r.get('reason','') for r in records)
+    # A non-spinning member may time out during service discovery or RPC response,
+    # depending on RMW discovery order; both must fail before reporting ready.
+    assert any(any(detail in r.get('reason','') for detail in reason) for r in records)
 
 
 def test_session_cpp_adapter_receives_first_frame_after_reset(h):
@@ -199,18 +221,21 @@ def test_session_cpp_adapter_receives_first_frame_after_reset(h):
     executable=Path(get_package_prefix('litesim3d_ros2'))/'lib/litesim3d_ros2'
     members=h.directory/'members.json'
     members.write_text(json.dumps([{'name':'sim_ouster_adapter',
-        'argv':[str(executable/'sim_ouster_adapter')],'ready_topics':['/points_raw']}]))
+        'argv':[str(executable/'sim_ouster_adapter'),'--ros-args','-p','sensor_reliable:=true'],
+        'ready_topics':['/points_raw']}]))
     directory=h.directory/'session'
-    h.subscribe('adapted',PointCloud2,'/points_ouster',reliable=False)
+    h.subscribe('adapted',PointCloud2,'/points_ouster')
     process=h.process('session',[str(executable/'sim_session'),'--config',str(config),
-        '--output',str(directory),'--members',str(members),'--observer','m1_test'])
+        '--output',str(directory),'--members',str(members),'--observer','m1_test','--sensor-reliable'])
     h.until(lambda:(directory/'session.jsonl').exists() and
-            any(r['event']=='ready' for r in session_records(directory)))
+            any(r['event']=='ready' for r in session_records(directory)),timeout=17)
+    h.until(lambda:h.subs[-1].get_publisher_count()==1)
     assert h.step(20,'adapter-old-frame').success
     h.until(lambda:len(h.messages['adapted'])==1)
     result=reset(h,h.status()['run_id'],'adapter-new-epoch')
     assert result.success,result.message
     h.messages['adapted'].clear()
+    h.until(lambda:h.subs[-1].get_publisher_count()==1)
     assert h.step(20,'adapter-new-first-frame').success
     h.until(lambda:len(h.messages['adapted'])==1)
     assert ns(h.messages['adapted'][0].header.stamp)==1

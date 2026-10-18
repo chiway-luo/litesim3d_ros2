@@ -229,6 +229,7 @@ class Session(Node):
         self.spawn('robot_state_publisher', [executable('robot_state_publisher', 'robot_state_publisher'),
                    '--ros-args', '--params-file', str(rsp_params)], directory)
         parameters = {'config': str(self.config), 'use_sim_time': True, 'start_paused': True,
+                      'sensor_reliable': self.args.sensor_reliable,
                       'manifest_path': str(directory / 'manifest.json')}
         if override:
             parameters['initial_pose_override'] = override
@@ -361,6 +362,8 @@ def main():
     parser.add_argument('--members', help='JSON list of {name, argv, optional ready_topics} for owned ROS nodes')
     parser.add_argument('--observer', action='append', default=[], help='read-only observer node allowed across epochs')
     parser.add_argument('--timeout', type=float, default=15)
+    parser.add_argument('--sensor-reliable', action='store_true',
+                        help='offer reliable point clouds and IMU; consumers must also request reliable delivery')
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or not 1 <= args.timeout <= 120:
         parser.error('timeout must be in [1,120] seconds')

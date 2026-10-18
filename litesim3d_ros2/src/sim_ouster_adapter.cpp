@@ -5,13 +5,16 @@
 class Adapter : public rclcpp::Node {
 public:
   Adapter() : Node("sim_ouster_adapter") {
+    auto sensor_qos = rclcpp::SensorDataQoS();
+    if (declare_parameter<bool>("sensor_reliable", false))
+      sensor_qos.reliable();
     output_ = create_publisher<sensor_msgs::msg::PointCloud2>(
         declare_parameter<std::string>("output_topic", "points_ouster"),
-        rclcpp::SensorDataQoS());
+        sensor_qos);
     status_ = create_publisher<std_msgs::msg::String>("adapter_status", 10);
     input_ = create_subscription<sensor_msgs::msg::PointCloud2>(
         declare_parameter<std::string>("input_topic", "points_raw"),
-        rclcpp::SensorDataQoS(),
+        sensor_qos,
         [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr m) {
           try {
             output_->publish(ousterCloud(*m));

@@ -84,7 +84,7 @@ public:
     sensor_reliable_ = declare_parameter<bool>("sensor_reliable", false);
     const bool publish_tf = declare_parameter<bool>("publish_odom_tf", true);
     const auto external = declare_parameter<std::vector<std::string>>(
-        "external_odom_tf_robots", {});
+        "external_odom_tf_robots", std::vector<std::string>{});
     std::set<std::string> ids, external_ids;
     for (size_t i = 0; i < world_->size(); ++i)
       ids.insert(world_->robot(i).config().robot_id);
