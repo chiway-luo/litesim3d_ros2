@@ -184,6 +184,13 @@ def run_case(directory, gui):
                 for s in scene_subscriptions()], indent=2) + "\n")
         publisher = h.node.create_publisher(Twist, "/cmd_vel", 1)
         h.until(lambda: publisher.get_subscription_count() == 1)
+        # Node/RViz readiness does not guarantee DDS reader/writer matching.
+        # Do not lose the first samples before all observers have matched.
+        def matched():
+            counts = json.loads(h.status().get("subscription_matches", "{}"))
+            return all(counts.get(topic, 0) >= max(1, h.node.count_subscribers(topic))
+                       for topic in ("/points_raw", "/odom"))
+        h.until(matched)
         command = Twist()
         command.linear.x = .2
         command.angular.z = .15
@@ -192,8 +199,16 @@ def run_case(directory, gui):
         for i in range(600):
             result = h.step(20, f"step-{i}")
             assert result.success and result.time_ns == 1 + (i + 1) * 100_000_000
-            h.until(lambda: len(h.messages["points"]) >= i + 1)
-        h.until(lambda: len(h.messages["odom"]) >= 3000)
+            # A 0.1 s step emits one cloud and five odometry samples. Drain
+            # BOTH streams before advancing: reliable KEEP_LAST still has a
+            # finite writer history, and RViz can delay the Python observer.
+            # This tests deterministic simulated output, not wall throughput.
+            h.until(lambda: len(h.messages["points"]) >= i + 1 and
+                    len(h.messages["odom"]) >= (i + 1) * 5)
+            assert len(h.messages["points"]) == i + 1
+            assert len(h.messages["odom"]) == (i + 1) * 5
+            assert [ns(o.header.stamp) for o in h.messages["odom"][-5:]] == [
+                1 + (i * 5 + j) * 20_000_000 for j in range(1, 6)]
         if gui:
             assert rviz.poll() is None
             # Only capture the disposable Xvfb display explicitly requested by the
@@ -217,6 +232,11 @@ def run_case(directory, gui):
         if gui and sys.platform == "linux" and os.environ.get("LWS_PRIVATE_TEST_DISPLAY") == "1":
             close_test_window(rviz, config)
     finally:
+        # Keep timestamp evidence even on a receive timeout, so transport gaps
+        # can be distinguished from simulation or value-comparison failures.
+        (directory / "sample-receipt.json").write_text(json.dumps({
+            key: [ns(message.header.stamp) for message in h.messages.get(key, [])]
+            for key in ("points", "odom")}, indent=2) + "\n")
         h.close()
     exits = json.loads((directory / "processes.json").read_text())
     assert all(code == 0 for code in exits.values()), exits
