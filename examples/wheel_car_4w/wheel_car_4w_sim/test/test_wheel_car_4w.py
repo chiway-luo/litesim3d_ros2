@@ -118,7 +118,10 @@ class Example:
     def spin(self, seconds=.1):
         end = time.monotonic() + seconds
         while time.monotonic() < end:
-            self.executor.spin_once(timeout_sec=min(.02, max(0, end - time.monotonic())))
+            # Humble recreates its ready-callback iterator when timeout_sec
+            # changes. Keep it stable so busy early subscriptions cannot starve
+            # later status/scene callbacks. Wall waits may overrun by <=20 ms.
+            self.executor.spin_once(timeout_sec=.02)
 
     def until(self, predicate, timeout=6):
         end = time.monotonic() + timeout

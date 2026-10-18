@@ -101,7 +101,9 @@ class Harness:
     def spin(self, duration=.1):
         end = time.monotonic() + duration
         while time.monotonic() < end:
-            self.executor.spin_once(timeout_sec=max(0,min(.02, end-time.monotonic())))
+            # A changing timeout restarts Humble's ready-callback iterator and
+            # can starve later subscriptions behind high-rate clock/TF data.
+            self.executor.spin_once(timeout_sec=.02)
 
     def until(self, predicate, timeout=6):
         end = time.monotonic() + timeout
