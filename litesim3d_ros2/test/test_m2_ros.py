@@ -14,6 +14,7 @@ from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.qos import qos_profile_sensor_data, ReliabilityPolicy
 from sensor_msgs.msg import PointCloud2, Imu
+from std_msgs.msg import String
 from nav_msgs.msg import Odometry
 from litesim3d_interfaces.srv import Reset
 from ament_index_python.packages import get_package_prefix
@@ -28,9 +29,11 @@ def m2_config(h):
 
 def test_IMU07_real_ros_sixty_sim_seconds(h):
     m2_config(h)
-    h.subscribe('imu',Imu,'/imu/data_raw',reliable=False)
-    h.subscribe('points',PointCloud2,'/points_raw',reliable=False)
+    h.subscribe('imu',Imu,'/imu/data_raw')
+    h.subscribe('points',PointCloud2,'/points_raw')
     h.rsp();h.sim(start_paused=True,sensor_reliable=True);h.ready()
+    h.until(lambda:all(json.loads(h.status().get('subscription_matches','{}')).get(topic,0)>=1
+                       for topic in ['/points_raw','/imu/data_raw']))
     # Small batches let the real executor drain all 200 Hz samples without manufacturing counts.
     for i in range(600):
         assert h.step(20,f'batch-{i}').success
@@ -121,10 +124,10 @@ def test_ROS09_reset_rejects_uncoordinated_and_stale_requests(h):
     h.until(lambda:state_path.exists() and json.loads(state_path.read_text())['points']==1)
     assert json.loads(state_path.read_text())['first_stamp']==1
     h.subscribe('teleport_truth',Odometry,'/sim/ground_truth/robot_0/odom')
-    h.subscribe('teleport_imu',Imu,'/imu/data_raw',reliable=False)
+    h.subscribe('teleport_imu',Imu,'/imu/data_raw')
     request=Reset.Request();request.request_id='pose-update';request.expected_run_id=result.run_id
     request.set_initial_pose=True;request.initial_pose.orientation.w=1.0;request.initial_pose.position.x=.5
-    moved=h.call(Reset,'/sim/reset',request);assert moved.success,moved.message
+    moved=h.call(Reset,'/sim/reset',request,timeout=20);assert moved.success,moved.message
     assert moved.run_id!=result.run_id
     h.messages['teleport_truth'].clear();h.messages['teleport_imu'].clear()
     assert h.step(20,'pose-new-first').success
@@ -225,17 +228,26 @@ def test_session_cpp_adapter_receives_first_frame_after_reset(h):
         'ready_topics':['/points_raw']}]))
     directory=h.directory/'session'
     h.subscribe('adapted',PointCloud2,'/points_ouster')
+    h.subscribe('adapter_status',String,'/adapter_status')
+    def wait_adapter(run):
+        def matched():
+            if not h.messages['adapter_status']:
+                return False
+            status=json.loads(h.messages['adapter_status'][-1].data)
+            return (status['run_id']==run and status['input_publishers']==1
+                    and status['output_subscribers']==1)
+        h.until(matched)
     process=h.process('session',[str(executable/'sim_session'),'--config',str(config),
         '--output',str(directory),'--members',str(members),'--observer','m1_test','--sensor-reliable'])
     h.until(lambda:(directory/'session.jsonl').exists() and
             any(r['event']=='ready' for r in session_records(directory)),timeout=17)
-    h.until(lambda:h.subs[-1].get_publisher_count()==1)
+    wait_adapter(h.status()['run_id'])
     assert h.step(20,'adapter-old-frame').success
     h.until(lambda:len(h.messages['adapted'])==1)
     result=reset(h,h.status()['run_id'],'adapter-new-epoch')
     assert result.success,result.message
     h.messages['adapted'].clear()
-    h.until(lambda:h.subs[-1].get_publisher_count()==1)
+    wait_adapter(result.run_id)
     assert h.step(20,'adapter-new-first-frame').success
     h.until(lambda:len(h.messages['adapted'])==1)
     assert ns(h.messages['adapted'][0].header.stamp)==1
@@ -258,7 +270,7 @@ def test_reset_initial_pose_preserves_relative_lidar_pattern(h):
     request.set_initial_pose = True
     request.initial_pose.position.x = .5
     request.initial_pose.orientation.w = 1.
-    result = h.call(Reset, '/sim/reset', request)
+    result = h.call(Reset, '/sim/reset', request, timeout=20)
     assert result.success, result.message
     assert result.run_id != old_run and process.poll() is None
     assert h.step(20, 'first-pattern-frame').success

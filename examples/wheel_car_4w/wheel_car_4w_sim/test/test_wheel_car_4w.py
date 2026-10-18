@@ -78,15 +78,16 @@ class Example:
                                         stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
         self.until(lambda: self.status().get("ready") == "true", timeout=15)
         # Kernel/RSP readiness does not imply this test's sensor readers have
-        # matched. Keep the default best-effort profile, but wait on actual DDS
-        # matches at both ends before publishing a single paused frame.
+        # discovered the writers. Humble rclpy has no subscription match-count
+        # API: check the reader's graph and the simulator's actual DDS matches.
         def matched():
             counts = json.loads(self.status().get("subscription_matches", "{}"))
             required = [s for s in self.subscriptions
                         if s.topic_name in {"/clock", "/points_raw", "/imu/data_raw", "/odom", "/joint_states"}]
             if "/points_raw/range_boundary" in counts:
                 required += [s for s in self.subscriptions if s.topic_name == "/points_raw/range_boundary"]
-            return all(s.get_publisher_count() == 1 and counts.get(s.topic_name, 0) >= 1
+            return all(self.node.count_publishers(s.topic_name) == 1
+                       and counts.get(s.topic_name, 0) >= self.node.count_subscribers(s.topic_name)
                        for s in required)
         self.until(matched, timeout=15)
 
