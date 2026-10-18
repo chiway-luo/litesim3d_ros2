@@ -54,16 +54,27 @@ def start_world(h, count, *, ready=True, command_timeout=100.0, range_boundary=F
         h.process(name+'-rsp', [str(Path(get_package_prefix('robot_state_publisher'))/'lib/robot_state_publisher/robot_state_publisher'),
                                '--ros-args', '--params-file', str(params), '-r', '__ns:=/'+name])
         h.subscribe(name+'-odom', Odometry, '/'+name+'/odom')
-        h.subscribe(name+'-cloud', PointCloud2, '/'+name+'/points_raw', reliable=False)
+        reliable = settings.get('sensor_reliable', False)
+        h.subscribe(name+'-cloud', PointCloud2, '/'+name+'/points_raw', reliable=reliable)
         if range_boundary:
-            h.subscribe(name+'-boundary', PointCloud2, '/'+name+'/points_raw/range_boundary', reliable=False)
-        h.subscribe(name+'-imu', Imu, '/'+name+'/imu/data_raw', reliable=False)
+            h.subscribe(name+'-boundary', PointCloud2, '/'+name+'/points_raw/range_boundary', reliable=reliable)
+        h.subscribe(name+'-imu', Imu, '/'+name+'/imu/data_raw', reliable=reliable)
     params = h.directory/'world-params.yaml'
     params.write_text(yaml.safe_dump({'/**':{'ros__parameters':{
         'config':str(world), 'use_sim_time':True, 'start_paused':True, 'manifest_path':str(h.directory/'world-manifest.json'), **settings}}}))
     process = h.process('world', [executable('sim_world_node'), '--ros-args', '--params-file', str(params)])
     if ready:
         h.ready()
+        required = [f'/{r["id"]}/{topic}' for r in robots
+                    for topic in ['points_raw', 'imu/data_raw'] +
+                    (['points_raw/range_boundary'] if range_boundary else [])]
+        def matched():
+            counts = {}
+            for status in h.messages['status'][-1].status:
+                data = {v.key:v.value for v in status.values}
+                counts.update(json.loads(data.get('subscription_matches', '{}')))
+            return all(counts.get(topic, 0) >= 1 for topic in required)
+        h.until(matched)
     return process
 
 
@@ -88,7 +99,7 @@ def test_world_range_boundary_is_namespaced_and_respects_peer_occlusion(h):
 
 
 def test_mid360_world_keeps_peer_occlusion_and_separate_clouds(h):
-    start_world(h, 2, range_boundary=True, mid360=True)
+    start_world(h, 2, range_boundary=True, mid360=True, sensor_reliable=True)
     assert h.step(20, 'mid360-world-frame').success
     h.until(lambda: all(h.messages[f'r{k}-{kind}'] for k in range(2) for kind in ('cloud', 'boundary')))
     counts = []

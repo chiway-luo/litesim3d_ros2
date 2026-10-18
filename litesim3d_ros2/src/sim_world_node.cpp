@@ -516,6 +516,16 @@ private:
       d["ready"] = ready_;
       d["world_run_id"] = world_->run_id;
       d["published_clouds"] = channels_[i].published;
+      auto matches = nlohmann::json::object();
+      auto count_matches = [&matches](const auto &publisher) {
+        matches[publisher->get_topic_name()] = publisher->get_subscription_count();
+      };
+      count_matches(clock_);
+      count_matches(channels_[i].odom);
+      count_matches(channels_[i].joints);
+      for (const auto &[topic, publisher] : channels_[i].clouds) count_matches(publisher);
+      for (const auto &[topic, publisher] : channels_[i].imus) count_matches(publisher);
+      d["subscription_matches"] = std::move(matches);
       d["internal_missed_scans"] = 0;
       d["compute_p99_ms"] = p99(compute_);
       d["bridge_p99_ms"] = p99(bridge_);

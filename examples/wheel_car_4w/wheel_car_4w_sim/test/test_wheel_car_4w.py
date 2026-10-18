@@ -69,7 +69,25 @@ class Example:
         self.messages[key] = deque(maxlen=200 if key in {"joints", "odom"} else 20)
         self.subscriptions.append(self.node.create_subscription(kind, topic, self.messages[key].append, qos))
 
-    def start(self, **arguments):
+    def start(self, *, reliable_sensors=False, **arguments):
+        if reliable_sensors:
+            # Exact single-frame payload checks need retransmission for large
+            # fragmented clouds as well as endpoint discovery. Defaults remain
+            # covered by the ordinary launch and best-effort streaming tests.
+            sensors = {"/points_raw": ("cloud", PointCloud2),
+                       "/points_raw/range_boundary": ("boundary", PointCloud2),
+                       "/imu/data_raw": ("imu", Imu)}
+            for subscription in list(self.subscriptions):
+                if subscription.topic_name in sensors:
+                    self.subscriptions.remove(subscription)
+                    self.node.destroy_subscription(subscription)
+            for topic, (key, kind) in sensors.items():
+                self.subscribe(key, kind, topic, 100)
+            params = yaml.safe_load(Path(arguments.get("params", self.share / "config/ros.yaml")).read_text())
+            params["/litesim3d"]["ros__parameters"]["sensor_reliable"] = True
+            path = self.directory / "reliable-ros.yaml"
+            path.write_text(yaml.safe_dump(params))
+            arguments["params"] = str(path)
         self.log = (self.directory / "launch.log").open("w")
         command = ["ros2", "launch", "wheel_car_4w_sim", "wheel_car_4w.launch.py",
                    "manifest:=" + str(self.directory / "manifest.json")]
@@ -190,6 +208,7 @@ def test_installed_model_and_headless(tmp_path):
 
 def test_launch_sensors_four_wheels_step_and_watchdog(car):
     car.start(paused="true")
+    assert car.status()["sensor_queue_policy"] == "keep_last/best_effort"
     initial = car.step(20, "initial")
     car.until(lambda: car.messages["cloud"] and car.messages["imu"])
     imu = car.messages["imu"][-1]
@@ -231,7 +250,7 @@ def test_ros_parameter_file_stamped_reliable_and_prefix(car):
         cmd_mode="stamped", sensor_reliable=True, frame_prefix="car/", start_paused=True)
     path = car.directory / "parameters.yaml"
     path.write_text(yaml.safe_dump(params))
-    car.start(params=str(path))
+    car.start(params=str(path), reliable_sensors=True)
     car.until(lambda: car.status().get("state") == "paused")
     car.step(20, "initial")
     car.until(lambda: bool(car.messages["cloud"]))
@@ -277,7 +296,7 @@ def test_invalid_launch_boolean_is_rejected(tmp_path):
     ("mid40", 1, 10000, 1.0, 90.0),
 ])
 def test_lidar_profiles_have_changing_returns_and_correct_fov(car, profile, rows, columns, min_range, max_range):
-    car.start(lidar_profile=profile, paused="true")
+    car.start(lidar_profile=profile, paused="true", reliable_sensors=True)
     car.step(20, "profile-first")
     car.until(lambda: len(car.messages["cloud"]) >= 1)
     first = car.messages["cloud"][-1]
@@ -332,7 +351,7 @@ def test_range_boundary_can_be_disabled(car):
     profile["lidar"]["publish_range_boundary"] = False
     path = car.directory / "without-boundary.yaml"
     path.write_text(yaml.safe_dump(profile))
-    car.start(lidar_profile=str(path), paused="true")
+    car.start(lidar_profile=str(path), paused="true", reliable_sensors=True)
     car.step(20, "without-boundary")
     car.until(lambda: bool(car.messages["cloud"]))
     assert car.node.count_publishers("/points_raw/range_boundary") == 0
@@ -351,7 +370,7 @@ def test_mid360_directions_match_official_asset_at_both_frame_rates(car, rate, c
         reader = csv.reader(stream)
         assert next(reader) == ["Time/s", "Azimuth/deg", "Zenith/deg"]
         expected = [next(reader) for _ in range(columns * 2)]
-    car.start(lidar_profile=str(path), paused="true")
+    car.start(lidar_profile=str(path), paused="true", reliable_sensors=True)
     captured = []
     checked = cropped = 0
     for frame in range(2):
@@ -408,7 +427,7 @@ def test_custom_profile_crops_fov_and_resolves_relative_config_paths(car):
                             pattern_file="scan.csv", range_sigma_m=0.0)
     profile_file = car.directory / "custom-lidar.yaml"
     profile_file.write_text(yaml.safe_dump(profile))
-    car.start(config=str(config_file), lidar_profile=str(profile_file), paused="true")
+    car.start(config=str(config_file), lidar_profile=str(profile_file), paused="true", reliable_sensors=True)
     car.step(20, "custom-fov")
     car.until(lambda: bool(car.messages["cloud"]))
     cloud=car.messages["cloud"][-1]

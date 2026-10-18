@@ -168,6 +168,8 @@ URDF 默认仍通过 package URI 读取安装副本；修改 URDF 后重新构�
 | 外部估计器接管 odom TF | publish_odom_tf=false、external_odom_tf=true；输出到 URDF root |
 | TF 前缀 | frame_prefix，如 car/；launch 自动同步 RSP 和 RViz，话题仍在根命名空间 |
 
+暂停单步校验大点云时，建议在 `ros.yaml` 中设置 `sensor_reliable: true`，通过 `params:=` 加载，并把算法订阅及 RViz 点云显示的 Reliability Policy 设为 Reliable。20,000 点的数据区为 480,000 字节；best effort 即使 DDS 已匹配也可能丢失整帧，暂停后不会自动补发。只修改发布端可靠性、保留 best effort 消费端，仍不能得到可靠传输。默认配置保留 best effort，适合允许丢帧的实时显示。
+
 不要直接把 `cmd_mode:=stamped` 写在本 launch 后假定会改变节点参数；修改 `ros.yaml` 后通过 `params:=` 加载。Stamped 模式可以用项目的接入示例控制：
 
 ```bash

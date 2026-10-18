@@ -21,18 +21,25 @@ jobs:
             xvfb xauth libgl1-mesa-dri python3-pyqt5
       - name: Check repository documentation
         run: python3 scripts/checks/check_repository_docs.py
-      - name: Build and test
+      - name: Build
+        id: build
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           bash scripts/build.sh
+      - name: Run core and ROS regression tests
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
           bash scripts/test_m3.sh
       - name: Test installed resources without the source tree
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           python3 scripts/checks/check_m3_install.py
       - name: Verify RViz does not change simulation output
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
