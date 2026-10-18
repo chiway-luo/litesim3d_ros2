@@ -19,10 +19,16 @@ shutil.copytree(ROOT,project,ignore=shutil.ignore_patterns("__pycache__", ".pyte
 env=os.environ.copy();env["LWS_BUILD_ROOT"]=str(stage/"artifacts")
 env["LITESIM3D_ARTIFACTS_DIR"]=str(stage/"artifacts")
 env["PYTHONDONTWRITEBYTECODE"]="1"
-with (out/"install-isolated-build.log").open("w") as log:
-    built=subprocess.run(["bash",str(project/"scripts/build.sh")],env=env,stdout=log,stderr=subprocess.STDOUT,timeout=300)
+# A full GUI/SDF build takes over seven minutes on the Ubuntu CI runner.
+# Bound the whole process group so a timeout cannot leave compilers running
+# during the subsequent integration and graphics checks.
+built=subprocess.run([sys.executable,str(ROOT/"scripts/checks/run_checked.py"),
+    "--timeout","900","--xml",str(out/"install-build-runner.xml"),
+    "--log",str(out/"install-isolated-build.log"),"--",
+    "bash",str(project/"scripts/build.sh")],env=env)
 if built.returncode:
-    (out/"install-check.json").write_text(json.dumps({"status":"FAIL","phase":"build","stage":str(stage)}))
+    (out/"install-check.json").write_text(json.dumps({"status":"FAIL","phase":"build","stage":str(stage),
+        "build_exit":built.returncode}))
     raise SystemExit(built.returncode)
 prefix=stage/"artifacts/install"
 project.rename(stage/"sources-unavailable")

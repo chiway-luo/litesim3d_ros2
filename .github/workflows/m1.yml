@@ -4,7 +4,7 @@ jobs:
   m1_m3:
     runs-on: ubuntu-22.04
     container: ros:humble-ros-base
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       LITESIM3D_ARTIFACTS_DIR: /tmp/litesim3d_ros2-artifacts
       PYTHONDONTWRITEBYTECODE: '1'
@@ -19,7 +19,7 @@ jobs:
             python3-pytest python3-yaml python3-psutil ros-humble-robot-state-publisher ros-humble-rviz2 \
             ros-humble-xacro ros-humble-tf2-ros ros-humble-launch-testing ros-humble-ament-cmake-pytest \
             libsdformat12-dev libignition-rendering6-dev qtbase5-dev libqt5svg5-dev \
-            xvfb xauth libgl1-mesa-dri python3-pyqt5
+            xvfb xauth libgl1-mesa-dri python3-pyqt5 python3-xlib
       - name: Check repository documentation
         run: python3 scripts/checks/check_repository_docs.py
       - name: Build
@@ -45,7 +45,7 @@ jobs:
         run: |
           source /opt/ros/humble/setup.bash
           source "$(python3 scripts/paths.py install)/setup.bash"
-          xvfb-run -a python3 scripts/checks/check_gui_independence.py
+          xvfb-run -a env LWS_PRIVATE_TEST_DISPLAY=1 python3 scripts/checks/check_gui_independence.py
       - name: Upload actual test evidence
         if: always()
         uses: actions/upload-artifact@v4

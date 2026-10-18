@@ -249,10 +249,7 @@ public:
     started_ = std::chrono::steady_clock::now();
     timer_ = create_wall_timer(interval, [this] { update(); });
     status_timer_ = create_wall_timer(std::chrono::milliseconds(200), [this] {
-      publishStatus();
-      if (std::any_of(sim_->scene().visual.begin(), sim_->scene().visual.end(),
-                      [](const litesim3d::Geometry &g) { return bool(g.motion); }))
-        publishScene(false);
+      publishPeriodicStatus();
     });
     publishScene();
     publishClock();
@@ -314,7 +311,9 @@ private:
     }
   }
   void publishSceneState() {
-    if (!scene_state_) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (!scene_state_ || now < next_scene_state_) return;
+    next_scene_state_ = now + std::chrono::milliseconds(33);
     const auto &s = sim_->snapshot();
     const auto frames = sim_->model().fk(s.joints);
     const auto world_root = s.world_base * frames.at(sim_->config().base_link).inverse();
@@ -465,6 +464,7 @@ private:
     }
   }
   void update() {
+    if (!rclcpp::ok()) return;
     if (!ready_) {
       bool rsp_ready = !wait_rsp_;
       if (wait_rsp_) {
@@ -498,6 +498,11 @@ private:
       pace_stamp_ = sim_->snapshot().stamp;
     }
     try {
+      // Humble can repeatedly select an always-ready simulation timer before
+      // the slower timers. Keep wall-clock output alive even with RTF=0 or an
+      // overloaded paced simulation; do not cap or skip physics steps.
+      publishPeriodicStatus();
+      publishSceneState();
       unsigned steps = 1;
       const auto &cfg = sim_->config();
       if (cfg.real_time_factor > 0 && sim_->state() == litesim3d::State::Running) {
@@ -508,15 +513,24 @@ private:
       }
       for (unsigned i = 0; i < steps; ++i) publish(sim_->tick());
     } catch (const std::exception &e) {
+      if (!rclcpp::ok()) return;
       RCLCPP_ERROR(get_logger(), "simulation fault: %s", e.what());
       sim_->fault(e.what());
       timer_->cancel();
       saveManifest("fault");
     }
   }
+  void publishPeriodicStatus() {
+    if (!rclcpp::ok() || std::chrono::steady_clock::now() < next_status_) return;
+    publishStatus();
+    if (std::any_of(sim_->scene().visual.begin(), sim_->scene().visual.end(),
+                    [](const litesim3d::Geometry &g) { return bool(g.motion); }))
+      publishScene(false);
+  }
   void publishStatus() {
-    if (!sim_)
+    if (!sim_ || !rclcpp::ok())
       return;
+    next_status_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
     if (count_publishers("/clock") > 1)
       sim_->fault("multiple /clock publishers");
     auto data = sim_->diagnostics();
@@ -680,6 +694,7 @@ private:
   std::optional<std::chrono::steady_clock::time_point> fault_time_;
   std::chrono::steady_clock::time_point started_;
   std::chrono::steady_clock::time_point pace_time_;
+  std::chrono::steady_clock::time_point next_status_, next_scene_state_;
   uint64_t pace_stamp_ = 1;
   nav_msgs::msg::Path trajectory_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr status_;

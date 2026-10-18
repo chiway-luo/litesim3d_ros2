@@ -92,6 +92,37 @@ def message_records(directory, label, messages):
     return records
 
 
+def close_test_window(process):
+    """Use Qt's normal close path on the explicitly isolated Xvfb display.
+
+    Humble RViz can segfault when SIGINT shuts down its ROS context while Qt
+    is still processing display callbacks. A WM_DELETE_WINDOW event lets Qt
+    finish first. Never manipulate windows on a user's desktop here.
+    """
+    assert sys.platform == "linux" and os.environ.get("LWS_PRIVATE_TEST_DISPLAY") == "1"
+    from Xlib import X, display, protocol
+
+    connection = display.Display()
+    try:
+        pid_atom = connection.intern_atom("_NET_WM_PID")
+        protocols = connection.intern_atom("WM_PROTOCOLS")
+        delete = connection.intern_atom("WM_DELETE_WINDOW")
+        windows = []
+        for window in connection.screen().root.query_tree().children:
+            pid = window.get_full_property(pid_atom, X.AnyPropertyType)
+            supported = window.get_wm_protocols() or []
+            if pid is not None and list(pid.value) == [process.pid] and delete in supported:
+                windows.append(window)
+        assert len(windows) == 1, f"Expected one RViz window for PID {process.pid}, found {len(windows)}"
+        windows[0].send_event(protocol.event.ClientMessage(
+            window=windows[0], client_type=protocols,
+            data=(32, [delete, X.CurrentTime, 0, 0, 0])), event_mask=X.NoEventMask)
+        connection.flush()
+        assert process.wait(timeout=10) == 0, f"RViz window close exited {process.returncode}"
+    finally:
+        connection.close()
+
+
 def run_case(directory, gui):
     h = Harness(directory)
     try:
@@ -161,6 +192,8 @@ def run_case(directory, gui):
             records[label] = message_records(directory, label, messages)
         (directory / "message-hashes.json").write_text(json.dumps(records, indent=2) + "\n")
         (directory / "last-cloud.bin").write_bytes(bytes(frames[-1].data))
+        if gui and sys.platform == "linux" and os.environ.get("LWS_PRIVATE_TEST_DISPLAY") == "1":
+            close_test_window(rviz)
     finally:
         h.close()
     exits = json.loads((directory / "processes.json").read_text())

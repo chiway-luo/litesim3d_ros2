@@ -35,11 +35,20 @@ def test_actual_rtf_matches_committed_clock_and_target(example, target):
     car, runtime = example
     car.start(runtime=str(runtime), real_time_factor=str(target), paused="false")
     samples = []
+    scene_samples = []
     sub = car.node.create_subscription(String, "/sim/stats",
           lambda m: samples.append((time.monotonic(), json.loads(m.data))), qos_profile_sensor_data)
+    scene_sub = car.node.create_subscription(String, "/sim/scene_state",
+          lambda m: scene_samples.append((time.monotonic(), json.loads(m.data))), qos_profile_sensor_data)
     car.spin(10.4 if target in {.25, .5, 1} else 2.0)
     car.node.destroy_subscription(sub)
+    car.node.destroy_subscription(scene_sub)
     assert len(samples) >= 5
+    # Both slower wall timers must remain live under an always-ready RTF=0
+    # physics timer, including when the executor is overloaded.
+    assert len(scene_samples) >= 10
+    assert scene_samples[-1][0] - scene_samples[0][0] >= 1.0
+    assert scene_samples[-1][1]["stamp_ns"] > scene_samples[0][1]["stamp_ns"]
     end_wall, end = samples[-1]
     start_wall, start = min(samples[:-1], key=lambda pair: abs(end_wall - pair[0] - 1.0))
     measured = (end["stamp_ns"] - start["stamp_ns"]) * 1e-9 / (end_wall - start_wall)
