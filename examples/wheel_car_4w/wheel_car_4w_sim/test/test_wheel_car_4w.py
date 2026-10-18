@@ -41,7 +41,7 @@ class Example:
         self.directory = directory
         directory.mkdir(parents=True, exist_ok=True)
         Example.serial += 1
-        os.environ["ROS_DOMAIN_ID"] = str(int(os.environ.get("LWS_4W_TEST_DOMAIN_BASE", "210")) + Example.serial)
+        os.environ["ROS_DOMAIN_ID"] = str(int(os.environ.get("LWS_4W_TEST_DOMAIN_BASE", "40")) + Example.serial)
         os.environ["ROS_LOCALHOST_ONLY"] = "1"
         os.environ["ROS_LOG_DIR"] = str(directory / "ros-logs")
         self.environment = os.environ.copy()
@@ -91,7 +91,7 @@ class Example:
         self.log = (self.directory / "launch.log").open("w")
         command = ["ros2", "launch", "wheel_car_4w_sim", "wheel_car_4w.launch.py",
                    "manifest:=" + str(self.directory / "manifest.json")]
-        command.extend(f"{name}:={value}" for name, value in {"rviz": "false", **arguments}.items())
+        command.extend(f"{name}:={value}" for name, value in {"rviz": "false", "gui": "false", **arguments}.items())
         self.process = subprocess.Popen(command, env=self.environment, cwd=self.directory,
                                         stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
         self.until(lambda: self.status().get("ready") == "true", timeout=15)

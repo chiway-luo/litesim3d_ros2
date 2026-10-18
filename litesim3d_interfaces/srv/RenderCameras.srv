@@ -1,0 +1,11 @@
+# Internal synchronous rendering request. Poses are exact world truth at header.stamp.
+std_msgs/Header header
+string scene_id
+string run_id
+string[] camera_names
+string[] link_names
+geometry_msgs/Pose[] link_poses
+---
+bool success
+string message
+litesim3d_interfaces/CameraFrame[] frames

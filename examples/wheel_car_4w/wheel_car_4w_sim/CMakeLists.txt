@@ -10,8 +10,11 @@ if(BUILD_TESTING)
   # 本项目接口库目录。使用接口包前缀，兼容 merged / isolated 两种安装布局。
   get_filename_component(_interfaces_prefix
     "${litesim3d_interfaces_DIR}/../../.." ABSOLUTE)
-  ament_add_pytest_test(wheel_car_4w_smoke test/test_wheel_car_4w.py
+  ament_add_pytest_test(wheel_car_4w_smoke test
     APPEND_LIBRARY_DIRS "${_interfaces_prefix}/lib"
-    APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 TIMEOUT 150)
+    APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 TIMEOUT 200)
+  ament_add_pytest_test(sdf_assets ../../../litesim3d_assets/test
+    APPEND_LIBRARY_DIRS "${_interfaces_prefix}/lib"
+    APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 TIMEOUT 200)
 endif()
 ament_package()

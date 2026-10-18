@@ -84,7 +84,7 @@ Pose convert(const urdf::Pose &p) {
                         Eigen::Quaterniond(p.rotation.w, p.rotation.x, p.rotation.y, p.rotation.z));
 }
 std::shared_ptr<Shape> geometry(const urdf::GeometrySharedPtr &g, const std::filesystem::path &base,
-                                Json &report, const std::shared_ptr<LoadControl> &control) {
+                                Json &report, const std::shared_ptr<LoadControl> &control, bool collision_role) {
   require(bool(g), "missing geometry");
   if (g->type == urdf::Geometry::BOX) {
     auto b = std::dynamic_pointer_cast<urdf::Box>(g);
@@ -100,7 +100,7 @@ std::shared_ptr<Shape> geometry(const urdf::GeometrySharedPtr &g, const std::fil
   auto m = std::dynamic_pointer_cast<urdf::Mesh>(g);
   auto path = resolveResource(m->filename, base);
   Vec3 scale(m->scale.x, m->scale.y, m->scale.z);
-  auto s = Shape::mesh(path, scale, control);
+  auto s = Shape::mesh(path, scale, control, collision_role);
   report["resources"][path.string()] = {
       {"sha256", sha256(path)},
       {"scale", {scale.x(), scale.y(), scale.z()}},
@@ -185,16 +185,17 @@ Model Model::load(const std::filesystem::path &file, const ModelOptions &options
     try {
       std::vector<Geometry> visual, collision;
       for (auto &v : link->visual_array)
-        visual.push_back({"robot", name, geometry(v->geometry, file.parent_path(), result.report, control),
+        visual.push_back({"robot", name, geometry(v->geometry, file.parent_path(), result.report, control, false),
                           convert(v->origin)});
       for (auto &c : link->collision_array)
         collision.push_back({"robot", name,
-                             geometry(c->geometry, file.parent_path(), result.report, control),
+                             geometry(c->geometry, file.parent_path(), result.report, control, true),
                              convert(c->origin)});
-      if (collision.empty() && !visual.empty()) {
+      if (collision.empty() && !visual.empty() && !options.allow_visual_only) {
         require(options.visual_collision_fallback,
                 "missing collision; explicit visual fallback required");
         collision = visual;
+        for (auto &g : collision) g.shape->ensureCollision();
         result.report["collision_fallback"].push_back(
             {{"link", name}, {"note", "visual tessellation can increase collision cost"}});
       }

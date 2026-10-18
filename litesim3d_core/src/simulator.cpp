@@ -45,6 +45,7 @@ Simulator::Simulator(Config config, Model model, Scene scene)
     : config_(std::move(config)), model_(std::move(model)), scene_(std::move(scene)),
       origin_(config_.initial_pose) {
   config_.validate();
+  validateCollisionBudget(config_, model_, scene_);
   // Shape resources are immutable and shared. Contact-stop state belongs to this run.
   std::map<const Motion *, std::shared_ptr<Motion>> motions;
   for (auto *role : {&scene_.visual, &scene_.collision, &scene_.sensor})
@@ -59,6 +60,8 @@ Simulator::Simulator(Config config, Model model, Scene scene)
   current_.joints = model_.positions(config_.initial_joints);
   for (const auto &imu : config_.imus)
     require(model_.links.count(imu.link), "imu binding: unknown link " + imu.link);
+  for (const auto &camera : config_.cameras)
+    require(model_.links.count(camera.link), "camera binding: unknown optical link " + camera.link);
   for (auto &l : config_.lidars) {
     require(model_.links.count(l.link), "lidar binding: unknown link " + l.link);
     for (auto &link : l.excluded_links)
@@ -129,6 +132,7 @@ Simulator::Simulator(Config config, Model model, Scene scene)
   current_.odom_root = transforms.at(config_.base_link).inverse();
   lidar_indices_.assign(config_.lidars.size(), 1);
   imu_indices_.assign(config_.imus.size(), 1);
+  camera_indices_.assign(config_.cameras.size(), 1);
   history_.push_back({1, current_.world_base});
   scene_.rebuild();
   static std::atomic<uint64_t> serial{0};
@@ -365,6 +369,9 @@ uint64_t Simulator::nextEvent(uint64_t end) const {
     next = std::min(next, eventTime(lidar_indices_[i], config_.lidars[i].rate));
   for (size_t i = 0; i < imu_indices_.size(); ++i)
     next = std::min(next, eventTime(imu_indices_[i], config_.imus[i].rate));
+  for (size_t i = 0; i < camera_indices_.size(); ++i)
+    if (config_.cameras[i].enabled)
+      next = std::min(next, eventTime(camera_indices_[i], config_.cameras[i].rate));
   // Commands are accepted only at physical-step boundaries, so every possible
   // timeout has this phase. Keep it even without a live command: a peer's
   // command must not repartition this robot's integration/noise stream.
@@ -475,13 +482,18 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
           streamSeed(config_.seed, config_.robot_id), imu_indices_[i] - 1));
       ++imu_indices_[i];
     }
+  for (size_t i = 0; i < camera_indices_.size(); ++i)
+    if (config_.cameras[i].enabled && next == eventTime(camera_indices_[i], config_.cameras[i].rate)) {
+      event.cameras.push_back(i);
+      ++camera_indices_[i];
+    }
   uint64_t oldest = next;
   for (size_t i = 0; i < lidar_indices_.size(); ++i)
     if (config_.lidars[i].scan_mode == "rolling")
       oldest = std::min(oldest, eventTime(lidar_indices_[i] - 1, config_.lidars[i].rate));
   if (peer_history_ns_) oldest = std::min(oldest, next > peer_history_ns_ ? next - peer_history_ns_ : 1);
   while (history_.size() > 2 && history_[1].stamp <= oldest) history_.pop_front();
-  if (event.odom || !event.clouds.empty() || !event.imus.empty())
+  if (event.odom || !event.clouds.empty() || !event.imus.empty() || !event.cameras.empty())
     return event;
   return std::nullopt;
 }

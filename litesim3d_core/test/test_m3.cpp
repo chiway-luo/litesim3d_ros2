@@ -408,6 +408,8 @@ TEST(EXT03M3, WorldBudgetsTerminalStateAndMotionSharing) {
   auto model = Model::load(c.urdf);
   while (model.collision.size() < 257)
     model.collision.push_back(model.collision[0]);
+  EXPECT_NO_THROW(World(c, model, {}, {{"r0", pose()}}));
+  c.collision_budget_enabled = true;
   EXPECT_THROW(World(c, model, {}, {{"r0", pose()}}), std::runtime_error);
   c = config3();
   c.imus.push_back(ImuConfig{});

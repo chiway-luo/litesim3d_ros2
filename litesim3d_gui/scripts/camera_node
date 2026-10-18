@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+viewer_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# Ogre discovers backend paths during library initialization, before main().
+# Set this before exec so a viewer reopened outside launch also uses Metal.
+if [ -f "$viewer_dir/ogre2/RenderSystem_Metal.dylib" ]; then
+  export OGRE2_RESOURCE_PATH="$viewer_dir/ogre2"
+fi
+exec "$viewer_dir/camera_node_native" "$@"

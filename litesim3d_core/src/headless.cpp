@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <algorithm>
 
 int main(int argc, char **argv) {
   try {
@@ -12,6 +13,9 @@ int main(int argc, char **argv) {
     litesim3d::require(count > 0 && count <= 10000000, "steps must be in 1..10000000");
     litesim3d::Scene scene;
     auto config = litesim3d::Config::load(argv[1], scene);
+    litesim3d::require(std::none_of(config.cameras.begin(), config.cameras.end(),
+        [](const auto &camera) { return camera.enabled; }),
+        "sim_headless has no renderer; disable cameras or use the SDF ROS launch with gui:=false");
     auto model = litesim3d::Model::load(config.urdf, config.model_options);
     litesim3d::Simulator sim(config, model, scene);
     sim.pause(false);

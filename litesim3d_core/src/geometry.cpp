@@ -1,6 +1,7 @@
 #include "litesim3d/sim.hpp"
 #include <algorithm>
 #include <assimp/Importer.hpp>
+#include <assimp/config.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <cmath>
@@ -151,23 +152,28 @@ void LoadControl::checkpoint(size_t additional_bytes, size_t additional_triangle
   ++checkpoints; bytes += additional_bytes; triangles += additional_triangles;
 }
 std::shared_ptr<Shape> Shape::mesh(const std::filesystem::path &path, const Vec3 &scale,
-                                  const std::shared_ptr<LoadControl> &provided) {
+                                  const std::shared_ptr<LoadControl> &provided, bool build_collision) {
   require(scale.allFinite() && scale.minCoeff() > 0,
           path.string() + ": mesh scale must be positive and finite");
   auto ext = path.extension().string();
   std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
   require(ext == ".stl" || ext == ".obj" || ext == ".dae",
           path.string() + ": supported mesh formats: STL OBJ DAE");
-  require(std::filesystem::is_regular_file(path) &&
-              std::filesystem::file_size(path) <= 64 * 1024 * 1024,
-          path.string() + ": missing mesh or resource exceeds 64 MiB");
+  require(std::filesystem::is_regular_file(path), path.string() + ": missing mesh");
   auto control = provided ? provided : std::make_shared<LoadControl>();
   control->checkpoint();
   std::ostringstream cache;
   cache << std::filesystem::canonical(path).string() << std::setprecision(17)
         << ':' << scale.x() << ':' << scale.y() << ':' << scale.z();
   const std::string cache_key = cache.str();
-  if (auto cached = control->meshes[cache_key].lock()) return cached;
+  if (auto cached = control->meshes[cache_key].lock()) {
+    if (build_collision) {
+      require(!control->collision_budget_enabled || cached->triangles.size() <= 10000,
+              path.string() + ": collision budget: mesh exceeds 10000 triangles");
+      cached->ensureCollision();
+    }
+    return cached;
+  }
   control->checkpoint(std::filesystem::file_size(path));
   // For binary STL the declared face count can be checked before the importer allocates vertices.
   if (ext == ".stl") {
@@ -183,6 +189,9 @@ std::shared_ptr<Shape> Shape::mesh(const std::filesystem::path &path, const Vec3
     }
   }
   Assimp::Importer importer;
+  // ROS / SDF meshes use their authored Z-up coordinates, as Gazebo Rendering
+  // does. Assimp's default COLLADA conversion rotates Z-up into Y-up.
+  importer.SetPropertyBool(AI_CONFIG_IMPORT_COLLADA_IGNORE_UP_DIRECTION, true);
   const aiScene *input =
       importer.ReadFile(path.string(), aiProcess_Triangulate | aiProcess_PreTransformVertices |
                                            aiProcess_ValidateDataStructure);
@@ -192,12 +201,11 @@ std::shared_ptr<Shape> Shape::mesh(const std::filesystem::path &path, const Vec3
   s->kind = Kind::Mesh;
   s->resource = path.string();
   std::vector<Bounds> boxes;
-  auto collision = std::make_shared<fcl::BVHModel<fcl::OBBRSSd>>();
-  collision->beginModel();
+
   for (unsigned m = 0; m < input->mNumMeshes; ++m) {
     const auto *mesh = input->mMeshes[m];
-    require(mesh->mNumFaces <= 1000000 && s->triangles.size() + mesh->mNumFaces <= 1000000,
-            path.string() + ": triangle budget exceeded");
+    require(!build_collision || !control->collision_budget_enabled || s->triangles.size() + mesh->mNumFaces <= 10000,
+            path.string() + ": collision budget: mesh exceeds 10000 triangles");
     control->checkpoint(size_t(mesh->mNumFaces) * (sizeof(Triangle) + sizeof(Bounds)), mesh->mNumFaces);
     s->triangles.reserve(s->triangles.size() + mesh->mNumFaces);
     boxes.reserve(boxes.size() + mesh->mNumFaces);
@@ -220,16 +228,24 @@ std::shared_ptr<Shape> Shape::mesh(const std::filesystem::path &path, const Vec3
         b.add(p);
       boxes.push_back(b);
       s->bounds.add(b);
-      collision->addTriangle(v[0], v[1], v[2]);
+
     }
   }
   require(!s->triangles.empty(), path.string() + ": empty mesh");
   control->checkpoint();
-  collision->endModel();
-  s->collision = collision;
+  if (build_collision) s->ensureCollision();
   s->bvh.build(boxes);
   control->meshes[cache_key] = s;
   return s;
+}
+void Shape::ensureCollision() {
+  if (collision) return;
+  require(kind == Kind::Mesh && !triangles.empty(), "cannot build collision from empty shape");
+  auto model = std::make_shared<fcl::BVHModel<fcl::OBBRSSd>>();
+  model->beginModel();
+  for (const auto &t : triangles) model->addTriangle(t.a, t.b, t.c);
+  model->endModel();
+  collision = std::move(model);
 }
 double Shape::ray(const Vec3 &o, const Vec3 &d, double limit) const {
   double hit = INFINITY;

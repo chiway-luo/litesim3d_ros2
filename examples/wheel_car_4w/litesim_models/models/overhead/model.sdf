@@ -1,0 +1,25 @@
+<sdf version="1.9">
+  <model name="overhead">
+    <static>true</static>
+    <link name="body">
+      <visual name="visual">
+        <geometry>
+          <box>
+            <size>1.2 2.0 0.15</size>
+          </box>
+        </geometry>
+        <material>
+          <diffuse>.73 .76 .81 1</diffuse>
+          <ambient>.73 .76 .81 1</ambient>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>1.2 2.0 0.15</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

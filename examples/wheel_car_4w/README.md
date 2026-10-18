@@ -1,12 +1,13 @@
 # wheel_car_4w：四轮小车完整仿真示例
 
-本示例在一个 launch 中启动 **四轮小车模型、三维雷达、IMU、里程计、场景、ROS 2 接口和 RViz**。首次使用先按仓库 [README](../../README.md) 安装依赖并构建。
+本示例在一个 launch 中启动 **四轮小车模型、三维雷达、IMU、里程计、场景、ROS 2 接口和独立三维查看窗口**。首次使用先按仓库 [README](../../README.md) 安装依赖并构建。
 
 ## 1. 目录与职责
 
 ```text
 examples/wheel_car_4w/
 ├── README.md
+├── litesim_models/                    # SDF 世界、模型、网格和贴图资源包
 ├── wheel_car_4w_description/          # 独立模型包
 │   ├── package.xml
 │   ├── CMakeLists.txt
@@ -15,7 +16,8 @@ examples/wheel_car_4w/
     ├── package.xml
     ├── CMakeLists.txt
     ├── config/
-    │   ├── simulation.yaml           # 物理、底盘、传感器、地形、场景，完整中文注释
+    │   ├── runtime.yaml              # SDF 模式底盘、传感器及地形绑定
+    │   ├── simulation.yaml           # 保留旧 URDF/YAML 回归入口
     │   ├── ros.yaml                  # 控制类型、QoS、TF、暂停、RSP 等 ROS 参数
     │   └── lidars/                   # vlp16、mid360、mid40，带厂家来源与建模说明
     ├── launch/wheel_car_4w.launch.py  # 唯一启动入口
@@ -23,7 +25,7 @@ examples/wheel_car_4w/
     └── test/test_wheel_car_4w.py      # 安装态核心/ROS/启动故障与可选 GUI 测试
 ```
 
-仿真包复用 `litesim3d_core`、`litesim3d_ros2` 和 `litesim3d_interfaces`。description 包只提供模型；两个示例包都经 ament 安装，运行时使用 package 资源索引，启动终端不必处于源码目录。
+仿真包复用 `litesim3d_core`、`litesim3d_ros2` 和 `litesim3d_interfaces`。litesim_models 提供默认 SDF 资源，description 保留旧 URDF；三个示例包都经 ament 安装，运行时使用 package 资源索引，启动终端不必处于源码目录。
 
 ## 2. 构建后，一条 launch 启动
 
@@ -40,17 +42,25 @@ mkdir -p "$ROS_LOG_DIR"
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```
 
-默认同时启动 RSP、仿真和 RViz，**不需要再手工启动模型发布器或单独的传感器节点**。默认 16 线×512 列、10 Hz rolling 激光、1 cm测距标准差，200 Hz raw IMU，50 Hz odom，5 ms 积分步长。机械多线、球面带非重复扫描和圆形花瓣扫描的切换及真实规格参考，见 [雷达配置说明](雷达配置说明.md)。
+默认同时启动 RSP、仿真和独立三维查看器，**不需要再手工启动模型发布器或单独的传感器节点**。默认 16 线×512 列、10 Hz rolling 激光、1 cm测距标准差，200 Hz raw IMU，50 Hz odom，5 ms 积分步长。机械多线、球面带非重复扫描和圆形花瓣扫描的切换及真实规格参考，见 [雷达配置说明](雷达配置说明.md)。
 
-桌面不可用或只测算法时关闭 RViz：
+桌面不可用或只测算法时关闭查看器：
 
 ```bash
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py rviz:=false
+ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false
 ```
 
 默认场景有地面、两面墙、箱体、立柱和悬空障碍。小车车头的红色标记朝 +x；轮毂色条便于观察四轮转动。按完整 launch 所在终端的 Ctrl+C 退出；RSP/仿真子进程意外退出会使 launch 清理其他进程并以非零状态结束。
 
-RViz 默认选中 **Move Camera**，采用 Orbit 视图。在三维画面中左键按住拖动可旋转，Shift+左键拖动可平移，滚轮可缩放。使用触控板时，旋转需要按住并拖动，双指滚动用于缩放。切换其他工具后，可点击工具栏的 Move Camera 或按 `m` 返回相机工具；Views 面板可手动调整距离、俯仰和朝向。
+独立窗口只允许左键旋转、中键或右键平移、滚轮缩放；无模型选择和仿真控制入口。底部自动显示实际 RTF、目标倍率、FPS 和碰撞预算状态。关闭窗口后仿真继续，可用 `ros2 run litesim3d_gui viewer` 重连。需要点云/TF 图层时显式加 `rviz:=true`。
+
+车载相机已支持 `rgb`、`depth`、`rgbd`，在 runtime 的 `cameras` 中设置分辨率、帧率、视场角和近远裁剪面。示例相机默认关闭，类型默认 `rgb`；用 `cameras:=true` 开启 640×480 / 15 Hz 普通彩色相机，通过 ROS 2 话题输出，不弹出摄像头窗口：
+
+```bash
+ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py cameras:=true
+```
+
+普通相机只输出 `/camera/front/color/image_raw` 及对应 `camera_info`，不创建深度渲染目标或深度话题。需要彩色加深度时显式设置 `type: rgbd`，额外输出 `/camera/front/depth/image_raw` 及对应 `camera_info`；`type: depth` 则仅输出深度。深度是 `32FC1` 米制光轴距离，RGB-D 两通道同帧对齐。图像预览默认关闭；仅手动加 `camera_view:=true` 时打开。`gui:=false` 关闭三维窗口，不停止相机渲染和话题发布。参数当前启动时生效，修改后重新启动。具体字段、光学坐标与平台限制见 [相机使用说明](../../docs/usage/SDF与独立窗口.md#车载-rgb-与深度相机)。
 
 同一个 domain 只运行一个仿真时钟；开始本例前关闭此前启动的单机/world 仿真。
 
@@ -131,38 +141,40 @@ odom -> base_footprint -> base_link -> 四个 wheel_link
 
 `odom -> base_footprint` 由仿真发布；其余边由 RSP 发布。不能同时再发 `odom -> base_link`，否则会让 base_link 出现两个父节点。IMU 静止、水平时 z 比力约为 +9.80665 m/s²，不是零；orientation_covariance[0]=-1。
 
-URDF 四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。修改轮径、轮距时同时修改 URDF 和 `simulation.yaml/robot.drive`，否则加载会拒绝。
+SDF 四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。修改轮径、轮距时同时修改 `litesim_models/models/wheel_car_4w/model.sdf` 和 `runtime.yaml/robot.drive`，否则加载会拒绝。
 
 ## 5. 修改参数
 
-两个文件中已经列出本例使用的完整字段、单位、范围和修改说明：
+默认 SDF 模式使用以下文件：
 
-- [simulation.yaml](wheel_car_4w_sim/config/simulation.yaml)：模型路径、初值、底盘、限速、加减速、时间、随机种子、雷达、IMU、odom、地形、场景。
-- [ros.yaml](wheel_car_4w_sim/config/ros.yaml)：use_sim_time、命令类型、QoS、TF 责任、RSP 等待、暂停、manifest、RSP 发布频率。
+- [warehouse.sdf](litesim_models/worlds/warehouse.sdf)：场景模型、初始位姿、灯光、步长和默认目标速率。
+- [model.sdf](litesim_models/models/wheel_car_4w/model.sdf)：四轮车 link/joint、visual/collision 和材质。
+- [runtime.yaml](wheel_car_4w_sim/config/runtime.yaml)：底盘、传感器、噪声和地形支持绑定。
+- [ros.yaml](wheel_car_4w_sim/config/ros.yaml)：命令类型、QoS、TF、暂停和 RSP 参数。
 
-launch 默认读取**安装目录中的副本**。修改源码配置后可以重新构建，也可以在启动时直接指定源码参数文件，省去配置修改后的构建步骤：
+修改已安装资源的源码后重新构建；或指定自己的资源根及 runtime。资源职责、贴图兼容矩阵和碰撞预算见 [SDF 与独立窗口](../../docs/usage/SDF与独立窗口.md)。
 
 ```bash
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
-  config:="$PWD/examples/wheel_car_4w/wheel_car_4w_sim/config/simulation.yaml" \
-  params:="$PWD/examples/wheel_car_4w/wheel_car_4w_sim/config/ros.yaml"
+  assets_root:="$PWD/examples/wheel_car_4w/litesim_models" \
+  runtime:="$PWD/examples/wheel_car_4w/wheel_car_4w_sim/config/runtime.yaml"
 ```
 
-URDF 默认仍通过 package URI 读取安装副本；修改 URDF 后重新构建，或在自定义 simulation.yaml 中将 robot.urdf 显式改为所需文件的绝对路径。参数都在启动时读取，修改后重启 launch；当前不支持热加载。
+旧 `simulation.yaml` 和 URDF 保留用于回归，显式 `config:=路径` 才启用旧入口。参数在启动时读取，无热加载。
 
 | 想改什么 | 改哪个字段 |
 | --- | --- |
 | 最大速度/转速 | robot.drive.max_v / max_w |
 | 加速和停车快慢 | acceleration / deceleration / angular_acceleration |
-| 初始位置/航向 | robot.initial_pose.xyz / rpy，rpy 单位弧度 |
+| 初始位置/航向 | world SDF 中对应 include/model 的 pose，单位米/弧度 |
 | 雷达频率/点数 | lidars[0].rate_hz / columns / vertical_angles_deg，rings 同步调整 |
-| 雷达安装位置 | URDF lidar_mount_joint / lidar_joint |
+| 雷达安装位置 | SDF lidar link/joint 的 pose |
 | 测距误差 | range_bias_m / range_sigma_m / dropout |
 | 最大量程边界显示 | publish_range_boundary；默认开启，距离由max_range_m决定；辅助点与实际回波分话题 |
 | IMU 误差 | accel_bias / gyro_bias / accel_sigma / gyro_sigma |
 | 非理想里程计 | odom.mode=noisy，再设置 scale/bias/sigma；不改变真实运动 |
-| 场景障碍 | entities；尺寸和 pose 按米/弧度 |
-| 动态障碍 | simulation.yaml 末尾已有可取消注释的完整 motion 示例 |
+| 场景障碍 | SDF include/model；尺寸和 pose 按米/弧度 |
+| 动态障碍 | 目前使用旧 YAML 入口的 motion；新 SDF 入口仅支持静态环境 |
 | 算法要求 reliable | ros.yaml 中 sensor_reliable=true |
 | 算法发 TwistStamped | cmd_mode=stamped；时间戳用当前 /clock、frame=base_link |
 | 外部估计器接管 odom TF | publish_odom_tf=false、external_odom_tf=true；输出到 URDF root |
@@ -182,10 +194,15 @@ python3 docs/examples/ros_client.py --stamped --drive --duration 5
 
 | 参数 | 默认与用途 |
 | --- | --- |
-| config | 安装的 config/simulation.yaml |
+| assets_root / world | litesim_models share / warehouse.sdf |
+| runtime | 安装的 config/runtime.yaml |
+| gui | true；仅查看三维场景，false 无窗口 |
+| collision_budget_enabled | false；仅关闭预算，保留碰撞检测 |
+| real_time_factor | 空使用 SDF；0 不限速 |
+| config | 空；显式传入旧 simulation.yaml 切换到旧入口 |
 | params | 安装的 config/ros.yaml |
 | lidar_profile | config；也可选 vlp16、mid360、mid40 或自定义预设YAML绝对路径，启动时生效 |
-| rviz | true；false 时只运行 RSP/仿真 |
+| rviz | false；true 另开算法图层查看器 |
 | rviz_config | 安装的 rviz/wheel_car_4w.rviz；可提供自己的显示配置 |
 | paused | 空表示遵循 ros.yaml；true/false 显式覆盖 start_paused |
 | manifest | 空表示遵循 ros.yaml；非空覆盖为该运行清单文件，父目录须存在 |

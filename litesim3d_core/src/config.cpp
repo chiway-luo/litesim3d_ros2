@@ -1,6 +1,7 @@
 #include "litesim3d/sim.hpp"
 #include <Eigen/Eigenvalues>
 #include <yaml-cpp/yaml.h>
+#include <regex>
 
 namespace litesim3d {
 namespace {
@@ -36,7 +37,7 @@ Pose position(const YAML::Node &n) {
   return pose(vector(n["xyz"]), vector(n["rpy"]));
 }
 std::shared_ptr<Shape> shape(const YAML::Node &n, const std::filesystem::path &base,
-                             Json &resources, const std::shared_ptr<LoadControl> &control) {
+                             Json &resources, const std::shared_ptr<LoadControl> &control, bool collision_role) {
   keys(n, {"type", "size", "radius", "length", "uri", "scale"}, "geometry");
   const auto type = n["type"].as<std::string>();
   if (type == "box")
@@ -48,7 +49,7 @@ std::shared_ptr<Shape> shape(const YAML::Node &n, const std::filesystem::path &b
   require(type == "mesh", "unknown shape type: " + type);
   auto path = resolveResource(n["uri"].as<std::string>(), base);
   resources[path.string()] = sha256(path);
-  return Shape::mesh(path, vector(n["scale"], Vec3::Ones()), control);
+  return Shape::mesh(path, vector(n["scale"], Vec3::Ones()), control, collision_role);
 }
 void covariance(const YAML::Node &n, std::array<double, 36> &out) {
   if (!n)
@@ -66,6 +67,25 @@ void validateCovariance(const std::array<double, 36> &values) {
           "covariance must be positive semidefinite");
 }
 } // namespace
+void CameraConfig::validate() const {
+  static const std::regex identifier("[A-Za-z][A-Za-z0-9_]*");
+  static const std::regex relative_topic("[A-Za-z_][A-Za-z0-9_]*(/[A-Za-z_][A-Za-z0-9_]*)*");
+  require(std::regex_match(name, identifier) && !link.empty() && std::regex_match(topic, relative_topic),
+          "camera: invalid name/link/relative topic");
+  require(type == "rgb" || type == "depth" || type == "rgbd", "camera type must be rgb, depth or rgbd");
+  require(width >= 16 && height >= 16 && width <= 4096 && height <= 4096 &&
+          uint64_t(width) * height <= 8294400, "camera resolution exceeds 16..4096 / 8.29 MP limit");
+  require(std::isfinite(rate) && rate > 0 && rate <= 240, "camera rate_hz must be in (0,240]");
+  require(std::isfinite(horizontal_fov) && horizontal_fov > 0 && horizontal_fov < pi,
+          "camera horizontal_fov_deg must be in (0,180)");
+  require(std::isfinite(near_clip) && std::isfinite(far_clip) && near_clip > 0 && far_clip > near_clip,
+          "camera requires 0 < near_clip_m < far_clip_m");
+}
+Json CameraConfig::json() const {
+  return {{"name",name},{"link",link},{"topic",topic},{"type",type},{"enabled",enabled},
+          {"width",width},{"height",height},{"rate_hz",rate},
+          {"horizontal_fov_deg",horizontal_fov*180/pi},{"near_clip_m",near_clip},{"far_clip_m",far_clip}};
+}
 void Drive::validate() const {
   require(model == "differential_drive" || model == "ackermann", "unsupported motion_model");
   require(std::isfinite(wheelbase) && wheelbase > 0 && std::isfinite(max_steering) &&
@@ -119,6 +139,18 @@ void Config::validate() const {
     schedule_rate += i.rate;
   }
   for (const auto &l : lidars) schedule_rate += l.rate;
+  require(cameras.size() <= 8, "at most 8 cameras are supported");
+  uint64_t camera_pixels = 0;
+  for (const auto &c : cameras) {
+    c.validate();
+    require(names.insert(c.name).second, "duplicate sensor name");
+    for (const auto &channel : {std::string("color"), std::string("depth")})
+      if ((channel == "color" && c.color()) || (channel == "depth" && c.depth()))
+        for (const auto &suffix : {"/image_raw", "/camera_info"})
+          require(topics.insert(c.topic + "/" + channel + suffix).second, "duplicate camera output topic");
+    if (c.enabled) { schedule_rate += c.rate; camera_pixels += uint64_t(c.width) * c.height; }
+  }
+  require(camera_pixels <= 16588800, "aggregate camera pixel allocation exceeds 16.59 MP");
   for (const auto &l : lidars) if (l.scan_mode == "rolling")
     require(std::ceil(schedule_rate / l.rate) + 4 <= history_limit,
             "rolling scan exceeds trajectory history budget");
@@ -131,7 +163,7 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
     control->checkpoint(std::filesystem::file_size(file));
     const auto text = readText(file);
     const auto n = YAML::Load(text);
-    keys(n, {"schema_version", "units", "simulation", "robot", "lidars", "entities", "odom", "terrain", "imus"},
+    keys(n, {"schema_version", "units", "simulation", "robot", "lidars", "entities", "odom", "terrain", "imus", "cameras", "scene_format"},
          "config");
     require(n["schema_version"].as<int>() == 1, "unsupported schema_version");
     require(n["units"].as<std::string>() == "m_rad_s", "units must be m_rad_s");
@@ -142,8 +174,10 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
     cfg.resources = Json::object();
     cfg.resources[std::filesystem::absolute(file).string()] = sha256(file);
     if (auto s = n["simulation"]) {
-      keys(s, {"step_size", "seed", "odom_rate", "command_timeout", "real_time_factor", "threads", "history_limit", "journal_limit"},
+      keys(s, {"step_size", "seed", "odom_rate", "command_timeout", "real_time_factor", "threads", "history_limit", "journal_limit", "collision_budget_enabled"},
            "simulation");
+      cfg.collision_budget_enabled = get(s, "collision_budget_enabled", false);
+      control->collision_budget_enabled = cfg.collision_budget_enabled;
       double dt = get(s, "step_size", 0.005);
       require(std::isfinite(dt) && dt >= 1e-9 && dt <= 0.1, "invalid step_size");
       cfg.step_ns = std::llround(dt * 1e9);
@@ -174,16 +208,32 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
         cfg.imus.push_back(c);
       }
     }
+    if (auto cameras = n["cameras"]) {
+      require(cameras.IsSequence() && cameras.size() <= 8, "cameras: require sequence of at most 8 cameras");
+      for (const auto &entry : cameras) {
+        keys(entry, {"name","link","topic","type","enabled","width","height","rate_hz",
+                     "horizontal_fov_deg","near_clip_m","far_clip_m"}, "camera");
+        CameraConfig c;
+        c.name = entry["name"].as<std::string>(); c.link = entry["link"].as<std::string>();
+        c.topic = entry["topic"].as<std::string>(); c.type = get<std::string>(entry,"type",c.type);
+        c.enabled = get(entry,"enabled",true); c.width = get<unsigned>(entry,"width",640);
+        c.height = get<unsigned>(entry,"height",480); c.rate = get(entry,"rate_hz",15.0);
+        c.horizontal_fov = get(entry,"horizontal_fov_deg",70.0) * pi / 180;
+        c.near_clip = get(entry,"near_clip_m",.1); c.far_clip = get(entry,"far_clip_m",20.0);
+        cfg.cameras.push_back(c);
+      }
+    }
     const auto r = n["robot"];
     keys(r,
          {"id", "urdf", "base_link", "initial_pose", "initial_joints", "drive",
-          "visual_collision_fallback", "sensor_geometry", "sensor_overrides", "motion_model"},
+          "visual_collision_fallback", "sensor_geometry", "sensor_overrides", "motion_model", "allow_visual_only"},
          "robot");
     cfg.robot_id = get<std::string>(r, "id", "robot_0");
     cfg.base_link = get<std::string>(r, "base_link", "base_link");
     cfg.drive.model = get<std::string>(r, "motion_model", "differential_drive");
     cfg.urdf = resolveResource(r["urdf"].as<std::string>(), base);
     cfg.initial_pose = position(r["initial_pose"]);
+    cfg.model_options.allow_visual_only = get(r, "allow_visual_only", false);
     cfg.model_options.visual_collision_fallback = get(r, "visual_collision_fallback", false);
     cfg.model_options.sensor_geometry = get<std::string>(r, "sensor_geometry", "visual");
     if (auto o = r["sensor_overrides"])
@@ -282,9 +332,10 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
           c.excluded_links.insert(v.as<std::string>());
       cfg.lidars.push_back(c);
     }
+    const auto format = get<std::string>(n, "scene_format", "legacy");
+    require(format == "legacy" || format == "role_entries", "invalid scene_format");
     const auto entities = n["entities"];
-    require(entities.IsSequence() && entities.size() <= 10000,
-            "entities must be a bounded sequence");
+    require(entities.IsSequence(), "entities must be a sequence");
     std::set<std::string> ids;
     size_t moving_entities = 0;
     for (auto e : entities) {
@@ -302,7 +353,8 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
       const bool support = get(e, "support", false);
       std::shared_ptr<Motion> motion;
       if (auto m = e["motion"]) {
-        require(++moving_entities <= 128, "dynamic entity budget exceeded");
+        ++moving_entities;
+        require(!cfg.collision_budget_enabled || moving_entities <= 128, "collision budget: dynamic entity count exceeded");
         keys(m, {"linear_velocity", "yaw_rate"}, "entity.motion");
         require(!support, "dynamic support surfaces are not supported");
         motion = std::make_shared<Motion>(); motion->initial = p;
@@ -312,22 +364,25 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
                 std::isfinite(motion->yaw_rate) && std::abs(motion->yaw_rate) <= 100,
                 "invalid dynamic entity velocity");
       }
-      auto add = [&](const YAML::Node &item, std::vector<Geometry> &dest) {
+      auto add = [&](const YAML::Node &item, std::vector<Geometry> &dest, bool collision_role) {
+        if (!item && format == "role_entries") return;
         require(bool(item), id + ": required geometry missing");
-        dest.push_back({id, "", shape(item, base, cfg.resources, control), motion ? Pose::Identity() : p, reflectivity, support});
+        dest.push_back({id, "", shape(item, base, cfg.resources, control, collision_role), motion ? Pose::Identity() : p, reflectivity, support});
         dest.back().motion = motion;
       };
       if (e["geometry"]) {
         require(!e["visual"] && !e["collision"] && !e["sensor_geometry"],
                 id + ": geometry shorthand cannot mix with separate roles");
-        add(e["geometry"], scene.visual);
+        add(e["geometry"], scene.visual, true);
         scene.collision.push_back(scene.visual.back());
         scene.sensor.push_back(scene.visual.back());
       } else {
-        add(e["visual"], scene.visual);
-        add(e["collision"], scene.collision);
-        add(e["sensor_geometry"], scene.sensor);
+        require(e["visual"] || e["collision"] || e["sensor_geometry"], id + ": empty geometry entry");
+        add(e["visual"], scene.visual, false);
+        add(e["collision"], scene.collision, true);
+        add(e["sensor_geometry"], scene.sensor, false);
       }
+      require(!support || e["collision"] || e["geometry"], id + ": support requires collision geometry");
       if (support && !cfg.terrain.enabled) {
         const auto &g = scene.collision.back();
         require(g.shape->kind == Shape::Kind::Box &&
@@ -356,6 +411,7 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
                     {"odom_rate", cfg.odom_rate},
                     {"command_timeout", cfg.timeout},
                     {"real_time_factor", cfg.real_time_factor},
+                    {"collision_budget_enabled", cfg.collision_budget_enabled},
                     {"point_layout", "xyzirt_v1"},
                     {"scan_mode", "per_sensor"},
                     {"odom_mode", cfg.odom_error.enabled ? "noisy" : "ideal"}};

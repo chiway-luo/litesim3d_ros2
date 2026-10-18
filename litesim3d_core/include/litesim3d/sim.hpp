@@ -32,7 +32,8 @@ std::filesystem::path resolveResource(const std::string &uri, const std::filesys
 uint64_t streamSeed(uint64_t seed, const std::string &key);
 struct Shape;
 struct LoadControl {
-  size_t byte_budget = 256 * 1024 * 1024, triangle_budget = 1000000;
+  size_t byte_budget = SIZE_MAX, triangle_budget = SIZE_MAX;
+  bool collision_budget_enabled = false;
   size_t bytes = 0, triangles = 0, checkpoints = 0;
   std::optional<size_t> fail_allocation_after;
   std::function<bool()> cancelled;
@@ -78,7 +79,8 @@ struct Shape {
   static std::shared_ptr<Shape> sphere(double radius);
   static std::shared_ptr<Shape> cylinder(double radius, double length);
   static std::shared_ptr<Shape> mesh(const std::filesystem::path &path, const Vec3 &scale,
-                                    const std::shared_ptr<LoadControl> &control = {});
+                                    const std::shared_ptr<LoadControl> &control = {}, bool build_collision = true);
+  void ensureCollision();
   double ray(const Vec3 &origin, const Vec3 &direction, double limit) const;
 };
 struct Motion {
@@ -130,7 +132,7 @@ struct Joint {
   double multiplier = 1, offset = 0;
 };
 struct ModelOptions {
-  bool visual_collision_fallback = false;
+  bool visual_collision_fallback = false, allow_visual_only = false;
   std::string sensor_geometry = "visual";
   std::map<std::string, std::string> sensor_overrides;
   std::shared_ptr<LoadControl> load_control;
@@ -218,6 +220,18 @@ struct ImuConfig {
   Vec3 accel_sigma = Vec3::Zero(), gyro_sigma = Vec3::Zero();
   void validate() const;
 };
+// Pinhole sensor bound to a ROS optical link: +z forward, +x right, +y down.
+struct CameraConfig {
+  std::string name = "front_camera", link = "camera_optical_frame", topic = "camera/front";
+  std::string type = "rgb";
+  bool enabled = true;
+  unsigned width = 640, height = 480;
+  double rate = 15, horizontal_fov = 70 * pi / 180, near_clip = .1, far_clip = 20;
+  bool color() const { return type == "rgb" || type == "rgbd"; }
+  bool depth() const { return type == "depth" || type == "rgbd"; }
+  void validate() const;
+  Json json() const;
+};
 struct Kinematics {
   Pose world_body = Pose::Identity();
   Vec3 acceleration = Vec3::Zero(), omega = Vec3::Zero(), alpha = Vec3::Zero(); // world frame
@@ -250,6 +264,7 @@ struct Drive {
 Pose integrate(const Pose &initial, double v, double w, double dt);
 struct Config {
   uint64_t step_ns = 5000000, seed = 42;
+  bool collision_budget_enabled = false;
   double odom_rate = 50, timeout = 0.5, real_time_factor = 1;
   std::string robot_id = "robot_0", base_link = "base_link";
   Pose initial_pose = Pose::Identity();
@@ -261,6 +276,7 @@ struct Config {
   std::map<std::string, double> initial_joints;
   std::vector<LidarConfig> lidars;
   std::vector<ImuConfig> imus;
+  std::vector<CameraConfig> cameras;
   std::array<double, 36> pose_covariance{}, twist_covariance{};
   std::filesystem::path urdf;
   ModelOptions model_options;
@@ -270,6 +286,7 @@ struct Config {
   uint64_t timeoutPhaseNs() const;
   void validate() const;
 };
+void validateCollisionBudget(const Config &, const Model &, const Scene &, size_t robots = 1);
 enum class State { Ready, Running, Paused, Fault, Exited };
 struct Command {
   double v = 0, w = 0, lateral = 0, vertical = 0, roll_rate = 0, pitch_rate = 0;
@@ -288,6 +305,7 @@ struct Event {
   bool odom = false;
   std::vector<Cloud> clouds;
   std::vector<ImuSample> imus;
+  std::vector<size_t> cameras; // indexes in Config; poses belong to this exact snapshot
 };
 struct Contact {
   uint64_t stamp;
@@ -357,6 +375,7 @@ private:
   std::optional<Command> pending_;
   std::vector<uint64_t> lidar_indices_;
   std::vector<uint64_t> imu_indices_;
+  std::vector<uint64_t> camera_indices_;
   struct History { uint64_t stamp; Pose pose; };
   std::deque<History> history_;
   Kinematics kinematics_;

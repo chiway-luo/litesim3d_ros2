@@ -1,3 +1,4 @@
+#include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
 #include <algorithm>
 #include <cmath>
@@ -69,6 +70,7 @@ class WorldNode : public rclcpp::Node {
 
 public:
   WorldNode() : Node("litesim3d_world") {
+    stats_ = create_publisher<std_msgs::msg::String>("/sim/stats", rclcpp::QoS(1).best_effort());
     world_ = litesim3d::World::load(declare_parameter<std::string>("config", ""));
     output_ = declare_parameter<std::string>("manifest_path", "");
     paused_ = declare_parameter<bool>("start_paused", false);
@@ -502,6 +504,16 @@ private:
       return;
     next_status_ =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    const auto &first = world_->robot(0);
+    const auto actual = rate_.sample(world_->run_id, time(), double(wallTime()) * 1e-9);
+    const bool paused = first.state() == litesim3d::State::Paused;
+    const auto rate = paused ? litesim3d::Json(0.0) : (actual ? litesim3d::Json(*actual) : litesim3d::Json(nullptr));
+    std_msgs::msg::String stats;
+    stats.data = litesim3d::Json({{"schema_version", 1}, {"run_id", world_->run_id},
+      {"stamp_ns", time()}, {"state", first.diagnostics()["state"]},
+      {"actual_real_time_factor", rate}, {"target_real_time_factor", first.config().real_time_factor},
+      {"collision_budget_enabled", first.config().collision_budget_enabled}, {"robot_count", world_->size()}}).dump();
+    stats_->publish(stats);
     diagnostic_msgs::msg::DiagnosticArray msg;
     msg.header.stamp = stamp(time());
     auto p99 = [](const std::deque<double> &v) {
@@ -560,6 +572,8 @@ private:
     }
     status_->publish(msg);
   }
+  litesim3d::RealTimeRate rate_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stats_;
   std::unique_ptr<litesim3d::World> world_;
   std::vector<Channels> channels_;
   std::string output_, error_, cmd_mode_, rsp_name_;

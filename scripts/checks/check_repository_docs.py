@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def main():
-    documents = [ROOT / 'README.md']
+    documents = sorted(ROOT.glob('README*.md'))
     for folder in ('docs', 'examples', 'litesim3d_core/resources'):
         documents.extend(sorted((ROOT / folder).rglob('*.md')))
     failures = []
@@ -18,7 +18,10 @@ def main():
     for document in documents:
         relative = document.relative_to(ROOT).as_posix()
         content = document.read_text()
-        for target in re.findall(r'\[[^\]]*\]\(([^)]+)\)', content):
+        targets = re.findall(r'\[[^\]]*\]\(([^)]+)\)', content)
+        # README headers use HTML for centered logos and language links.
+        targets.extend(re.findall(r"""(?:href|src)\s*=\s*["']([^"']+)["']""", content))
+        for target in targets:
             if re.match(r'\w+://', target) or target.startswith(('#', 'mailto:')):
                 continue
             local = unquote(target.split('#')[0].strip('<>'))
@@ -33,7 +36,7 @@ def main():
             result = subprocess.run(['bash', '-n'], input=code, text=True, capture_output=True)
             if result.returncode:
                 failures.append(f'{relative}: invalid shell block: {result.stderr.strip()}')
-        if relative == 'README.md' or relative.startswith(('docs/usage/', 'examples/')):
+        if document.parent == ROOT or relative.startswith(('docs/usage/', 'examples/')):
             if '/Users/' in content or re.search(r'\bros2h\b', content):
                 failures.append(f'{relative}: personal path or shell alias in usage instructions')
     result = {'status': 'FAIL' if failures else 'PASS', 'documents': len(documents),

@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim_models</name><version>0.4.0</version>
+  <description>SDF models, meshes, materials and worlds for LiteSim.</description>
+  <maintainer email="maintainer@example.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license><buildtool_depend>ament_cmake</buildtool_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

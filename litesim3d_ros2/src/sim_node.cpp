@@ -1,3 +1,4 @@
+#include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
 #include <chrono>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
@@ -15,6 +16,9 @@
 #include <rosgraph_msgs/msg/clock.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <litesim3d_interfaces/srv/render_cameras.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/set_bool.hpp>
@@ -59,6 +63,7 @@ public:
     wait_rsp_ = declare_parameter<bool>("wait_for_robot_state_publisher", true);
     rsp_name_ =
         declare_parameter<std::string>("robot_state_publisher_name", "robot_state_publisher");
+    viewer_ready_file_ = declare_parameter<std::string>("viewer_ready_file", "");
     startup_timeout_ = declare_parameter<double>("startup_timeout", 10.0);
     litesim3d::require(std::isfinite(startup_timeout_) && startup_timeout_ > 0,
                  "invalid startup_timeout");
@@ -74,6 +79,18 @@ public:
     }
     auto model = litesim3d::Model::load(cfg.urdf, cfg.model_options);
     sim_ = std::make_unique<litesim3d::Simulator>(cfg, model, scene);
+    stats_ = create_publisher<std_msgs::msg::String>("/sim/stats", rclcpp::QoS(1).best_effort());
+    const auto scene_file = declare_parameter<std::string>("scene_description", "");
+    if (!scene_file.empty()) {
+      scene_description_ = litesim3d::Json::parse(litesim3d::readText(scene_file));
+      scene_description_["run_id"] = sim_->run_id;
+      scene_description_pub_ = create_publisher<std_msgs::msg::String>(
+          "/sim/scene_description", rclcpp::QoS(1).reliable().transient_local());
+      scene_state_ = create_publisher<std_msgs::msg::String>("/sim/scene_state", rclcpp::QoS(1).best_effort());
+      std_msgs::msg::String description; description.data = scene_description_.dump();
+      scene_description_pub_->publish(description);
+      scene_timer_ = create_wall_timer(std::chrono::milliseconds(33), [this] { publishSceneState(); });
+    }
     const auto mode = declare_parameter<std::string>("cmd_mode", "twist");
     litesim3d::require(mode == "twist" || mode == "stamped", "cmd_mode must be twist or stamped");
     sensor_reliable_ = declare_parameter<bool>("sensor_reliable", false);
@@ -96,6 +113,22 @@ public:
     }
     for (const auto &imu : cfg.imus)
       imus_[imu.topic] = create_publisher<sensor_msgs::msg::Imu>(imu.topic, sensor_qos, options);
+    for (const auto &c : cfg.cameras) if (c.enabled) {
+      litesim3d::require(!scene_description_.is_null(), "enabled cameras require an imported SDF scene_description");
+      for (const auto &channel : {std::string("color"), std::string("depth")})
+        if ((channel == "color" && c.color()) || (channel == "depth" && c.depth())) {
+          images_[c.topic + "/" + channel + "/image_raw"] = create_publisher<sensor_msgs::msg::Image>(
+              c.topic + "/" + channel + "/image_raw", sensor_qos, options);
+          camera_info_[c.topic + "/" + channel + "/camera_info"] = create_publisher<sensor_msgs::msg::CameraInfo>(
+              c.topic + "/" + channel + "/camera_info", sensor_qos, options);
+        }
+    }
+    if (!images_.empty()) {
+      camera_client_node_ = std::make_shared<rclcpp::Node>("litesim_camera_client");
+      camera_client_ = camera_client_node_->create_client<litesim3d_interfaces::srv::RenderCameras>("/sim/render_cameras");
+      camera_executor_.add_node(camera_client_node_);
+      startup_timeout_ = std::max(startup_timeout_, 30.0);
+    }
     odom_ = create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10).reliable());
     truth_ = create_publisher<nav_msgs::msg::Odometry>(
         "/sim/ground_truth/" + cfg.robot_id + "/odom", rclcpp::QoS(10).reliable());
@@ -165,14 +198,15 @@ public:
             result = ready_ ? sim_->singleStep(request->request_id, request->steps, events)
                             : litesim3d::StepResult{false, 1, "dependencies not ready",
                                               sim_->snapshot().stamp};
+            publish(events);
           } catch (const std::exception &e) {
+            sim_->fault(e.what());
             result = {false, 1, e.what(), sim_->snapshot().stamp};
           }
           response->success = result.success;
           response->code = result.code;
           response->message = result.message;
           response->time_ns = result.time_ns;
-          publish(events);
           publishStatus();
         });
     pose_service_ = create_service<litesim3d_interfaces::srv::SetPose>(
@@ -236,6 +270,65 @@ public:
   }
 
 private:
+  void publishCameras(const litesim3d::Event &event) {
+    if (event.cameras.empty()) return;
+    using Service = litesim3d_interfaces::srv::RenderCameras;
+    auto request = std::make_shared<Service::Request>();
+    request->header.stamp = stamp(event.snapshot.stamp); request->header.frame_id = "world";
+    request->scene_id = scene_description_.at("scene_id"); request->run_id = sim_->run_id;
+    const auto frames = sim_->model().fk(event.snapshot.joints);
+    const litesim3d::Pose root = event.snapshot.world_base * frames.at(sim_->config().base_link).inverse();
+    for (const auto &[name, local] : frames) {
+      request->link_names.push_back(name); request->link_poses.push_back(poseMsg(root * local));
+    }
+    for (const auto index : event.cameras) request->camera_names.push_back(sim_->config().cameras.at(index).name);
+    litesim3d::require(camera_client_ && camera_client_->service_is_ready(), "camera renderer disconnected");
+    auto future = camera_client_->async_send_request(request);
+    // A separate executor receives the reply without reentering physics callbacks.
+    // There is exactly one in-flight frame batch: slow rendering slows simulation.
+    const auto status = camera_executor_.spin_until_future_complete(future, std::chrono::seconds(30));
+    if (status != rclcpp::FutureReturnCode::SUCCESS) {
+      camera_client_->remove_pending_request(future);
+      throw std::runtime_error("camera render timeout or shutdown");
+    }
+    auto response = future.get();
+    litesim3d::require(response->success, "camera rendering failed: " + response->message);
+    litesim3d::require(response->frames.size() == event.cameras.size(), "incomplete camera response");
+    for (size_t i = 0; i < event.cameras.size(); ++i) {
+      auto &frame = response->frames[i]; const auto &c = sim_->config().cameras.at(event.cameras[i]);
+      litesim3d::require(frame.camera_name == c.name && frame.info.header.stamp == request->header.stamp &&
+          frame.info.width == c.width && frame.info.height == c.height && frame.info.header.frame_id == c.link,
+          "camera response metadata mismatch");
+      auto send = [&](sensor_msgs::msg::Image &image, const std::string &channel, const char *encoding, unsigned bytes) {
+        litesim3d::require(image.header == frame.info.header && image.encoding == encoding &&
+            image.width == c.width && image.height == c.height && image.step == c.width * bytes &&
+            image.data.size() == size_t(image.step) * image.height, "invalid camera image buffer");
+        image.header.frame_id = prefix_ + c.link;
+        auto info = frame.info; info.header = image.header;
+        images_.at(c.topic + "/" + channel + "/image_raw")->publish(image);
+        camera_info_.at(c.topic + "/" + channel + "/camera_info")->publish(info);
+      };
+      if (c.color()) send(frame.color, "color", "rgb8", 3);
+      if (c.depth()) send(frame.depth, "depth", "32FC1", 4);
+      ++published_camera_frames_;
+    }
+  }
+  void publishSceneState() {
+    if (!scene_state_) return;
+    const auto &s = sim_->snapshot();
+    const auto frames = sim_->model().fk(s.joints);
+    const auto world_root = s.world_base * frames.at(sim_->config().base_link).inverse();
+    auto poses = litesim3d::Json::object();
+    for (const auto &[name, local] : frames) {
+      const litesim3d::Pose p = world_root * local; const Eigen::Quaterniond q(p.linear());
+      poses[name] = {p.translation().x(), p.translation().y(), p.translation().z(), q.x(), q.y(), q.z(), q.w()};
+    }
+    std_msgs::msg::String message;
+    message.data = litesim3d::Json({{"schema_version", 1}, {"run_id", sim_->run_id},
+      {"scene_id", scene_description_.at("scene_id")}, {"stamp_ns", s.stamp},
+      {"link_poses", poses}}).dump();
+    scene_state_->publish(message);
+  }
   void publishClock() {
     rosgraph_msgs::msg::Clock c;
     c.clock = stamp(sim_->snapshot().stamp);
@@ -268,6 +361,7 @@ private:
     publishClock();
     for (auto &e : events) {
       publishState(e.snapshot);
+      publishCameras(e);
       if (e.odom) {
         nav_msgs::msg::Odometry o;
         o.header.stamp = stamp(e.snapshot.stamp);
@@ -379,10 +473,13 @@ private:
             rsp_ready = true;
         }
       }
-      if (!rsp_ready) {
+      const bool viewer_ready = viewer_ready_file_.empty() || std::filesystem::is_regular_file(viewer_ready_file_);
+      const bool camera_ready = !camera_client_ || camera_client_->service_is_ready();
+      if (!rsp_ready || !viewer_ready || !camera_ready) {
         if (std::chrono::duration<double>(std::chrono::steady_clock::now() - started_).count() >
             startup_timeout_) {
-          sim_->fault("robot_state_publisher readiness timeout");
+          sim_->fault(!camera_ready ? "camera renderer readiness timeout" :
+              (viewer_ready ? "robot_state_publisher readiness timeout" : "viewer readiness timeout"));
           timer_->cancel();
           publishStatus();
           saveManifest("startup_timeout");
@@ -412,6 +509,7 @@ private:
       for (unsigned i = 0; i < steps; ++i) publish(sim_->tick());
     } catch (const std::exception &e) {
       RCLCPP_ERROR(get_logger(), "simulation fault: %s", e.what());
+      sim_->fault(e.what());
       timer_->cancel();
       saveManifest("fault");
     }
@@ -422,11 +520,26 @@ private:
     if (count_publishers("/clock") > 1)
       sim_->fault("multiple /clock publishers");
     auto data = sim_->diagnostics();
+    const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto actual = rate_.sample(sim_->run_id, sim_->snapshot().stamp, wall);
+    const bool paused = sim_->state() == litesim3d::State::Paused;
+    data["actual_real_time_factor"] = paused ? litesim3d::Json(0.0) :
+        (actual ? litesim3d::Json(*actual) : litesim3d::Json(nullptr));
+    data["target_real_time_factor"] = sim_->config().real_time_factor;
+    data["collision_budget_enabled"] = sim_->config().collision_budget_enabled;
+    std_msgs::msg::String statistics;
+    statistics.data = litesim3d::Json({{"schema_version", 1}, {"run_id", sim_->run_id},
+      {"stamp_ns", sim_->snapshot().stamp}, {"state", data["state"]},
+      {"actual_real_time_factor", data["actual_real_time_factor"]},
+      {"target_real_time_factor", sim_->config().real_time_factor},
+      {"collision_budget_enabled", sim_->config().collision_budget_enabled}}).dump();
+    stats_->publish(statistics);
     data["ready"] = ready_;
     data["qos_conflicts"] = qos_conflicts_;
     data["dropped_frames"] = dropped_frames_;
     data["published_clouds"] = published_clouds_;
     data["published_imus"] = published_imus_;
+    data["published_camera_frames"] = published_camera_frames_;
     // Session reset waits for real publisher-side DDS matches before releasing clients.
     auto matches = nlohmann::json::object();
     auto count_matches = [&matches](const auto &publisher) {
@@ -437,6 +550,7 @@ private:
     count_matches(joints_);
     for (const auto &[topic, publisher] : clouds_) count_matches(publisher);
     for (const auto &[topic, publisher] : imus_) count_matches(publisher);
+    for (const auto &[topic, publisher] : images_) count_matches(publisher);
     data["subscription_matches"] = std::move(matches);
     data["internal_missed_scans"] = 0; // scheduler executes every model event; wall lateness slows simulation
     data["sensor_queue_depth"] = 5;
@@ -531,6 +645,7 @@ private:
     if (manifest_path_.empty())
       return;
     auto data = sim_->manifest(reason);
+    if (!scene_description_.is_null()) data["scene_assets"] = scene_description_;
     data["ros_distro"] = "humble";
     data["rmw"] = rmw_get_implementation_identifier();
     data["bridge_source_sha256"] = LWS_BRIDGE_SHA256;
@@ -539,15 +654,25 @@ private:
     litesim3d::require(bool(out), "cannot write manifest: " + manifest_path_);
     out << data.dump(2) << '\n';
   }
+  litesim3d::RealTimeRate rate_;
+  litesim3d::Json scene_description_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stats_, scene_description_pub_, scene_state_;
+  rclcpp::TimerBase::SharedPtr scene_timer_;
   std::unique_ptr<litesim3d::Simulator> sim_;
   litesim3d::Pose scene_inverse_ = litesim3d::Pose::Identity();
   std::unique_ptr<tf2_ros::TransformBroadcaster> broadcaster_;
   bool publish_tf_ = true, wait_rsp_ = true, paused_ = false, ready_ = false,
        sensor_reliable_ = false;
   double startup_timeout_ = 10;
-  std::string prefix_, manifest_path_, rsp_name_;
+  std::string prefix_, manifest_path_, rsp_name_, viewer_ready_file_;
   uint64_t qos_conflicts_ = 0, dropped_frames_ = 0;
   uint64_t published_clouds_ = 0, published_imus_ = 0;
+  uint64_t published_camera_frames_ = 0;
+  rclcpp::Node::SharedPtr camera_client_node_;
+  rclcpp::Client<litesim3d_interfaces::srv::RenderCameras>::SharedPtr camera_client_;
+  rclcpp::executors::SingleThreadedExecutor camera_executor_;
+  std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr> images_;
+  std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr> camera_info_;
   std::deque<double> compute_ms_, bridge_ms_;
   int drop_frames_ = 0;
   size_t contact_index_ = 0;

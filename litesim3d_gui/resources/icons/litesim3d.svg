@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>LiteSim 3D</title>
+  <desc>A three-dimensional cube with a cyan LiDAR scan on a cobalt tile. Original vector artwork; no embedded raster images.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#237AEF"/>
+      <stop offset="0.48" stop-color="#1247C2"/>
+      <stop offset="1" stop-color="#10216B"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0.15" cy="0.06" r="0.9">
+      <stop offset="0" stop-color="#65DEFF" stop-opacity="0.42"/>
+      <stop offset="0.7" stop-color="#4198FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCF3FF"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="1" y2="0.8">
+      <stop offset="0" stop-color="#E6FAFF"/>
+      <stop offset="1" stop-color="#9FD7F3"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#91CDF2"/>
+      <stop offset="1" stop-color="#5299DC"/>
+    </linearGradient>
+    <linearGradient id="scan" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#24DCEE"/>
+      <stop offset="0.45" stop-color="#86FFF4"/>
+      <stop offset="1" stop-color="#27E8F2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Transparent canvas surrounds the opaque tile. -->
+  <rect x="80" y="80" width="864" height="864" rx="192" fill="url(#tile)"/>
+  <rect x="80" y="80" width="864" height="864" rx="192" fill="url(#light)"/>
+  <rect x="82" y="82" width="860" height="860" rx="190" fill="none" stroke="#9DDDFF" stroke-opacity="0.24" stroke-width="4"/>
+
+  <!-- Rear half of the scan is occluded by the cube. -->
+  <ellipse cx="512" cy="555" rx="370" ry="123" fill="none" stroke="#19C9E7" stroke-width="18"/>
+
+  <!-- Three broad vector faces, with a small offset geometric shadow. -->
+  <path d="M220 397 L512 228 L804 397 L804 714 L512 883 L220 714 Z" fill="#051C66" fill-opacity="0.24"/>
+  <path d="M220 374 L512 543 L512 866 L236 706 Q220 697 220 679 Z" fill="url(#left)"/>
+  <path d="M512 543 L804 374 L804 679 Q804 697 788 706 L512 866 Z" fill="url(#right)"/>
+  <path d="M496 205 Q512 196 528 205 L788 355 Q804 364 804 374 L512 543 L220 374 Q220 364 236 355 Z" fill="url(#top)"/>
+  <path d="M228 379 L512 543 L796 379" fill="none" stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M512 547 V856" fill="none" stroke="#DCFBFF" stroke-opacity="0.72" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Front half: a continuous sensor sweep and three point returns. -->
+  <path d="M142 555 C142 623 308 678 512 678 C716 678 882 623 882 555" fill="none" stroke="url(#scan)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M148 566 C168 630 321 673 512 673 C704 673 858 628 876 568" fill="none" stroke="#D8FFF8" stroke-opacity="0.55" stroke-width="3" stroke-linecap="round"/>
+  <g fill="#C6FFF8" stroke="#6CF4F0" stroke-width="4">
+    <circle cx="710" cy="658" r="18"/>
+    <circle cx="792" cy="634" r="15"/>
+    <circle cx="852" cy="602" r="12"/>
+  </g>
+</svg>

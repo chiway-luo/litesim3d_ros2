@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_gui</name><version>0.4.0</version>
+  <description>SDF rendering, RGB/depth camera sensors and read-only scene/image viewers.</description>
+  <maintainer email="maintainer@example.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license><buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>sensor_msgs</depend><depend>litesim3d_interfaces</depend><depend>rclcpp</depend><depend>std_msgs</depend><depend>nlohmann_json</depend>
+  <depend>ignition-rendering6</depend><depend>qtbase5-dev</depend>
+  <build_depend>libqt5-svg-dev</build_depend>
+  <exec_depend>libqt5-svg</exec_depend>
+  <depend>assimp</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

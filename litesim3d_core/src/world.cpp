@@ -134,10 +134,11 @@ void Simulator::completeScans(std::vector<Event> &events) {
 }
 World::World(Config config, Model model, Scene scene,
              std::vector<RobotSpec> specs) {
+  require(std::none_of(config.cameras.begin(),config.cameras.end(),[](const CameraConfig &c){return c.enabled;}),
+          "camera rendering currently requires the single-robot SDF launch");
   config.validate();
   require(!specs.empty() && specs.size() <= 4, "world supports 1..4 robots");
-  require(model.collision.size() <= 256,
-          "world collision geometry budget exceeded");
+  validateCollisionBudget(config, model, scene, specs.size());
   std::set<std::string> ids;
   uint64_t horizon = config.step_ns;
   for (const auto &lidar : config.lidars)

@@ -19,15 +19,34 @@ fi
 mkdir -p "$artifact_root" "$evidence_dir"
 touch "$artifact_dir/COLCON_IGNORE"
 platform_args=()
+optional_packages=()
+if [[ "${LWS_BUILD_GUI:-1}" == 0 ]]; then
+  optional_packages=(--packages-skip litesim3d_gui)
+fi
 if [[ "$(uname -s)" == Darwin ]]; then
   # The bundled conda linker can be too old for the installed Xcode SDK format.
   # Select the installed Xcode compiler for this project only.
   platform_args=(-DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++
                  "-DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)")
+  # RoboStack's Ogre-Next package may omit Metal. Build that one backend in
+  # this project's artifact directory; never modify the ROS/global prefix.
+  if [[ "${LWS_BUILD_GUI:-1}" != 0 ]]; then
+    ogre_prefix="$(pkg-config --variable=prefix OGRE-Next)"
+  if [[ ! -f "$ogre_prefix/lib/OGRE-Next/RenderSystem_Metal.dylib" ]]; then
+    metal_root="$artifact_root/metal"
+    python3 "$project_dir/scripts/macos_metal/fetch.py" "$metal_root/source"
+    cmake -S "$project_dir/scripts/macos_metal" -B "$metal_root/build" \
+      -DMETAL_SOURCE_DIR="$metal_root/source" -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_OBJCXX_COMPILER=/usr/bin/clang++ \
+      "-DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)"
+    cmake --build "$metal_root/build" --parallel 2
+    platform_args+=("-DLITESIM_METAL_PLUGIN=$metal_root/build/RenderSystem_Metal.dylib")
+  fi
+  fi
 fi
 colcon --log-base "$artifact_root/log" build --base-paths "$project_dir" \
   --build-base "$artifact_root/build" --install-base "$artifact_root/install" --merge-install \
-  --parallel-workers 2 --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON "${platform_args[@]}" "$@"
+  --parallel-workers 2 ${optional_packages[@]+"${optional_packages[@]}"} --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON "${platform_args[@]}" "$@"
 python3 - "$artifact_dir" "$artifact_root" <<'PY'
 from pathlib import Path
 import sys

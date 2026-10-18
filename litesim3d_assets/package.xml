@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_assets</name><version>0.4.0</version>
+  <description>Validated SDF scene import and resource resolution for LiteSim.</description>
+  <maintainer email="maintainer@example.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license><buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>litesim3d_core</depend><depend>sdformat12</depend>
+  <depend>assimp</depend><depend>tinyxml2_vendor</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

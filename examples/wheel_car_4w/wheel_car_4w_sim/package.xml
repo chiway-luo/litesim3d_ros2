@@ -7,6 +7,9 @@
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>wheel_car_4w_description</exec_depend>
+  <exec_depend>litesim_models</exec_depend>
+  <exec_depend>litesim3d_assets</exec_depend>
+  <exec_depend>litesim3d_gui</exec_depend>
   <exec_depend>litesim3d_core</exec_depend>
   <exec_depend>litesim3d_ros2</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
