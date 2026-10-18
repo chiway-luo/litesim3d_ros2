@@ -6,7 +6,7 @@ jobs:
     container: ros:humble-ros-base
     timeout-minutes: 30
     env:
-      LITESIM3D_ARTIFACTS_DIR: ${{ runner.temp }}/litesim3d_ros2-artifacts
+      LITESIM3D_ARTIFACTS_DIR: /tmp/litesim3d_ros2-artifacts
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
