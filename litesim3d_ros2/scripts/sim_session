@@ -1,0 +1,419 @@
+#!@Python3_EXECUTABLE@
+"""Own a simulation epoch and restart all registered consumers on coordinated reset."""
+import argparse
+import collections
+import json
+import math
+import os
+from pathlib import Path
+import signal
+import subprocess
+import threading
+import time
+
+import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor, ExternalShutdownException
+from rclpy.node import Node, NodeNameNonExistentError
+from rclpy.qos import QoSCompatibility, qos_check_compatible
+from rcl_interfaces.srv import GetParameters
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
+from diagnostic_msgs.msg import DiagnosticArray
+from litesim3d_interfaces.srv import Reset
+import yaml
+
+
+def executable(package, name):
+    return str(Path(get_package_prefix(package)) / 'lib' / package / name)
+
+
+def resolve(uri, base):
+    if uri.startswith('package://'):
+        package, name = uri[10:].split('/', 1)
+        return Path(get_package_share_directory(package)) / name
+    return (base / uri.removeprefix('file://')).resolve()
+
+
+def resolve_config_resources(data, base):
+    """Keep all resource references valid when writing a relocated config."""
+    data['robot']['urdf'] = str(resolve(data['robot']['urdf'], base))
+    for lidar in data.get('lidars', []):
+        if 'pattern_file' in lidar:
+            lidar['pattern_file'] = str(resolve(lidar['pattern_file'], base))
+    for entity in data.get('entities', []):
+        for role in ('geometry', 'visual', 'collision', 'sensor_geometry'):
+            shape = entity.get(role, {})
+            if shape.get('type') == 'mesh':
+                shape['uri'] = str(resolve(shape['uri'], base))
+    return data
+
+
+class Session(Node):
+    def __init__(self, args):
+        super().__init__('sim_session')
+        self.args = args
+        self.config = Path(args.config).resolve()
+        self.data = yaml.safe_load(self.config.read_text())
+        self.directory = Path(args.output).resolve()
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.members = json.loads(Path(args.members).read_text()) if args.members else []
+        if not isinstance(self.members, list) or len(self.members) > 32:
+            raise ValueError('members must be a bounded list')
+        names = set()
+        self.input_topics = {'/clock', '/odom', '/joint_states'}
+        self.input_topics.update('/' + item.get('topic', 'points_raw').lstrip('/')
+                                 for item in self.data['lidars'])
+        self.input_topics.update('/' + item.get('topic', 'imu/data_raw').lstrip('/')
+                                 for item in self.data.get('imus', []))
+        self.member_topics = {}
+        for member in self.members:
+            if (not isinstance(member, dict) or not {'name', 'argv'} <= set(member)
+                    or set(member) - {'name', 'argv', 'ready_topics'}
+                    or not isinstance(member['argv'], list) or not member['argv']):
+                raise ValueError('each member requires name and nonempty argv')
+            if not all(isinstance(value, str) and value for value in member['argv']):
+                raise ValueError('argv requires nonempty strings')
+            if not isinstance(member['name'], str) or not member['name'] or member['name'] in names:
+                raise ValueError('member node names must be unique')
+            names.add(member['name'])
+            topics = member.get('ready_topics', [])
+            if (not isinstance(topics, list) or len(topics) > 64
+                    or not all(isinstance(topic, str) and topic in self.input_topics for topic in topics)):
+                raise ValueError('ready_topics must list configured simulator input topics')
+            self.member_topics[member['name']] = set(topics)
+        self.owned_names = names | {'sim_session', 'litesim3d', 'robot_state_publisher'}
+        self.observers = set(args.observer)
+        self.processes = []
+        self.condition = threading.Condition()
+        self.mutation = threading.Lock()
+        self.status = {}
+        self.status_sequence = 0
+        self.run_id = ''
+        self.epoch = 0
+        self.transitioning = True
+        self.failed = False
+        self.stopping = False
+        self.cache = collections.OrderedDict()
+        self.subscription = self.create_subscription(DiagnosticArray, '/sim/status', self.on_status, 10,
+                                                     callback_group=MutuallyExclusiveCallbackGroup())
+        self.service = self.create_service(Reset, '/sim/reset', self.reset,
+                                          callback_group=MutuallyExclusiveCallbackGroup())
+        self.record('created', members=self.members, observers=sorted(self.observers))
+
+    def record(self, event, **values):
+        row = {'wall_time_ns': time.time_ns(), 'event': event, 'epoch': self.epoch,
+               'run_id': self.run_id, **values}
+        with (self.directory / 'session.jsonl').open('a') as out:
+            out.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+    def on_status(self, message):
+        if not message.status:
+            return
+        with self.condition:
+            self.status = {v.key: v.value for v in message.status[0].values}
+            self.status_sequence += 1
+            self.condition.notify_all()
+
+    def spawn(self, name, command, directory):
+        log = (directory / (name + '.log')).open('w')
+        env = os.environ.copy()
+        env['LWS_RUN_ID'] = self.run_id
+        env['LWS_RUN_DIR'] = str(directory)
+        try:
+            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=env,
+                                       start_new_session=True)
+        finally:
+            log.close()
+        self.processes.append((name, process))
+        self.record('spawn', name=name, pid=process.pid, argv=command)
+        return process
+
+    def wait_startup(self, predicate, deadline, detail):
+        while True:
+            if any(p.poll() is not None for _, p in self.processes):
+                raise RuntimeError('required process exited while waiting for ' + detail)
+            if predicate():
+                return
+            if time.monotonic() >= deadline:
+                raise TimeoutError('consumer readiness timed out: ' + detail)
+            with self.condition:
+                self.condition.wait(.02)
+
+    def remember_member_topics(self):
+        # Keep the previous epoch's inputs, including subscriptions added after startup.
+        # A new node name (or its automatic /clock subscription) is not sufficient.
+        for topic in self.input_topics:
+            for endpoint in self.get_subscriptions_info_by_topic(topic):
+                if endpoint.node_namespace == '/' and endpoint.node_name in self.member_topics:
+                    self.member_topics[endpoint.node_name].add(topic)
+
+    def member_graph_complete(self):
+        # DDS service discovery and ROS node/endpoint ownership propagate separately.
+        # Do not infer an empty input set from a partially populated ROS graph.
+        for member in self.members:
+            name = member['name']
+            try:
+                services = dict(self.get_service_names_and_types_by_node(name, '/'))
+            except NodeNameNonExistentError:
+                return False
+            if '/' + name + '/get_parameters' not in services:
+                return False
+        for topic in self.input_topics | {'/tf', '/tf_static'}:
+            for endpoint in self.get_subscriptions_info_by_topic(topic):
+                if (not endpoint.node_name or endpoint.node_name == '_NODE_NAME_UNKNOWN_'
+                        or not endpoint.node_namespace.startswith('/')):
+                    return False
+        return True
+
+    def wait_members(self, deadline):
+        for member in self.members:
+            name = member['name']
+            client = self.create_client(GetParameters, '/' + name + '/get_parameters',
+                                        callback_group=MutuallyExclusiveCallbackGroup())
+            try:
+                self.wait_startup(client.service_is_ready, deadline, name + ' parameter service')
+                # Parameter services exist at Node construction, but their response requires
+                # an active executor. Consumers initialize their subscriptions before spinning.
+                future = client.call_async(GetParameters.Request())
+                self.wait_startup(future.done, deadline, name + ' executor response')
+                future.result()
+                self.record('member_executor_ready', name=name)
+            finally:
+                self.destroy_client(client)
+        if self.members:
+            with self.condition:
+                sequence = self.status_sequence
+            def graph_ready():
+                with self.condition:
+                    fresh = self.status_sequence > sequence and self.status.get('run_id') == self.run_id
+                return fresh and self.member_graph_complete()
+            self.wait_startup(graph_ready, deadline, 'member graph ownership and fresh publisher status')
+        self.remember_member_topics()
+        for name, topics in self.member_topics.items():
+            for topic in sorted(topics):
+                def matched():
+                    publishers = [p for p in self.get_publishers_info_by_topic(topic)
+                                  if p.node_name == 'litesim3d' and p.node_namespace == '/']
+                    subscribers = self.get_subscriptions_info_by_topic(topic)
+                    owned = [s for s in subscribers if s.node_name == name and s.node_namespace == '/']
+                    if len(publishers) != 1 or not owned:
+                        return False
+                    publisher = publishers[0]
+                    def compatible(subscriber):
+                        return (subscriber.topic_type == publisher.topic_type and
+                                qos_check_compatible(publisher.qos_profile, subscriber.qos_profile)[0]
+                                != QoSCompatibility.ERROR)
+                    if not all(compatible(s) for s in owned):
+                        raise RuntimeError('incompatible consumer subscription: ' + name + ' ' + topic)
+                    # The graph announces endpoints before the publisher necessarily matches
+                    # them. Read the actual RMW match count reported by this new simulator.
+                    with self.condition:
+                        status = dict(self.status)
+                    counts = json.loads(status.get('subscription_matches', '{}'))
+                    return (status.get('run_id') == self.run_id and
+                            counts.get(topic, 0) >= sum(compatible(s) for s in subscribers))
+                self.wait_startup(matched, deadline, name + ' subscription ' + topic)
+            self.record('member_ready', name=name, topics=sorted(topics))
+
+    def start_epoch(self, override=None):
+        self.epoch += 1
+        directory = self.directory / ('epoch-%04d' % self.epoch)
+        directory.mkdir()
+        old_run = self.run_id
+        with self.condition:
+            self.status = {}
+        urdf = resolve(self.data['robot']['urdf'], self.config.parent)
+        rsp_params = directory / 'rsp.yaml'
+        rsp_params.write_text(yaml.safe_dump({'/**': {'ros__parameters': {
+            'robot_description': urdf.read_text(), 'use_sim_time': True, 'publish_frequency': 200.0}}}))
+        self.spawn('robot_state_publisher', [executable('robot_state_publisher', 'robot_state_publisher'),
+                   '--ros-args', '--params-file', str(rsp_params)], directory)
+        parameters = {'config': str(self.config), 'use_sim_time': True, 'start_paused': True,
+                      'manifest_path': str(directory / 'manifest.json')}
+        if override:
+            parameters['initial_pose_override'] = override
+        sim_params = directory / 'sim.yaml'
+        sim_params.write_text(yaml.safe_dump({'/**': {'ros__parameters': parameters}}))
+        self.spawn('litesim3d', [executable('litesim3d_ros2', 'sim_node'), '--ros-args',
+                                     '--params-file', str(sim_params)], directory)
+        deadline = time.monotonic() + self.args.timeout
+        with self.condition:
+            while not (self.status.get('ready') == 'true' and self.status.get('run_id') != old_run):
+                if any(p.poll() is not None for _, p in self.processes):
+                    raise RuntimeError('required process exited during startup')
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('new epoch readiness timed out')
+                self.condition.wait(.05)
+            self.run_id = self.status['run_id']
+        for member in self.members:
+            self.spawn(member['name'], member['argv'], directory)
+        self.wait_members(deadline)
+        self.transitioning = False
+        self.record('ready', time_ns=self.status.get('time_ns'))
+        # Reset deliberately returns PAUSED, letting clients verify the new epoch before commands.
+
+    def stop_owned(self):
+        errors = []
+        # Reverse launch order stops controllers/consumers before the simulator and RSP.
+        for name, process in reversed(self.processes):
+            forced = False
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGINT)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    forced = True
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=3)
+            self.record('stop', name=name, pid=process.pid, returncode=process.returncode, forced=forced)
+            if forced or process.returncode not in (0, -signal.SIGINT):
+                errors.append((name, process.returncode, forced))
+        self.processes.clear()
+        if errors:
+            raise RuntimeError('unclean process exit: ' + repr(errors))
+
+    def check_participants(self):
+        topics = ['/clock', '/tf', '/odom']
+        topics += ['/' + item.get('topic', 'points_raw').lstrip('/') for item in self.data['lidars']]
+        topics += ['/' + item.get('topic', 'imu/data_raw').lstrip('/') for item in self.data.get('imus', [])]
+        unknown = set()
+        for topic in topics:
+            for endpoint in self.get_subscriptions_info_by_topic(topic):
+                if endpoint.node_name not in self.owned_names | self.observers:
+                    unknown.add(endpoint.node_name)
+        # A monitoring exemption never authorizes an unowned controller to survive a reset.
+        for endpoint in self.get_publishers_info_by_topic('/cmd_vel'):
+            if endpoint.node_name not in self.owned_names:
+                unknown.add(endpoint.node_name)
+        if unknown:
+            raise RuntimeError('uncoordinated participants: ' + ', '.join(sorted(unknown)))
+
+    def validate_pose(self, request):
+        p = request.initial_pose
+        values = [p.position.x, p.position.y, p.position.z, p.orientation.x, p.orientation.y,
+                  p.orientation.z, p.orientation.w]
+        if not all(math.isfinite(v) for v in values):
+            raise ValueError('non-finite initial pose')
+        norm = math.sqrt(sum(v * v for v in values[3:]))
+        if norm < 1e-12:
+            raise ValueError('zero quaternion')
+        values[3:] = [v / norm for v in values[3:]]
+        x, y, z, w = values[3:]
+        rpy = [math.atan2(2*(w*x+y*z), 1-2*(x*x+y*y)),
+               math.asin(max(-1, min(1, 2*(w*y-z*x)))),
+               math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z))]
+        data = yaml.safe_load(self.config.read_text())
+        data['robot']['initial_pose'] = {'xyz': values[:3], 'rpy': rpy}
+        resolve_config_resources(data, self.config.parent)
+        candidate = self.directory / 'reset-candidate.yaml'
+        candidate.write_text(yaml.safe_dump(data))
+        headless = Path(get_package_prefix('litesim3d_core')) / 'bin/sim_headless'
+        check = subprocess.run([str(headless), str(candidate), '1', str(self.directory/'preflight.json')],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.args.timeout)
+        (self.directory/'preflight.log').write_bytes(check.stdout)
+        if check.returncode:
+            raise ValueError('initial pose failed transactional preflight; previous epoch retained')
+        return values
+
+    def reset(self, request, response):
+        signature = (request.expected_run_id, request.set_initial_pose, str(request.initial_pose))
+        if not self.mutation.acquire(timeout=.5):
+            response.message = 'reset already in progress'
+            return response
+        try:
+            if request.request_id in self.cache:
+                old_signature, result = self.cache[request.request_id]
+                if old_signature != signature:
+                    raise ValueError('request_id reused with different payload')
+                response.success, response.message, response.run_id = result
+                return response
+            if self.failed or self.stopping or self.transitioning:
+                raise RuntimeError('session not ready')
+            if not request.request_id or len(request.request_id) > 128 or len(self.cache) >= 4096:
+                raise ValueError('invalid request_id or full request cache')
+            if request.expected_run_id != self.run_id:
+                raise ValueError('stale or missing expected_run_id')
+            self.check_participants()
+            override = self.validate_pose(request) if request.set_initial_pose else None
+            self.remember_member_topics()
+            self.transitioning = True
+            self.record('reset_begin', request_id=request.request_id)
+            try:
+                self.stop_owned()
+                self.start_epoch(override)
+            except Exception:
+                self.failed = True
+                raise
+            response.success, response.message, response.run_id = True, 'new epoch ready and paused', self.run_id
+            self.cache[request.request_id] = (signature, (True, response.message, self.run_id))
+        except Exception as error:
+            response.success, response.message, response.run_id = False, str(error), self.run_id
+            self.record('reset_rejected' if not self.failed else 'reset_failed', reason=str(error))
+        finally:
+            self.mutation.release()
+        return response
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--config', required=True)
+    parser.add_argument('--output', required=True)
+    parser.add_argument('--members', help='JSON list of {name, argv, optional ready_topics} for owned ROS nodes')
+    parser.add_argument('--observer', action='append', default=[], help='read-only observer node allowed across epochs')
+    parser.add_argument('--timeout', type=float, default=15)
+    args = parser.parse_args()
+    if not math.isfinite(args.timeout) or not 1 <= args.timeout <= 120:
+        parser.error('timeout must be in [1,120] seconds')
+    from rclpy.signals import SignalHandlerOptions
+    stopping = threading.Event()
+    signal.signal(signal.SIGINT, lambda *_: stopping.set())
+    signal.signal(signal.SIGTERM, lambda *_: stopping.set())
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+    node = Session(args)
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
+    def spin():
+        try:
+            executor.spin()
+        except (ExternalShutdownException, KeyboardInterrupt):
+            pass
+    worker = threading.Thread(target=spin, daemon=True)
+    worker.start()
+    code = 0
+    try:
+        with node.mutation:
+            node.start_epoch()
+        while rclpy.ok() and not node.failed and not stopping.is_set():
+            with node.mutation:
+                if not node.transitioning:
+                    for name, process in node.processes:
+                        if process.poll() is not None:
+                            node.record('required_process_exit', name=name, returncode=process.returncode)
+                            node.failed = True
+            time.sleep(.05)
+        code = int(node.failed)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    except Exception as error:
+        node.record('failure', reason=str(error))
+        code = 1
+    finally:
+        with node.mutation:
+            node.stopping = True
+            try:
+                node.stop_owned()
+            except Exception as error:
+                node.record('cleanup_failure', reason=str(error))
+                code = 1
+        code = max(code, int(node.failed))
+        node.record('exit', returncode=code)
+        executor.shutdown(timeout_sec=3)
+        worker.join(timeout=3)
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+    return code
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

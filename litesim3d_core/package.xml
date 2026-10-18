@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_core</name><version>0.3.0</version>
+  <description>Deterministic CPU 3D kinematic simulator core.</description>
+  <maintainer email="maintainer@example.com">litesim3d contributors</maintainer><license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>eigen</depend><depend>urdfdom</depend><depend>assimp</depend><depend>libfcl-dev</depend>
+  <depend>yaml-cpp</depend><depend>tinyxml2</depend><depend>openssl</depend><depend>nlohmann-json-dev</depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

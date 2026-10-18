@@ -1,0 +1,24 @@
+# Livox Mid-360；使用 Livox-SDK 官方逐点扫描角度表，按原始顺序求交。
+# 官方参数：https://www.livoxtech.com/mid-360/specs
+# 保留本示例的 lidar_link/外壳；此预设切换数据模型，不冒充真实传感器 CAD。
+lidar:
+  scan_pattern: livox_mid360        # 官方80万方向序列，200000点/s；4秒后循环，非无限非重复。
+  pattern_file: package://litesim3d_core/lidar_patterns/mid360.csv # 随核心包安装，来源/哈希见同目录说明。
+  scan_mode: rolling               # 帧内逐点时间，未去畸变。
+  rate_hz: 10.0                    # 厂家典型帧率；仿真按此频率封装一帧。
+  columns: 20000                   # 必须 columns×rate_hz=200000；20Hz应改为10000，不靠加点改变密度。
+  rings: 1                        # 非机械线束：兼容字段 ring 恒为 0，不代表真实 1 线雷达。
+  horizontal_start_deg: -180.0     # 视场裁剪：不重排/拉伸原始扫描，不向裁剪区域补点。
+  horizontal_end_deg: 180.0        # 左闭右开，不重复采样 -180°/180°接缝。
+  vertical_min_deg: -7.0           # 厂家标称最小俯仰角，度；角度表约0.22%的方向超出标称边缘，会被裁剪。
+  vertical_max_deg: 52.0           # 标称最大俯仰角；裁剪后槽位仍存在，但不发射射线。
+  min_range_m: 0.1                 # 规格盲区；0.1~0.2 m 厂家不保证精度。
+  max_range_m: 40.0                # 100 klx、10%反射率下规格；80%目标规格为70 m。
+  publish_range_boundary: true     # 无命中时在40 m处显示辅助边界；独立 /points_raw/range_boundary，非实际回波。
+  range_sigma_m: 0.02              # 简化固定 2 cm 1σ；对应10 m条件，不是全量程标定模型。
+  range_bias_m: 0.0                # m；可注入固定偏差。
+  dropout: 0.0                     # 人工额外丢点概率 [0,1]。
+  ring_delays_s: []                # 非重复扫描模式不允许机械线束延时。
+  point_layout: xyzirt_v1          # PointCloud2；不输出 livox_ros_driver2/CustomMsg。
+  self_filter: robot               # 排除本车外壳。
+  excluded_links: []               # self_filter=links 时使用。

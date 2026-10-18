@@ -1,0 +1,18 @@
+{
+  "url": "https://raw.githubusercontent.com/Livox-SDK/livox_laser_simulation/1cce1073633a062b92e30243a4c2920e45551bb5/scan_mode/mid360.csv",
+  "bytes": 16809997,
+  "sha256": "aa1fc08b6a4400608dbd6ee832b7ea3a9c3c37197e734f60f58fe5abf762269a",
+  "repository": "https://github.com/Livox-SDK/livox_laser_simulation",
+  "commit": "1cce1073633a062b92e30243a4c2920e45551bb5",
+  "license": "MIT",
+  "samples": 800000,
+  "sample_rate_hz": 200000,
+  "cycle_s": 4.0,
+  "columns": [
+    "sample_ordinal_1_based",
+    "azimuth_deg",
+    "zenith_deg"
+  ],
+  "conversion": "elevation_deg = 90 - zenith_deg; keep row order and original angles",
+  "limits": "Official simulation table, not a per-device calibration; repeats after 4 seconds. Original header Time/s contains ordinals, not seconds."
+}

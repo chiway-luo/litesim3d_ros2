@@ -1,0 +1,6 @@
+# config 相对于本文件；每个 xyz 覆盖 robot.yaml 的 robot.initial_pose。
+schema_version: 1
+config: robot.yaml
+robots:
+  - {id: r0, xyz: [0, 0, 0], rpy: [0, 0, 0]}
+  - {id: r1, xyz: [0, 2, 0], rpy: [0, 0, 0]}

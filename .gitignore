@@ -1,0 +1,11 @@
+build*/
+install*/
+log/
+__pycache__/
+.pytest_cache/
+*.profraw
+*.profdata
+.DS_Store
+artifacts/
+evidence/
+.coverage*

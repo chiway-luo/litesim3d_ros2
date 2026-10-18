@@ -1,0 +1,5 @@
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(URDF REQUIRED IMPORTED_TARGET urdfdom)
+find_package(assimp REQUIRED)
+pkg_check_modules(TINYXML2 REQUIRED IMPORTED_TARGET tinyxml2)
+find_package(OpenSSL REQUIRED)

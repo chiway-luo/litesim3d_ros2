@@ -1,0 +1,1 @@
+<robot name="xacro_fixture" xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:arg name="length" default="0.8"/><xacro:include filename="body.xacro"/><xacro:body length="$(arg length)"/></robot>

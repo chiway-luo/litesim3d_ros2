@@ -1,0 +1,9 @@
+# Only the session supervisor exposes this service; it restarts its owned processes.
+string request_id
+string expected_run_id
+bool set_initial_pose
+geometry_msgs/Pose initial_pose
+---
+bool success
+string message
+string run_id

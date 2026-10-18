@@ -1,0 +1,34 @@
+# 标准 ROS 2 参数文件。这个示例 launch 读取这些节点段，并统一装配节点。
+# 仿真物理/传感器/场景参数放在 simulation.yaml，修改后均需重新启动。
+# 本例话题在根命名空间：/cmd_vel、/points_raw、/imu/data_raw、/odom。
+/**:
+  ros__parameters:
+    use_sim_time: true               # 所有节点用 /clock，不能使用电脑墙钟做传感器时间。
+
+/litesim3d:
+  ros__parameters:
+    config: ""                       # 由 launch 的 config 参数填入 simulation.yaml 路径。
+    frame_prefix: ""                 # 空为 odom/base_link；如 car/，需以 / 结尾且无前导 /。
+    cmd_mode: twist                   # twist=Twist；stamped=TwistStamped，同一话题只选一种。
+    sensor_reliable: false            # false=best effort；true=reliable；点云/IMU深度均为 5。
+    publish_odom_tf: true              # 仿真发布 odom -> base_footprint，RSP 发布内部 TF。
+    external_odom_tf: false            # 外部接管时设 true，并把 publish_odom_tf 改 false。
+    wait_for_robot_state_publisher: true # 等待内部 TF 发布者就绪再运行。
+    robot_state_publisher_name: robot_state_publisher # launch 使用相同名称启动 RSP。
+    startup_timeout: 10.0             # 等待 RSP 的墙钟秒数，必须为正数。
+    start_paused: false               # true 表示就绪后暂停；launch paused:= 可覆盖。
+    manifest_path: ""                 # 可选绝对 JSON 路径；launch manifest:= 可覆盖。
+    test_drop_frames: 0               # 故障注入参数 0..100；正常使用保持 0。
+    # 初值通常只改 simulation.yaml/robot.initial_pose。
+    # 可选四元数覆盖：[x,y,z,qx,qy,qz,qw]；未启用时省略，避免空数组类型歧义。
+    # initial_pose_override: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+/robot_state_publisher:
+  ros__parameters:
+    robot_description: ""             # launch 从 simulation.yaml 的 robot.urdf 读取并填入。
+    frame_prefix: ""                  # launch 自动与 litesim3d.frame_prefix 同步。
+    publish_frequency: 200.0          # 活动关节 TF 最大发布频率 Hz；固定关节走 /tf_static。
+
+/rviz2:
+  ros__parameters:
+    use_sim_time: true               # 可视化与仿真使用同一时间轴。

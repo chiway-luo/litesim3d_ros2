@@ -1,0 +1,7 @@
+string request_id
+uint32 steps
+---
+bool success
+uint8 code
+string message
+uint64 time_ns

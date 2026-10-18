@@ -1,0 +1,23 @@
+schema_version: 1
+config: m3_robot.yaml
+robots:
+- id: r0
+  xyz:
+  - -3
+  - -3
+  - 0
+- id: r1
+  xyz:
+  - 0
+  - -3
+  - 0
+- id: r2
+  xyz:
+  - -3
+  - 2
+  - 0
+- id: r3
+  xyz:
+  - 0
+  - 2
+  - 0

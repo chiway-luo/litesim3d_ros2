@@ -1,0 +1,1 @@
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:macro name="body" params="length"><link name="base_link"><visual><geometry><box size="${length} 0.6 0.4"/></geometry></visual><collision><geometry><box size="${length} 0.6 0.4"/></geometry></collision></link></xacro:macro></robot>

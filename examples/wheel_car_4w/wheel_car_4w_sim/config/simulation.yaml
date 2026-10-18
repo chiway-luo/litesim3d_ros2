@@ -1,0 +1,158 @@
+# wheel_car_4w 的完整仿真配置；不是 ROS 参数文件，不要套 ros__parameters。
+# 修改后重新启动 launch；所有路径相对于本文件，package:// 由安装索引解析。
+# 各传感器 name/topic 必须唯一；长度米，速度 m/s，角度通常弧度。
+schema_version: 1                 # 当前仅支持版本 1。
+units: m_rad_s                    # 固定写法，表示米/弧度/秒。
+
+simulation:
+  step_size: 0.005                # 积分步长 s，[1e-9, 0.1]；0.005 对应 200 Hz。
+  seed: 42                        # uint64 随机种子；相同输入用于复现噪声/丢点。
+  odom_rate: 50.0                  # 里程计 Hz，(0, 1000]，按仿真时间。
+  command_timeout: 0.5             # 有效控制超过此仿真秒数未刷新，按减速度停车。
+  real_time_factor: 1.0            # 墙钟目标倍速 [0, 100]；0 尽快运行，1 实时。
+  threads: 2                      # 射线工作线程 1..4，不是每个传感器各有这些线程。
+  history_limit: 8192              # 轨迹样本容量 4..65536；rolling 有最小历史需求。
+  journal_limit: 4096              # 最近命令/接触记录容量 1..65536；截断量另记。
+
+robot:
+  id: wheel_car_4w                 # 诊断/真值 ID，不会自动创建 ROS namespace。
+  urdf: package://wheel_car_4w_description/urdf/wheel_car_4w.urdf
+  base_link: base_link             # 运动参考；与 URDF root base_footprint 固连。
+  motion_model: differential_drive # 同侧等速四轮的差速等效模型。
+  initial_pose:
+    xyz: [0.0, 0.0, 0.0]           # world 中初始位置 m；base 在地面投影。
+    rpy: [0.0, 0.0, 0.0]           # world 中初始 roll/pitch/yaw，rad。
+  initial_joints:
+    rear_left_wheel_joint: 0.0     # 转角 rad；前轮由 mimic 推导，不单独赋目标。
+    rear_right_wheel_joint: 0.0
+  visual_collision_fallback: false # 不隐式用精细 visual 代替缺失的 collision。
+  sensor_geometry: visual         # 机器人射线几何 visual/collision。
+  sensor_overrides: {}             # 可按 link 覆盖，如 {base_link: collision}。
+  drive:
+    wheel_radius: 0.12             # m，必须与 URDF 四轮半径一致。
+    wheel_separation: 0.58         # m，左右轮中心距离；不是车体宽度。
+    left_joint: rear_left_wheel_joint
+    right_joint: rear_right_wheel_joint
+    support_links:                 # 四个轮子均允许正常地面支撑接触。
+      - rear_left_wheel_link
+      - rear_right_wheel_link
+      - front_left_wheel_link
+      - front_right_wheel_link
+    max_v: 0.8                     # 最大线速度绝对值，m/s，>0。
+    max_w: 1.5                     # 最大偏航角速度绝对值，rad/s，>0。
+    acceleration: 0.5              # 线加速度上限，m/s²，>0。
+    deceleration: 1.0              # 线减速度上限，m/s²，>0；零指令也按它停车。
+    angular_acceleration: 2.0      # 角加速度上限，rad/s²，>0。
+    unlimited_acceleration: false # 调试时可取消加速度限幅，其他限值仍需合法。
+    wheelbase: 0.48                # m，前后轮距；仅 Ackermann 模式参与转弯限制。
+    max_steering_rad: 0.6          # (0, π/2)；仅 Ackermann 使用，不驱动转向关节。
+
+terrain:
+  enabled: true                    # 使用标为 support 的连续支撑面；无动力学悬架。
+  max_slope_deg: 20.0              # 可通行坡度上限，度，(0, 90)。
+  clearance_m: 0.0                 # base 参考点相对支撑面的高度，不是车身离地间隙。
+  continuity_m: 0.02               # 连续层高度关联范围，m，(0, 0.1]，不自动爬台阶。
+
+lidars:
+  - name: roof_lidar               # 每个雷达唯一标识。
+    link: lidar_link               # 安装外参来自 URDF，相对 base 为 [0.12, 0, 0.49]。
+    topic: points_raw              # PointCloud2 相对话题。
+    rate_hz: 10.0                  # 帧率 Hz，(0, 1000]，按仿真时间。
+    columns: 512                   # 水平列数 1..65536，所有雷达合计槽位≤4194304。
+    rings: 16                      # 必须等于 vertical_angles_deg 数量。
+    vertical_angles_deg: [-15, -13, -11, -9, -7, -5, -3, -1, 1, 3, 5, 7, 9, 11, 13, 15]
+    min_range_m: 0.1               # 最小量程 m，≥0；不构成穿过近处障碍的许可。
+    max_range_m: 50.0              # 最大量程 m，必须大于最小量程。
+    publish_range_boundary: true   # 无几何命中的射线在最大量程处生成辅助点；独立 /points_raw/range_boundary，勿用于建图。
+    horizontal_start_deg: -180.0   # 水平起点，度。
+    horizontal_end_deg: 180.0      # 左闭右开；跨度 >0 且≤360 度。
+    scan_mode: rolling             # rolling 有运动畸变；snapshot 所有点同一时刻。
+    scan_pattern: spinning          # 固定线束环扫；可用 launch lidar_profile:=mid360/mid40 切换。
+    point_layout: xyzirt_v1         # 固定 24 字节 x/y/z/intensity/ring/time 布局。
+    self_filter: robot             # robot 排除整个自身；sensor_link 只排雷达外壳。
+    excluded_links: []              # self_filter=links 时显式列出要排除的自身 link。
+    ring_delays_s:                  # 各线延迟 s；16 个值；<1/(10*512)=0.0001953125。
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    range_bias_m: 0.0              # 固定测距偏置 m，可正可负。
+    range_sigma_m: 0.01            # 每点高斯标准差 m；1 cm 使静止帧也有测距波动，设0可理想复现。
+    dropout: 0.0                    # [0,1] 丢点概率；保留槽位，xyz=NaN。
+
+imus:
+  - name: body_imu                 # raw IMU，无估计姿态。
+    link: imu_link                 # URDF 安装坐标；输出在这个传感器坐标系中。
+    topic: imu/data_raw
+    rate_hz: 200.0                 # Hz，(0, 2000]。
+    accel_bias: [0.0, 0.0, 0.0]    # x/y/z 固定偏置，m/s²。
+    gyro_bias: [0.0, 0.0, 0.0]     # x/y/z 固定偏置，rad/s。
+    accel_sigma: [0.0, 0.0, 0.0]   # 非负每样本标准差 m/s²，不是噪声密度。
+    gyro_sigma: [0.0, 0.0, 0.0]    # 非负每样本标准差 rad/s。
+    # 水平静止时 accel.z≈9.80665；orientation_covariance[0]=-1 表示无姿态。
+
+odom:
+  mode: ideal                      # ideal / noisy；非默认误差必须同时选择 noisy。
+  linear_scale: 1.0                # 正数，无量纲，线速度比例误差。
+  angular_scale: 1.0               # 正数，无量纲，角速度比例误差。
+  linear_bias: 0.0                 # m/s，测量速度偏置。
+  angular_bias: 0.0                # rad/s，测量角速度偏置。
+  linear_sigma: 0.0                # m/s，非负速度噪声标准差。
+  angular_sigma: 0.0               # rad/s，非负角速度噪声标准差。
+  # 协方差是手动声明，不从上面 sigma 自动传播；零矩阵表示未声明。
+  # 两个数组都是 6×6 行主序，必须有限、对称、半正定。
+  pose_covariance:                 # 行/列依次 x, y, z, roll, pitch, yaw。
+    [0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0]
+  twist_covariance:                # 行/列依次 vx, vy, vz, wx, wy, wz。
+    [0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0,
+     0, 0, 0, 0, 0, 0]
+
+# 场景实体：pose 为 world 坐标；geometry 同时用于显示、碰撞和雷达。
+# 需要分离精度时用 visual/collision/sensor_geometry 三个形状替换 geometry，
+# 三者必须同时提供，且不能混用 geometry。所有 id 必须唯一。
+entities:
+  - id: ground
+    pose: {xyz: [0.0, 0.0, -0.1], rpy: [0.0, 0.0, 0.0]}
+    geometry: {type: box, size: [20.0, 16.0, 0.2]} # 上表面 z=0。
+    reflectivity: 0.35             # 合成反射强度 [0,1]，不是材料标定。
+    support: true                  # 轮子可接触此支撑面；不能整体忽略地面碰撞。
+  - id: front_wall
+    pose: {xyz: [5.0, 0.0, 1.25], rpy: [0.0, 0.0, 0.0]}
+    geometry: {type: box, size: [0.1, 10.0, 2.5]}
+    reflectivity: 0.8
+    support: false
+  - id: left_wall
+    pose: {xyz: [0.0, 4.0, 1.25], rpy: [0.0, 0.0, 0.0]}
+    geometry: {type: box, size: [10.0, 0.1, 2.5]}
+    reflectivity: 0.6
+    support: false
+  - id: obstacle_box
+    pose: {xyz: [2.5, 1.2, 0.35], rpy: [0.0, 0.0, 0.2]}
+    geometry: {type: box, size: [0.6, 0.6, 0.7]}
+    reflectivity: 0.5
+    support: false
+  - id: column
+    pose: {xyz: [3.0, -1.5, 0.8], rpy: [0.0, 0.0, 0.0]}
+    geometry: {type: cylinder, radius: 0.25, length: 1.6} # 局部 z 轴圆柱。
+    reflectivity: 0.7
+    support: false
+  - id: overhead
+    pose: {xyz: [2.0, 0.0, 1.8], rpy: [0.0, 0.0, 0.0]}
+    geometry: {type: box, size: [1.2, 2.0, 0.15]}
+    reflectivity: 0.5
+    support: false
+  # 可选移动障碍：取消下面整段注释即可加入；不允许 support: true。
+  # - id: moving_box
+  #   pose: {xyz: [3.0, -3.0, 0.5], rpy: [0.0, 0.0, 0.0]}
+  #   geometry: {type: box, size: [0.3, 0.3, 1.0]}
+  #   reflectivity: 0.5
+  #   support: false
+  #   motion:
+  #     linear_velocity: [0.0, 0.15, 0.0] # 世界坐标 m/s，范数≤100。
+  #     yaw_rate: 0.2                     # 绕世界 z 的 rad/s，绝对值≤100。
