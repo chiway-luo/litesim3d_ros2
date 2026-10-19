@@ -1,0 +1,20 @@
+# 场景和出生位姿来自 SDF；模型、底盘、里程计、传感器来自组合 Xacro。
+schema_version: 1
+units: m_rad_s
+simulation:
+  seed: 42
+  odom_rate: 50.0
+  command_timeout: 0.5
+  threads: 2
+robot:
+  id: omni4
+  urdf: package://omni4_sim/urdf/simulation.urdf.xacro
+  base_link: base_link
+  # true：碰撞时车体受阻，驱动轮和轮式里程计继续累计。
+  continue_on_collision: true
+  support_links: [wheel_0_joint_link, wheel_1_joint_link, wheel_2_joint_link, wheel_3_joint_link]
+terrain:
+  enabled: true
+entity_bindings:
+  ground:
+    support: true

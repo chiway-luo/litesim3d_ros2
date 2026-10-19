@@ -30,13 +30,15 @@ The documented development and runtime environment is **Ubuntu 22.04 + ROS 2 Hum
 
 ## Features
 
-- **Robot models:** differential drive, ideal Ackermann steering, and velocity-controlled multicopters, with URDF and supported SDF models.
-- **Scenes and collisions:** 3D geometric collision detection, continuous slopes, dynamic obstacles, and textured SDF scenes.
+- **Robot models:** two/four-wheel differential, articulated Ackermann, and three/four ordinary omni-wheel chassis plugins, plus compatible velocity-controlled multicopters; URDF/Xacro and supported SDF models.
+- **Scenes and collisions:** fixed collidable obstacles, continuous slopes, and textured SDF scenes. Wheeled robots can optionally keep their encoders and odometry running while the chassis is blocked.
 - **Sensors:** VLP-16, Mid-360, and Mid-40 scan presets; rolling scans, measurement noise, IMU, odometry, and optional RGB/depth cameras.
 - **ROS 2 integration:** point clouds, images, TF, simulation time, pause/step control, and single-robot session resets.
-- **Examples:** a four-wheel office robot, a drone flight course, and shared-world simulation for one to four identical robots.
+- **Examples:** a four-wheel office robot, Ackermann and three/four omni-wheel robots, a drone flight course, and shared-world simulation for one to four identical robots.
 
 The simulator uses kinematics and geometric constraints. It does not model contact forces, suspension, tire dynamics, motor thrust, or flight-controller dynamics. Sensor presets are simulation models; their scope is described in the [LiDAR guide](examples/wheel_car_4w/雷达配置说明.md).
+
+Chassis, encoder odometry, and five sensor implementations are separate plugin packages. Install an external implementation and select it in the composed model without rebuilding the core. See [model composition and migration](docs/usage/模型组合与插件迁移.md) and [plugin development](docs/development/插件开发.md).
 
 ## Development environment
 
@@ -78,7 +80,7 @@ bash scripts/build.sh
 source "$(python3 scripts/paths.py install)/setup.bash"
 ```
 
-A complete default build reports **12 packages finished**. Build artifacts are stored outside the source repository; `scripts/paths.py install` locates the generated install environment.
+A complete default build reports **29 packages finished**. Build artifacts are stored outside the source repository; `scripts/paths.py install` locates the generated install environment.
 
 ### 2. Launch the simulation
 
@@ -150,7 +152,7 @@ The [中文 README](README.zh-CN.md) covers the same setup and quick-start steps
 ```text
 litesim3d_ros2/
 ├── VERSION                 # Project version (major.minor.patch)
-├── litesim3d_core/          # C++ core, resources, and tests; no ROS runtime dependency
+├── litesim3d_core/          # C++ core, resources, and tests; pluginlib loading without DDS nodes
 ├── litesim3d_bringup/       # Shared launch pipeline; no dependency on example packages
 ├── litesim3d_test_support/  # Installed helpers for package-level DDS tests
 ├── litesim3d_assets/        # SDF import, resource validation, and internal adaptation

@@ -15,7 +15,7 @@ def generate_launch_description():
         'world': 'office.sdf',
         'runtime': str(share / 'config/runtime.yaml'),
         'params': str(share / 'config/ros.yaml'),
-        'config': '', 'lidar_profile': 'config',
+        'config': '', 'lidar_profile': 'config', 'model_arguments': '{}',
         'lidar_profiles_dir': str(share / 'config/lidars'),
         'rviz_config': str(share / 'rviz/wheel_car_4w.rviz'),
         'gui': 'true', 'rviz': 'false', 'cameras': '', 'camera_view': 'false',

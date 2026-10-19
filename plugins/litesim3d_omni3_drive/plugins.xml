@@ -1,0 +1,5 @@
+<library path="litesim3d_omni3_drive">
+  <class name="litesim3d_omni3_drive/Omni3Drive" type="litesim3d::plugins::Omni3Drive" base_class_type="litesim3d::plugins::ChassisPlugin">
+    <description>Omni3Drive, API version 1.</description>
+  </class>
+</library>

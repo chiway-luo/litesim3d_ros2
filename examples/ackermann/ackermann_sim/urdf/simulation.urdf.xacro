@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot name="ackermann" version="1.0" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find ackermann_sim)/urdf/mechanical.urdf.xacro"/>
+  <xacro:include filename="$(find ackermann_sim)/urdf/sensors.xacro"/>
+  <litesim3d version="1">
+    <chassis name="drive" class="litesim3d_ackermann_drive/AckermannDrive">
+      <parameters file="package://litesim3d_ackermann_drive/config/parameters.yaml"/>
+      <parameters file="package://ackermann_sim/config/geometry.yaml" section="common"/>
+      <parameters file="package://ackermann_sim/config/geometry.yaml" section="drive"/>
+    </chassis>
+    <odometry name="wheel_odometry" class="litesim3d_ackermann_odometry/AckermannOdometry">
+      <parameters file="package://litesim3d_ackermann_odometry/config/parameters.yaml"/>
+      <parameters file="package://ackermann_sim/config/geometry.yaml" section="common"/>
+    </odometry>
+  </litesim3d>
+</robot>

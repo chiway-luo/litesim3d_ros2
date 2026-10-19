@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_plugin_tests</name><version>0.4.0</version>
+  <description>Installed plugin loading, kinematics and encoder odometry acceptance tests.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer><license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <test_depend>litesim3d_plugin_api</test_depend><test_depend>ament_index_cpp</test_depend>
+  <test_depend>litesim3d_core</test_depend>
+  <test_depend>gtest</test_depend><test_depend>yaml-cpp</test_depend>
+  <test_depend>litesim3d_diff_drive</test_depend><test_depend>litesim3d_ackermann_drive</test_depend>
+  <test_depend>litesim3d_omni3_drive</test_depend><test_depend>litesim3d_omni4_drive</test_depend>
+  <test_depend>litesim3d_diff_odometry</test_depend><test_depend>litesim3d_ackermann_odometry</test_depend>
+  <test_depend>litesim3d_omni_odometry</test_depend>
+  <test_depend>litesim3d_lidar</test_depend>
+  <test_depend>litesim3d_imu</test_depend>
+  <test_depend>litesim3d_rgb_camera</test_depend>
+  <test_depend>litesim3d_depth_camera</test_depend>
+  <test_depend>litesim3d_rgbd_camera</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

@@ -1,0 +1,23 @@
+# 必填示例：URDF 光学 link，+z 前、+x 右、+y 下；安装姿态由 URDF joint 给定。
+link: camera_optical_frame
+# 必填示例：话题前缀；发布 color 或 depth 下的 image_raw 和 camera_info。
+# 多实例必须使用不同输出话题；只允许相对话题。
+topic: camera/front
+# 是否启用采样；false 仍校验参数和 link。
+enabled: true
+# 水平像素数，整数 [16,4096]；单相机总像素 ≤8294400。
+width: 640
+# 垂直像素数，整数 [16,4096]。
+height: 480
+# 帧率，Hz，(0,240]；以仿真时钟调度，渲染变慢时降低实际推进速度。
+rate_hz: 15.0
+# 水平针孔视场，度，(0,180)，纵向内参由宽高推导。
+horizontal_fov_deg: 70.0
+# 最近裁剪距离，m，必须 >0；深度为光学 z 方向距离。
+near_clip_m: 0.1
+# 最远裁剪距离，m，必须大于最近距离；无效深度输出 NaN。
+far_clip_m: 20.0
+# 深度固定偏差，m，有限数；超出裁剪范围的测量变为 NaN。
+depth_bias_m: 0.0
+# 深度独立高斯噪声标准差，m，≥0；已有无效像素保持无效。
+depth_sigma_m: 0.0

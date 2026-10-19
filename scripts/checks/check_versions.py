@@ -15,6 +15,7 @@ def main():
         failures.append('VERSION must contain a major.minor.patch version without leading zeros')
     manifests = sorted(ROOT.glob('*/package.xml'))
     manifests.extend(sorted((ROOT / 'examples').rglob('package.xml')))
+    manifests.extend(sorted((ROOT / 'plugins').rglob('package.xml')))
     packages = {}
     if not manifests:
         failures.append('No ROS package manifests found')

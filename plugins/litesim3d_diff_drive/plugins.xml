@@ -1,0 +1,5 @@
+<library path="litesim3d_diff_drive">
+  <class name="litesim3d_diff_drive/DifferentialDrive" type="litesim3d::plugins::DifferentialDrive" base_class_type="litesim3d::plugins::ChassisPlugin">
+    <description>DifferentialDrive, API version 1.</description>
+  </class>
+</library>

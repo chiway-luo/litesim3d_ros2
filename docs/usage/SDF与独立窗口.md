@@ -46,13 +46,14 @@ examples/
 
 SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光。可选 `<gui><camera><pose>` 指定世界坐标系下的观察初始视角，仅影响查看器；不引入其他交互控件。`<physics>` 的 `max_step_size`、`real_time_factor` 提供积分步长及默认目标速率；这里只使用计时参数，仍是运动学内核，不执行 Ode/Bullet 刚体求解。
 
-`wheel_car_4w_sim/config/runtime.yaml` 提供底盘绑定、传感器扫描与噪声、ROS 话题、地形支持、`entity_bindings` 和 mimic 扩展。不能再次定义几何、初始位姿、步长或目标速率。固定、转动、滑动关节来自 SDF；派生 URDF 只用于现有内核和 RSP，完整视觉材质直接交给渲染器。
+`wheel_car_4w_sim/config/runtime.yaml` 现在指向组合 `simulation.urdf.xacro`，并保留碰撞、地形和 `entity_bindings`。组合模型提供完整机器人结构、材质及插件；同名 SDF model 只提供 root 出生位姿。没有 `robot.urdf` 时保留 SDF 定义机器人和旧 YAML 绑定的兼容入口。两种方式都不能在 runtime 重复场景几何、初始位姿、步长或目标速率。完整规则见 [模型组合与插件迁移](模型组合与插件迁移.md)。
 
 | launch 参数 | 默认和含义 |
 | --- | --- |
 | `assets_root` | `wheel_car_4w_models` 包 share 路径；覆盖时目录下仍需有 models/worlds |
 | `world` | `office.sdf`；单文件名相对 assets_root/worlds，也可指定显式文件路径 |
 | `runtime` | 安装的 config/runtime.yaml |
+| `model_arguments` | {}；传入 Xacro 的参数映射 |
 | `gui` | true；false 关闭三维观察窗口，相机渲染由 cameras 配置独立决定 |
 | `cameras` | 空表示沿用 runtime 中 enabled；true/false 只覆盖所有已定义相机的开关，不改变各自类型；示例类型默认 rgb |
 | `camera_view` | false；相机默认只发布 ROS 2 数据，不弹出预览；true 显式打开可选预览 |
@@ -80,9 +81,9 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 | 内容 | 当前行为 |
 | --- | --- |
 | SDF 1.9、include、嵌套静态模型 | 使用 libsdformat12，解析 relative_to、attached_to、expressed_in |
-| 单个受控机器人 + 静态场景 | 支持；robot.id 必须匹配世界模型名，未绑定动态模型报错 |
+| 单个受控机器人 + 固定场景 | robot.id 必须匹配受控模型；其余场景模型固定在初始位姿，忽略其 static=false 的运动含义；缺 collision 的 link 使用 visual 补齐 |
 | box、sphere、cylinder、STL、OBJ、DAE | 支持正缩放；DAE 必须明确 Z_UP，保留节点变换和单位 |
-| 多 visual/collision、多材质槽 | 独立保留；visual 不自动补作 collision；支持模型必须提供 collision |
+| 多 visual/collision、多材质槽 | 显式 collision 独立保留；场景 link 完全缺少 collision 时由 visual 补齐，支撑角色同样生效；机器人仍按自身碰撞导入规则处理 |
 | OBJ/MTL、DAE 漫反射纹理 | 保留每个材质槽、UV、颜色和纹理；缺失法向量按三角面补齐 |
 | SDF 基础材质 | 颜色、透明度、自发光、双面、阴影；世界 ambient/background 和三种灯光 |
 | SDF PBR metal | albedo、normal、roughness、metalness、emissive、light map 映射到 Ogre2；逐项验证范围见测试报告 |
@@ -117,13 +118,13 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 
 开发与运行环境为 Ubuntu 22.04 + ROS 2 Humble。SDF 与图形模块依赖 libsdformat12、Gazebo Rendering 6、Qt 5 Widgets 和 Qt 5 SVG；依赖安装命令见 [开发环境](../../README.zh-CN.md#开发环境)，构建方式见 [安装与构建](安装与构建.md)。
 
-无需图形包时使用 `LWS_BUILD_GUI=0 bash scripts/build.sh`，运行时加 `gui:=false cameras:=false`。单独内核构建保持不依赖 ROS、Qt 或 Ogre。启用 RGB/深度相机需要图形包和可用的 Ogre2 图形环境，即使关闭所有窗口也需要渲染后端。图形功能的验证需对应具体平台和渲染环境，内核测试通过不代表图形功能已完成验证。
+无需图形包时使用 `LWS_BUILD_GUI=0 bash scripts/build.sh`，运行时加 `gui:=false cameras:=false`。单独内核不启动 ROS 节点、不链接 Qt/Ogre；插件加载使用 pluginlib 及已安装插件。启用 RGB/深度相机需要图形包和可用的 Ogre2 图形环境，即使关闭所有窗口也需要渲染后端。图形功能的验证需对应具体平台和渲染环境，内核测试通过不代表图形功能已完成验证。
 
 完整证据与尚未验证项见 [SDF 实现验证](../testing/SDF实现验证.md)。
 
 ## 车载 RGB 与深度相机
 
-当前小车 SDF 含 `camera_link` 和 `camera_optical_frame`，安装在车体前方上缘。相机参数放在 runtime；默认定义一台 640×480、15 Hz 的普通 RGB 相机，`enabled: false`。启用普通相机只生成彩色数据和内参，不创建深度渲染目标或深度发布器。所有相机类型默认只发布 ROS 2 话题，不弹出摄像头窗口。启动普通相机：
+当前小车的 `sensors.xacro` 定义 `camera_link` 和 `camera_optical_frame`，安装在车体前方上缘。相机声明引用 `litesim3d_rgb_camera/config/parameters.yaml`，默认一台 640×480、15 Hz 的 RGB 相机，实例覆盖 `enabled: false`。启用普通相机只生成彩色数据和内参，不创建深度渲染目标或深度发布器。所有相机类型默认只发布 ROS 2 话题，不弹出摄像头窗口。启动普通相机：
 
 ```bash
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py cameras:=true
@@ -131,26 +132,25 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py cameras:=true
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py cameras:=true gui:=false
 ```
 
-配置文件中 `cameras` 是列表，最多 8 项；名称和实际输出话题不能重复。`link` 必须是模型中已有的 **ROS 光学坐标系**，+z 向前、+x 向右、+y 向下。示例通过固定关节相对 camera_link 旋转 roll=-π/2、yaw=-π/2；发布帧与 RSP 的 TF 使用相同前缀。新增不同安装位置的相机时在 SDF 中增加对应 link/joint，再填入列表。
+组合模型内每个相机使用独立 sensor 声明，最多 8 项；名称和实际输出话题不能重复。`link` 必须是模型中已有的 **ROS 光学坐标系**，+z 向前、+x 向右、+y 向下。示例通过固定关节相对 camera_link 旋转 roll=-π/2、yaw=-π/2；发布帧与 RSP 的 TF 使用相同前缀。新增安装位置时在 sensors.xacro 增加 link/joint，再声明对应插件。
 
-```yaml
-cameras:
-  - name: front_camera
-    enabled: true
-    type: rgb
-    link: camera_optical_frame
-    topic: camera/front
-    width: 640
-    height: 480
-    rate_hz: 30.0
-    horizontal_fov_deg: 70.0
-    near_clip_m: 0.1
-    far_clip_m: 20.0
+```xml
+<sensor name="front_camera" class="litesim3d_rgb_camera/RgbCamera">
+  <parameters file="package://litesim3d_rgb_camera/config/parameters.yaml"/>
+  <overrides>
+link: camera_optical_frame
+topic: camera/front
+enabled: true
+rate_hz: 30.0
+  </overrides>
+</sensor>
 ```
+
+以上声明放在 `<litesim3d version="1">` 块中；完整参数、RGB/深度噪声与多实例接口见 [插件开发](../development/插件开发.md)。
 
 | 参数 | 含义 |
 | --- | --- |
-| type | 默认 rgb：仅彩色；显式 depth：仅深度；显式 rgbd：同步、已对齐的彩色和深度 |
+| 插件 class | RgbCamera：仅彩色；DepthCamera：仅深度；RgbdCamera：同步、已对齐的彩色和深度；每类在独立包中 |
 | enabled | 是否产生采样事件、创建渲染目标和发布器；false 不输出该相机数据 |
 | width / height | 像素分辨率；每边 16–4096，单相机不超过 8,294,400 像素 |
 | rate_hz | 每仿真秒的帧数，(0,240]；支持非整数和多个相机独立频率 |
@@ -158,9 +158,9 @@ cameras:
 | near_clip_m / far_clip_m | 近、远裁剪面，0 < near < far，单位米 |
 | topic | 相对话题前缀；下表以 camera/front 为例 |
 
-所有启用相机合计不超过 16,588,800 像素，这是独立于碰撞预算的图像缓冲限制，不是 GPU 帧率承诺。分辨率、频率和模型复杂度增加会降低实际 RTF。参数在启动时读取；当前不支持 `ros2 param set` 在线更改采样率、分辨率或增删相机。编辑 runtime 后重新启动，用 `runtime:=/绝对路径/my_runtime.yaml` 选择文件，`cameras` 留空则保留逐台 enabled 设置。
+所有启用相机合计不超过 16,588,800 像素，这是独立于碰撞预算的图像缓冲限制，不是 GPU 帧率承诺。分辨率、频率和模型复杂度增加会降低实际 RTF。参数在启动时读取；当前不支持 `ros2 param set` 在线更改采样率、分辨率或增删相机。编辑模型实例配置后启动新会话；用 `runtime:=/绝对路径/my_runtime.yaml` 指向自己的组合模型，`cameras` 留空则保留逐台 enabled 设置。
 
-需要“彩色图像加深度数据”的深度相机时，将该相机改为 `type: rgbd`；只需要深度图时选 `type: depth`。省略 `type` 仍按普通 `rgb` 处理。`cameras:=true` 只开启已配置的相机，不切换类型；不同相机可以分别选择类型。
+需要彩色加深度时，把类与参数文件一起替换为 `litesim3d_rgbd_camera/RgbdCamera` 和对应包配置；只需要深度时使用 `litesim3d_depth_camera/DepthCamera`。`cameras:=true` 只开启已声明的标准相机，不切换类型。旧 YAML 的 cameras 列表和 type 字段继续用于没有 sensor 扩展的兼容模型；两处同时声明会报冲突。
 
 | 话题 | 启用类型 | 消息 / 数据 |
 | --- | --- | --- |

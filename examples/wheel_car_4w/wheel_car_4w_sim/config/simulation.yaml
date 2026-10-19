@@ -44,6 +44,7 @@ robot:
     deceleration: 1.0              # 线减速度上限，m/s²，>0；零指令也按它停车。
     angular_acceleration: 2.0      # 角加速度上限，rad/s²，>0。
     unlimited_acceleration: false # 调试时可取消加速度限幅，其他限值仍需合法。
+    continue_on_collision: true   # 碰撞后车体停住，轮子和轮式里程计继续累计。
     wheelbase: 0.48                # m，前后轮距；仅 Ackermann 模式参与转弯限制。
     max_steering_rad: 0.6          # (0, π/2)；仅 Ackermann 使用，不驱动转向关节。
 
@@ -147,12 +148,9 @@ entities:
     geometry: {type: box, size: [1.2, 2.0, 0.15]}
     reflectivity: 0.5
     support: false
-  # 可选移动障碍：取消下面整段注释即可加入；不允许 support: true。
-  # - id: moving_box
+  # 可选固定障碍：取消下面整段注释即可加入。
+  # - id: fixed_box
   #   pose: {xyz: [3.0, -3.0, 0.5], rpy: [0.0, 0.0, 0.0]}
   #   geometry: {type: box, size: [0.3, 0.3, 1.0]}
   #   reflectivity: 0.5
   #   support: false
-  #   motion:
-  #     linear_velocity: [0.0, 0.15, 0.0] # 世界坐标 m/s，范数≤100。
-  #     yaw_rate: 0.2                     # 绕世界 z 的 rad/s，绝对值≤100。

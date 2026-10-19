@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<robot name="omni3" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="g" value="${xacro.load_yaml('$(find omni3_sim)/config/geometry.yaml')}"/>
+  <material name="body"><color rgba="0.1 0.4 0.7 1"/></material>
+  <material name="rubber"><color rgba="0.08 0.08 0.09 1"/></material>
+  <material name="spoke"><color rgba="0.95 0.65 0.1 1"/></material>
+  <link name="base_footprint"/>
+  <joint name="base_fixed" type="fixed"><parent link="base_footprint"/><child link="base_link"/></joint>
+  <link name="base_link">
+    <visual><origin xyz="0 0 0.22"/><geometry><box size="0.38 0.38 0.16"/></geometry><material name="body"/></visual>
+    <collision><origin xyz="0 0 0.22"/><geometry><box size="0.38 0.38 0.16"/></geometry></collision>
+  </link>
+  <xacro:macro name="wheel" params="w">
+    <link name="${w['joint']}_link">
+      <!-- 外观用轮毂圆柱和色条；被动滚子的自由方向由运动学约束描述。 -->
+      <visual><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="${w['radius_m']}" length="0.04"/></geometry><material name="rubber"/></visual>
+      <visual><geometry><box size="0.15 0.045 0.015"/></geometry><material name="spoke"/></visual>
+      <collision><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="${w['radius_m']}" length="0.04"/></geometry></collision>
+    </link>
+    <joint name="${w['joint']}" type="continuous">
+      <parent link="base_link"/><child link="${w['joint']}_link"/>
+      <origin xyz="${w['x_m']} ${w['y_m']} ${w['radius_m']}" rpy="0 0 ${w['rolling_angle_rad']}"/>
+      <axis xyz="0 1 0"/><limit effort="20" velocity="30"/>
+    </joint>
+  </xacro:macro>
+  <xacro:wheel w="${g['wheels'][0]}"/>
+  <xacro:wheel w="${g['wheels'][1]}"/>
+  <xacro:wheel w="${g['wheels'][2]}"/>
+</robot>

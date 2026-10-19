@@ -28,7 +28,13 @@ if [[ "$(uname -s)" == Darwin ]]; then
   # The bundled conda linker can be too old for the installed Xcode SDK format.
   # Select the installed Xcode compiler for this project only.
   platform_args=(-DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++
-                 "-DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)")
+                 "-DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)"
+                 -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+                 "-DCMAKE_INSTALL_RPATH=$artifact_root/install/lib${CONDA_PREFIX:+;$CONDA_PREFIX/lib}")
+  if [[ -n "${CONDA_PREFIX:-}" ]]; then
+    platform_args+=("-DCMAKE_EXE_LINKER_FLAGS=-Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs -L$CONDA_PREFIX/lib"
+                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs -L$CONDA_PREFIX/lib")
+  fi
   # RoboStack's Ogre-Next package may omit Metal. Build that one backend in
   # this project's artifact directory; never modify the ROS/global prefix.
   if [[ "${LWS_BUILD_GUI:-1}" != 0 ]]; then

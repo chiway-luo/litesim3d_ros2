@@ -1,5 +1,6 @@
 #pragma once
 #include <ignition/rendering.hh>
+#include <ignition/rendering/config.hh>
 #include <ignition/rendering/OrbitViewController.hh>
 #include <ignition/common/Console.hh>
 #include <ignition/common/MeshManager.hh>
@@ -81,6 +82,16 @@ public:
     }
     const auto log=QStandardPaths::writableLocation(QStandardPaths::TempLocation)+"/litesim3d-rendering";
     QDir().mkpath(log);ignition::common::Console::log.Init(log.toStdString(),"viewer.log");
+    // Conda relocates binary string literals with NUL padding. Ogre concatenates
+    // its compiled-in resource directory, retaining that padding and silently
+    // missing material scripts. The installed SDK header has a normal path.
+    // Set only this process's default; preserve an explicit caller override.
+    auto resourceRoot=qgetenv("IGN_RENDERING_RESOURCE_PATH");
+    if(resourceRoot.isEmpty())resourceRoot=QByteArray(IGN_RENDERING_RESOURCE_PATH);
+    require(std::filesystem::is_regular_file(std::filesystem::path(resourceRoot.constData()) /
+        "ogre2/media/materials/scripts/depth_camera.material"),
+        "Ogre material resources missing; set IGN_RENDERING_RESOURCE_PATH to the installed rendering share directory");
+    qputenv("IGN_RENDERING_RESOURCE_PATH",resourceRoot);
 #ifdef __APPLE__
     engine_=render::engine("ogre2",{{"metal","1"}});
 #else

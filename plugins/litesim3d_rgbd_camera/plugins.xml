@@ -1,0 +1,5 @@
+<library path="litesim3d_rgbd_camera">
+  <class name="litesim3d_rgbd_camera/RgbdCamera" type="litesim3d::plugins::RgbdCamera" base_class_type="litesim3d::plugins::SensorPlugin">
+    <description>RgbdCamera, API version 1.</description>
+  </class>
+</library>

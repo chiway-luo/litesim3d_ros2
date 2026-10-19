@@ -1,0 +1,5 @@
+<library path="litesim3d_ackermann_drive">
+  <class name="litesim3d_ackermann_drive/AckermannDrive" type="litesim3d::plugins::AckermannDrive" base_class_type="litesim3d::plugins::ChassisPlugin">
+    <description>AckermannDrive, API version 1.</description>
+  </class>
+</library>

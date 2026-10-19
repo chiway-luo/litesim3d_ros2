@@ -1,0 +1,5 @@
+<library path="litesim3d_ackermann_odometry">
+  <class name="litesim3d_ackermann_odometry/AckermannOdometry" type="litesim3d::plugins::AckermannOdometry" base_class_type="litesim3d::plugins::OdometryPlugin">
+    <description>AckermannOdometry, API version 1.</description>
+  </class>
+</library>

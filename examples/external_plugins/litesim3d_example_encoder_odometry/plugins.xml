@@ -1,0 +1,5 @@
+<library path="litesim3d_example_encoder_odometry">
+  <class name="litesim3d_example_encoder_odometry/ExampleEncoderOdometry" type="litesim3d::plugins::ExampleEncoderOdometry" base_class_type="litesim3d::plugins::OdometryPlugin">
+    <description>ExampleEncoderOdometry, API version 1.</description>
+  </class>
+</library>

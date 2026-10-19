@@ -1,5 +1,6 @@
 """Installed SDF import contracts: resource relocation, semantic frames and fidelity."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -113,6 +114,31 @@ def test_nested_static_frames_resolve_through_attached_to(scene, tmp_path):
     assert item["pose"][:3] == pytest.approx([13, 5, 1])
 
 
+def test_scenery_without_collision_is_fixed_and_collidable(scene, tmp_path):
+    def change(root):
+        model = root.find("model")
+        model.find("static").text = "false"
+        link = model.find("link")
+        for collision in link.findall("collision"):
+            link.remove(collision)
+    alter(scene[0] / "models/textured_crate/model.sdf", change)
+    bindings = yaml.safe_load(scene[1].read_text())
+    bindings["robot"]["drive"]["continue_on_collision"] = True
+    scene[1].write_text(yaml.safe_dump(bindings))
+    result, output = run(scene, tmp_path)
+    assert result.returncode == 0, result.stderr
+    description = json.loads((output / "scene.json").read_text())
+    assert description["obstacles_fixed"] is True
+    generated = yaml.safe_load((output / "runtime.yaml").read_text())
+    assert generated["robot"]["drive"]["continue_on_collision"] is True
+    entries = [e for e in generated["entities"] if "textured_crate/" in e["id"]]
+    visual = next(e for e in entries if "visual" in e)
+    collision = next(e for e in entries if "collision" in e)
+    assert collision["collision"] == visual["visual"]
+    assert collision["pose"] == visual["pose"]
+    assert all("motion" not in e for e in generated["entities"])
+
+
 def test_joint_axis_expressed_in_resolves_in_generated_joint_frame(scene, tmp_path):
     path = scene[0] / "models/wheel_car_4w/model.sdf"
     def add(root):
@@ -201,6 +227,44 @@ def test_source_geometry_cannot_be_overridden_by_runtime_yaml(scene, tmp_path):
     scene[1].write_text(yaml.safe_dump(data))
     result, _ = run(scene, tmp_path)
     assert result.returncode != 0 and "duplicate SDF" in result.stderr
+
+
+def test_composed_urdf_owns_robot_visuals_mounts_and_materials(scene, tmp_path):
+    result, original = run(scene, tmp_path)
+    assert result.returncode == 0, result.stderr
+    model = ET.parse(original / "robot.urdf")
+    root = model.getroot()
+    link = ET.SubElement(root, "link", name="new_sensor")
+    for role in ("visual", "collision"):
+        element = ET.SubElement(link, role)
+        ET.SubElement(ET.SubElement(element, "geometry"), "box", size=".04 .05 .06")
+        if role == "visual":
+            ET.SubElement(ET.SubElement(element, "material", name="sensor_red"), "color", rgba=".8 .1 .2 1")
+    joint = ET.SubElement(root, "joint", name="new_mount", type="fixed")
+    ET.SubElement(joint, "parent", link="base_link"); ET.SubElement(joint, "child", link="new_sensor")
+    ET.SubElement(joint, "origin", xyz=".1 .2 .7")
+    source = tmp_path / "combined.urdf"; model.write(source, encoding="unicode")
+    data = yaml.safe_load(scene[1].read_text()); data["robot"]["urdf"] = str(source)
+    data["robot"]["allow_visual_only"] = True  # legacy fixture camera is visual-only
+    data.pop("mimic_joints", None); scene[1].write_text(yaml.safe_dump(data))
+    result, output = run(scene, tmp_path, True)
+    assert result.returncode == 0, result.stderr
+    description = json.loads((output / "scene.json").read_text())
+    assert description["robot_model"]["sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert description["initial_link_poses"]["new_sensor"][:3] == pytest.approx([.1,.2,.7])
+    visual = next(v for v in description["visuals"] if v["binding"] == "new_sensor")
+    assert visual["material"]["diffuse"] == pytest.approx([.8,.1,.2,1])
+    assert visual["material"]["transparency"] == 0 and visual["material"]["cast_shadows"] is True
+    assert visual["geometry"]["size"] == pytest.approx([.04,.05,.06])
+    assert yaml.safe_load((output / "runtime.yaml").read_text())["robot"]["urdf"] == str(source)
+
+
+def test_raw_xacro_has_actionable_preparation_error(scene, tmp_path):
+    source = tmp_path / "robot.xacro"; source.write_text('<robot name="unexpanded"/>')
+    data = yaml.safe_load(scene[1].read_text()); data["robot"]["urdf"] = str(source)
+    data.pop("mimic_joints", None); scene[1].write_text(yaml.safe_dump(data))
+    result, _ = run(scene, tmp_path)
+    assert result.returncode != 0 and "prepare_config" in result.stderr
 
 
 def test_sdf_timing_and_scene_colors_are_authoritative(scene, tmp_path):

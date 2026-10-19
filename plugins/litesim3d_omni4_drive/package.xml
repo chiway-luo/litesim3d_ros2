@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_omni4_drive</name><version>0.4.0</version>
+  <description>LiteSim3D Omni4Drive plugin.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer><license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>litesim3d_plugin_api</depend><depend>pluginlib</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

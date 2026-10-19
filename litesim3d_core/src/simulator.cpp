@@ -1,4 +1,4 @@
-#include "litesim3d/sim.hpp"
+#include "litesim3d/sensor_plugin.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -53,7 +53,6 @@ Simulator::Simulator(Config config, Model model, Scene scene)
     : config_(std::move(config)), model_(std::move(model)), scene_(std::move(scene)),
       origin_(config_.initial_pose) {
   config_.validate();
-  validateCollisionBudget(config_, model_, scene_);
   // Shape resources are immutable and shared. Contact-stop state belongs to this run.
   std::map<const Motion *, std::shared_ptr<Motion>> motions;
   for (auto *role : {&scene_.visual, &scene_.collision, &scene_.sensor})
@@ -66,6 +65,8 @@ Simulator::Simulator(Config config, Model model, Scene scene)
   require(!model_.collision.empty(), "robot must have collision geometry");
   current_.world_base = origin_;
   current_.joints = model_.positions(config_.initial_joints);
+  initializeMotionPlugins();
+  validateCollisionBudget(config_, model_, scene_);
   for (const auto &imu : config_.imus)
     require(model_.links.count(imu.link), "imu binding: unknown link " + imu.link);
   for (const auto &camera : config_.cameras)
@@ -76,7 +77,7 @@ Simulator::Simulator(Config config, Model model, Scene scene)
       require(model_.links.count(link), "lidar filter: unknown link " + link);
   }
   auto transforms = model_.fk(current_.joints);
-  if (config_.drive.model != "multicopter") {
+  if (!chassis_plugin_ && config_.drive.model != "multicopter") {
     for (auto &name : {config_.drive.left_joint, config_.drive.right_joint}) {
       require(model_.joints.count(name), "wheel joint not found: " + name);
       const auto &j = model_.joints.at(name);
@@ -174,8 +175,9 @@ bool Simulator::command(const Command &cmd) {
   for (double x : {cmd.v, cmd.w, cmd.lateral, cmd.vertical, cmd.roll_rate, cmd.pitch_rate})
     if (!std::isfinite(x))
       return reject("non-finite velocity command");
-  if (cmd.roll_rate != 0 || cmd.pitch_rate != 0 ||
-      (config_.drive.model != "multicopter" && (cmd.lateral != 0 || cmd.vertical != 0)))
+  const bool lateral = chassis_plugin_ ? chassis_plugin_->supportsLateral() : config_.drive.model == "multicopter";
+  const bool vertical = chassis_plugin_ ? chassis_plugin_->supportsVertical() : config_.drive.model == "multicopter";
+  if (cmd.roll_rate != 0 || cmd.pitch_rate != 0 || (!lateral && cmd.lateral != 0) || (!vertical && cmd.vertical != 0))
     return reject("unsupported non-planar velocity command");
   if (!cmd.frame.empty() && cmd.frame != config_.base_link)
     return reject("wrong command frame");
@@ -195,10 +197,11 @@ void Simulator::pause(bool paused) {
   else
     state_ = State::Running;
 }
-std::optional<Contact> Simulator::clearance(const Pose &p, double &nearest) const {
+std::optional<Contact> Simulator::clearance(const Pose &p, double &nearest,
+    const std::map<std::string, double> *joints) const {
   nearest = INFINITY;
   std::optional<Contact> contact;
-  const auto parts = model_.placed(model_.collision, p, config_.base_link, current_.joints);
+  const auto parts = model_.placed(model_.collision, p, config_.base_link, joints ? *joints : current_.joints);
   for (auto &part : parts)
     for (auto &obstacle : scene_.collision) {
       auto collision_shape = obstacle.shape->collision;
@@ -245,7 +248,7 @@ std::optional<Contact> Simulator::clearance(const Pose &p, double &nearest) cons
   return contact;
 }
 void Simulator::move(double dt, uint64_t end_stamp) {
-  if (forced_stop_) {
+  if (forced_stop_ && !config_.drive.continue_on_collision) {
     current_.v = current_.w = current_.lateral = current_.vertical = 0;
     target_ = Command{};
   }
@@ -259,26 +262,45 @@ void Simulator::move(double dt, uint64_t end_stamp) {
     const auto b = g.worldBounds();
     radius = std::max(radius, b.lo.cwiseAbs().cwiseMax(b.hi.cwiseAbs()).norm());
   }
-  const double speed = (flying ? velocity.stableNorm() : std::abs(v)) + std::abs(w) * radius;
+  const double speed = (flying || chassis_plugin_ ? velocity.stableNorm() : std::abs(v)) + std::abs(w) * radius;
   double elapsed = 0;
   bool blocked = forced_stop_;
   Pose accepted = initial;
   std::string terrain_error;
   const auto support_points = config_.terrain.enabled ? supportPoints() : std::vector<Vec3>{};
   auto at = [&](double time) {
-    Pose p = flying ? integrateFlight(initial, velocity, w, time) : integrate(initial, v, w, time);
+    Pose p = flying || chassis_plugin_ ? integrateFlight(initial, velocity, w, time) : integrate(initial, v, w, time);
     if (config_.terrain.enabled)
       p = supportedPose(scene_, p, p.translation().z(), config_.terrain, support_points);
     return p;
   };
   // Every surface point moves at <= |v| + |omega|*radius. Advancing by <=
   // distance/speed cannot cross an obstacle, regardless of wall thickness.
-  for (size_t iteration = 0; elapsed < dt && speed > 1e-15; ++iteration) {
+  for (size_t iteration = 0; !blocked && elapsed < dt && speed > 1e-15; ++iteration) {
     double distance;
     Pose proposed;
     try { proposed = at(elapsed); }
     catch (const std::exception &e) { blocked = true; terrain_error = e.what(); break; }
     auto contact = clearance(proposed, distance);
+    // Permit separation from the collision margin. The probe moves every
+    // surface point less than the current gap, so it cannot cross a thin wall.
+    if (distance > 1e-9 && distance <= 2e-5 && iteration < 10000) {
+      const double probe_dt = std::min(dt - elapsed, distance * .5 / speed);
+      try {
+        const Pose probe = at(elapsed + probe_dt);
+        const double travel = (probe.translation() - proposed.translation()).norm() +
+            radius * Eigen::AngleAxisd(probe.linear() * proposed.linear().transpose()).angle();
+        double probe_distance;
+        clearance(probe, probe_distance);
+        if (travel <= distance * .75 && probe_distance > distance + 1e-10) {
+          elapsed += probe_dt;
+          accepted = probe;
+          continue;
+        }
+      } catch (const std::exception &) {
+        // The normal terrain/collision path below retains the stop reason.
+      }
+    }
     if (distance <= 1e-5 || iteration >= 10000) {
       blocked = true;
       if (contact) {
@@ -330,20 +352,23 @@ void Simulator::move(double dt, uint64_t end_stamp) {
     }
   } else if (!config_.terrain.enabled) accepted = at(elapsed);
   current_.world_base = accepted;
-  if (!flying) {
+  accepted_motion_fraction_ = forced_stop_ ? 0 : std::clamp(elapsed / dt, 0.0, 1.0);
+  drive_blocked_ = blocked && (!config_.drive.continue_on_collision || !terrain_error.empty());
+  const double wheel_dt = drive_blocked_ ? elapsed : dt;
+  if (!flying && !chassis_plugin_) {
     const double wl = (v - w * config_.drive.wheel_separation / 2) / config_.drive.wheel_radius;
     const double wr = (v + w * config_.drive.wheel_separation / 2) / config_.drive.wheel_radius;
-    current_.joints[config_.drive.left_joint] += wl * elapsed;
-    current_.joints[config_.drive.right_joint] += wr * elapsed;
+    current_.joints[config_.drive.left_joint] += wl * wheel_dt;
+    current_.joints[config_.drive.right_joint] += wr * wheel_dt;
     current_.joints = model_.positions(current_.joints);
-    current_.joint_velocities[config_.drive.left_joint] = blocked ? 0 : wl;
-    current_.joint_velocities[config_.drive.right_joint] = blocked ? 0 : wr;
+    current_.joint_velocities[config_.drive.left_joint] = drive_blocked_ ? 0 : wl;
+    current_.joint_velocities[config_.drive.right_joint] = drive_blocked_ ? 0 : wr;
   }
   if (blocked) {
     current_.v = 0;
     current_.w = 0;
     current_.lateral = current_.vertical = 0;
-    target_ = Command{};
+    if (drive_blocked_) target_ = Command{};
     last_error_ = terrain_error.empty() ? "collision stop" : terrain_error;
     ++discontinuities_;
   }
@@ -351,14 +376,14 @@ void Simulator::move(double dt, uint64_t end_stamp) {
   motion_blocked_ = blocked;
   current_.odom_v = blocked ? 0 : v;
   current_.odom_w = blocked ? 0 : w;
-  if (config_.odom_error.enabled) {
+  if (!odometry_plugin_ && (config_.odom_error.enabled || config_.drive.continue_on_collision)) {
     const auto &e = config_.odom_error;
     current_.odom_v = v * e.linear_scale + e.linear_bias + e.linear_sigma *
         randomNormal(streamSeed(config_.seed, config_.robot_id + "/odom/linear"), motion_samples_);
     current_.odom_w = w * e.angular_scale + e.angular_bias + e.angular_sigma *
         randomNormal(streamSeed(config_.seed, config_.robot_id + "/odom/angular"), motion_samples_);
-    current_.odom_base = integrate(current_.odom_base, current_.odom_v, current_.odom_w, elapsed);
-  } else current_.odom_base = origin_.inverse() * current_.world_base;
+    current_.odom_base = integrate(current_.odom_base, current_.odom_v, current_.odom_w, wheel_dt);
+  } else if (!odometry_plugin_) current_.odom_base = origin_.inverse() * current_.world_base;
   ++motion_samples_;
   if (contacts_.size() > config_.journal_limit)
     contacts_.erase(contacts_.begin(), contacts_.end() - config_.journal_limit);
@@ -378,13 +403,13 @@ void Simulator::beginStep() {
                        {"accepted_time_ns", accepted_stamp_},
                        {"v", target_.v},
                        {"w", target_.w}});
-    if (config_.drive.model == "multicopter") {
+    if (config_.drive.model == "multicopter" || chassis_plugin_) {
       inputs_.back()["lateral"] = target_.lateral;
       inputs_.back()["vertical"] = target_.vertical;
     }
     if (inputs_.size() > config_.journal_limit) { inputs_.erase(inputs_.begin()); ++evicted_inputs_; }
   }
-  if (forced_stop_) {
+  if (forced_stop_ && !config_.drive.continue_on_collision) {
     target_ = Command{};
     current_.v = current_.w = current_.lateral = current_.vertical = 0;
   }
@@ -413,17 +438,40 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
     timed_out_ = true;
   }
   const double dt = double(next - current_.stamp) * 1e-9;
+  if (chassis_plugin_) {
+    const Vec3 old_linear = current_.linearVelocity();
+    const double old_v = current_.v, old_w = current_.w;
+    plugins::ChassisInput input{next - current_.stamp,
+        {target_.v, target_.lateral, target_.vertical, target_.w}, plugin_drive_velocity_,
+        {current_.joints, current_.joint_velocities}};
+    auto output = chassis_plugin_->step(input);
+    for (const auto *twist : {&output.average, &output.velocity})
+      for (double value : {twist->vx, twist->vy, twist->vz, twist->wz})
+        require(std::isfinite(value), "chassis plugin returned non-finite velocity");
+    for (const auto &[name, delta] : output.wheel_delta) {
+      require(model_.joints.count(name) && model_.joints.at(name).type == "continuous" &&
+              model_.joints.at(name).mimic.empty(), "chassis plugin returned invalid wheel: " + name);
+      require(std::isfinite(delta) && output.joint_velocity.count(name) &&
+              std::isfinite(output.joint_velocity.at(name)), "chassis plugin returned invalid encoder motion: " + name);
+    }
+    current_.v = output.average.vx; current_.lateral = output.average.vy;
+    current_.vertical = output.average.vz; current_.w = output.average.wz;
+    return {old_v, old_w, output.velocity.vx, output.velocity.wz, current_.world_base,
+            old_linear, {output.velocity.vx, output.velocity.vy, output.velocity.vz}, std::move(output)};
+  }
   const auto &d = config_.drive;
   const double tv = std::clamp(target_.v, -d.max_v, d.max_v),
                tw = std::clamp(target_.w, -d.max_w, d.max_w);
   const double old_v = current_.v, old_w = current_.w;
+  const double old_drive_v = d.continue_on_collision ? drive_v_ : old_v;
+  const double old_drive_w = d.continue_on_collision ? drive_w_ : old_w;
   const double limit =
-      (old_v * tv < 0 || std::abs(tv) < std::abs(old_v)) ? d.deceleration : d.acceleration;
+      (old_drive_v * tv < 0 || std::abs(tv) < std::abs(old_drive_v)) ? d.deceleration : d.acceleration;
   const double new_v =
-      d.unlimited_acceleration ? tv : old_v + std::clamp(tv - old_v, -limit * dt, limit * dt);
+      d.unlimited_acceleration ? tv : old_drive_v + std::clamp(tv - old_drive_v, -limit * dt, limit * dt);
   double new_w = d.unlimited_acceleration
                            ? tw
-                           : old_w + std::clamp(tw - old_w, -d.angular_acceleration * dt,
+                           : old_drive_w + std::clamp(tw - old_drive_w, -d.angular_acceleration * dt,
                                                 d.angular_acceleration * dt);
   if (d.model == "multicopter") {
     const Vec3 old = current_.linearVelocity();
@@ -438,37 +486,59 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
     const Vec3 mid = d.unlimited_acceleration ? next_velocity : Vec3((old + next_velocity) / 2);
     current_.v = mid.x(); current_.lateral = mid.y(); current_.vertical = mid.z();
     current_.w = d.unlimited_acceleration ? new_w : (old_w + new_w) / 2;
-    return {old_v, old_w, next_velocity.x(), new_w, current_.world_base, old, next_velocity};
+    return {old_v, old_w, next_velocity.x(), new_w, current_.world_base, old, next_velocity, {}};
   }
   if (d.model == "ackermann") {
     const double turn_limit = std::abs(new_v) * std::tan(d.max_steering) / d.wheelbase;
     new_w = std::clamp(new_w, -turn_limit, turn_limit);
   }
-  current_.v = d.unlimited_acceleration ? new_v : (old_v + new_v) / 2;
-  current_.w = d.unlimited_acceleration ? new_w : (old_w + new_w) / 2;
+  current_.v = d.unlimited_acceleration ? new_v : (old_drive_v + new_v) / 2;
+  current_.w = d.unlimited_acceleration ? new_w : (old_drive_w + new_w) / 2;
   if (d.model == "ackermann") {
     const double mid_limit = std::abs(current_.v) * std::tan(d.max_steering) / d.wheelbase;
     current_.w = std::clamp(current_.w, -mid_limit, mid_limit);
   }
   const Pose old_pose = current_.world_base;
-  return {old_v, old_w, new_v, new_w, old_pose};
+  return {old_v, old_w, new_v, new_w, old_pose, Vec3::Zero(), Vec3::Zero(), {}};
 }
 std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &motion) {
-  const auto &[old_v, old_w, new_v, new_w, old_pose, old_linear, new_linear] = motion;
+  const auto &[old_v, old_w, new_v, new_w, old_pose, old_linear, new_linear, plugin_drive] = motion;
   const double dt = double(next - current_.stamp) * 1e-9;
+  const uint64_t dt_ns = next - current_.stamp;
+  const plugins::JointState previous_encoders{current_.joints, current_.joint_velocities};
+  if (chassis_plugin_) moveSteering(plugin_drive.steering_position);
   const auto &d = config_.drive;
+  const double integrated_v = current_.v, integrated_w = current_.w;
   move(dt, next);
+  drive_v_ = drive_blocked_ ? 0 : new_v;
+  drive_w_ = drive_blocked_ ? 0 : new_w;
   if (!motion_blocked_) {
     current_.v = new_v;
     current_.w = new_w;
-    if (d.model == "multicopter") {
+    if (d.model == "multicopter" || chassis_plugin_) {
       current_.lateral = new_linear.y(); current_.vertical = new_linear.z();
-    } else {
-      current_.joint_velocities[d.left_joint] =
-          (new_v - new_w * d.wheel_separation / 2) / d.wheel_radius;
-      current_.joint_velocities[d.right_joint] =
-          (new_v + new_w * d.wheel_separation / 2) / d.wheel_radius;
     }
+  }
+  if (chassis_plugin_) {
+    const double fraction = drive_blocked_ ? accepted_motion_fraction_ : 1;
+    for (const auto &[name, delta] : plugin_drive.wheel_delta) current_.joints[name] += delta * fraction;
+    current_.joints = model_.positions(current_.joints);
+    current_.joint_velocities = plugin_drive.joint_velocity;
+    if (drive_blocked_) for (auto &[name, velocity] : current_.joint_velocities) velocity = 0;
+    plugin_drive_velocity_ = drive_blocked_ ? plugins::Twist{} : plugin_drive.velocity;
+    const auto output = odometry_plugin_->step({dt_ns, previous_encoders, {current_.joints, current_.joint_velocities}});
+    require(output.pose.matrix().allFinite(), "odometry plugin returned non-finite pose");
+    for (double value : {output.velocity.vx, output.velocity.vy, output.velocity.vz, output.velocity.wz})
+      require(std::isfinite(value), "odometry plugin returned non-finite velocity");
+    current_.odom_base = output.pose;
+    current_.odom_v = output.velocity.vx; current_.odom_w = output.velocity.wz;
+    current_.odom_lateral = output.velocity.vy; current_.odom_vertical = output.velocity.vz;
+    current_.odom_root = current_.odom_base * model_.fk(current_.joints).at(config_.base_link).inverse();
+  } else if (d.model != "multicopter") {
+    current_.joint_velocities[d.left_joint] =
+        (drive_v_ - drive_w_ * d.wheel_separation / 2) / d.wheel_radius;
+    current_.joint_velocities[d.right_joint] =
+        (drive_v_ + drive_w_ * d.wheel_separation / 2) / d.wheel_radius;
   }
   // Mimic positions already follow their source in Model::positions(). Keep
   // their reported velocities consistent too, including chains and stops.
@@ -480,9 +550,21 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
           source == current_.joint_velocities.end() ? 0 : source->second * joint.multiplier;
     }
   }
-  if (!config_.odom_error.enabled) {
-    current_.odom_v = current_.v;
-    current_.odom_w = current_.w;
+  if (odometry_plugin_) {
+    // Encoder odometry has already produced pose and endpoint twist independently.
+  } else if (!config_.odom_error.enabled) {
+    current_.odom_v = d.continue_on_collision ? drive_v_ : current_.v;
+    current_.odom_w = d.continue_on_collision ? drive_w_ : current_.w;
+  } else if (drive_blocked_) {
+    current_.odom_v = current_.odom_w = 0;
+  } else if (d.continue_on_collision) {
+    // Pose uses interval-average wheel speed; twist uses the encoder speed at
+    // this sample's timestamp, with the same bias/noise sample as the pose.
+    current_.odom_v += (drive_v_ - integrated_v) * config_.odom_error.linear_scale;
+    current_.odom_w += (drive_w_ - integrated_w) * config_.odom_error.angular_scale;
+  }
+  if (!odometry_plugin_) {
+    current_.odom_lateral = current_.lateral; current_.odom_vertical = current_.vertical;
   }
   kinematics_.world_body = current_.world_base;
   const auto rotation = current_.world_base.linear().eval();
@@ -501,7 +583,7 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
     kinematics_.alpha.setZero();
     if (!motion_blocked_) ++discontinuities_;
   }
-  if (d.model == "multicopter") {
+  if (d.model == "multicopter" || chassis_plugin_) {
     const Vec3 velocity = current_.linearVelocity();
     const Vec3 centripetal = Vec3(0, 0, current_.w).cross(velocity);
     kinematics_.acceleration = rotation * ((velocity - old_linear) / dt + centripetal);
@@ -531,15 +613,21 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
     }
   for (size_t i = 0; i < imu_indices_.size(); ++i)
     if (next == eventTime(imu_indices_[i], config_.imus[i].rate)) {
-      const auto frames = model_.fk(current_.joints);
       const auto &cfg = config_.imus[i];
-      event.imus.push_back(sampleImu(cfg, kinematics_,
-          frames.at(config_.base_link).inverse() * frames.at(cfg.link), next,
-          streamSeed(config_.seed, config_.robot_id), imu_indices_[i] - 1));
+      auto output = sampleSensor(cfg.name,next,imu_indices_[i]-1,current_);
+      require(output.imus.size() == 1 && output.clouds.empty() && output.cameras.empty(),
+              "IMU plugin must return one IMU sample");
+      require(output.imus[0].stamp == next && output.imus[0].frame == cfg.link && output.imus[0].topic == cfg.topic,
+              "IMU plugin returned inconsistent metadata");
+      event.imus.push_back(std::move(output.imus[0]));
       ++imu_indices_[i];
     }
   for (size_t i = 0; i < camera_indices_.size(); ++i)
     if (config_.cameras[i].enabled && next == eventTime(camera_indices_[i], config_.cameras[i].rate)) {
+      auto output = sampleSensor(config_.cameras[i].name,next,camera_indices_[i]-1,current_);
+      require(output.clouds.empty() && output.imus.empty() &&
+          output.cameras == std::vector<std::string>{config_.cameras[i].name},
+          "camera plugin must request one render for its own instance");
       event.cameras.push_back(i);
       ++camera_indices_[i];
     }
@@ -647,6 +735,8 @@ void Simulator::setPose(const Pose &initial) {
   current_.odom_base = Pose::Identity();
   current_.odom_root = model_.fk(current_.joints).at(config_.base_link).inverse();
   target_ = Command{};
+  drive_v_ = drive_w_ = 0;
+  motion_blocked_ = drive_blocked_ = false;
   pending_.reset();
   history_.clear();
   history_.push_back({current_.stamp, current_.world_base});
@@ -694,9 +784,14 @@ Json Simulator::manifest(const std::string &reason) const {
                        {"deceleration", d.deceleration},
                        {"angular_acceleration", d.angular_acceleration},
                        {"unlimited_acceleration", d.unlimited_acceleration},
+                       {"continue_on_collision", d.continue_on_collision},
                        {"left_joint", d.left_joint},
                        {"right_joint", d.right_joint},
                        {"support_links", d.support_links}};
+  resolved["plugins"] = Json::array();
+  for (const auto &plugin : config_.plugins)
+    resolved["plugins"].push_back({{"category", plugin.category}, {"name", plugin.name},
+        {"class", plugin.class_name}, {"parameters", plugin.parameters}});
   resolved["lidars"] = Json::array();
   for (const auto &c : config_.lidars)
     resolved["lidars"].push_back({{"name", c.name},
@@ -749,6 +844,7 @@ Json Simulator::manifest(const std::string &reason) const {
   for (const auto &g : scene_.collision) if (g.motion && !g.motion->path)
     moving.push_back({{"entity", g.entity}, {"pose", asJson(g.at(current_.stamp))},
                       {"frozen_at_ns", g.motion->frozen_at == UINT64_MAX ? Json(nullptr) : Json(g.motion->frozen_at)}});
+  resolved["obstacles_fixed"] = moving.empty();
   for (const auto &c : config_.imus)
     resolved["imus"].push_back({{"name", c.name}, {"link", c.link}, {"topic", c.topic}, {"rate_hz", c.rate},
       {"accel_bias", vectorJson(c.accel_bias)}, {"gyro_bias", vectorJson(c.gyro_bias)},
@@ -768,6 +864,8 @@ Json Simulator::manifest(const std::string &reason) const {
           {"status", diagnostics()},
           {"dynamic_entities", moving},
           {"exit_reason", reason},
-          {"final_pose", asJson(current_.world_base)}};
+          {"final_pose", asJson(current_.world_base)},
+          {"final_odom_pose", asJson(current_.odom_base)},
+          {"final_encoders", current_.joints}};
 }
 } // namespace litesim3d

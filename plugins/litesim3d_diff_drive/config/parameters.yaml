@@ -1,0 +1,23 @@
+# 必填：普通驱动轮有效半径，m，必须 > 0；此处是示例值。
+wheel_radius_m: 0.1
+# 必填：左右轮组中心距离，m，必须 > 0；左轮 y=+轮距/2，右轮 y=-轮距/2。
+wheel_separation_m: 0.5
+# 必填：左侧独立 continuous 驱动关节；正轴为车体 +y，正转使车体向 +x。
+# 同侧独立多轮可列多个名称；URDF mimic 从轮不重复列入。
+left_joints: [left_wheel_joint]
+# 必填：右侧独立驱动关节，约定同左侧；左右集合不可重名。
+right_joints: [right_wheel_joint]
+# 驱动速度限制；车体 x 前、y 左、z 上，正 yaw 绕 +z。
+limits:
+  # 平移速度向量模长上限，m/s，必须 > 0。
+  max_linear_speed_mps: 1.0
+  # 绕 +z 角速度绝对值上限，rad/s，必须 > 0。
+  max_angular_speed_radps: 2.0
+  # 平移加速度上限，m/s²，必须 > 0。
+  acceleration_mps2: 0.5
+  # 减速或反向时的平移加速度上限，m/s²，必须 > 0。
+  deceleration_mps2: 1.0
+  # yaw 角加速度上限，rad/s²，必须 > 0。
+  angular_acceleration_radps2: 2.0
+  # true：忽略加速度限制但保留速度与关节限制；false：使用上述加速度。
+  unlimited_acceleration: false

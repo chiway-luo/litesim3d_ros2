@@ -1,0 +1,23 @@
+# 必填：普通驱动轮有效半径，m，必须 > 0；此处是示例值。
+wheel_radius_m: 0.1
+# 必填：左右轮组中心距离，m，必须 > 0；左轮 y=+轮距/2，右轮 y=-轮距/2。
+wheel_separation_m: 0.5
+# 必填：左侧独立 continuous 驱动关节；正轴为车体 +y，正转使车体向 +x。
+# 同侧独立多轮可列多个名称；URDF mimic 从轮不重复列入。
+left_joints: [left_wheel_joint]
+# 必填：右侧独立驱动关节，约定同左侧；左右集合不可重名。
+right_joints: [right_wheel_joint]
+# 编码器解算后的速度误差；位姿按每个实际时间段积分，reset 重置随机序列。
+noise:
+  # 车体 [x,y] 两方向速度比例，无量纲，每项必须 > 0。
+  linear_scale: [1.0, 1.0]
+  # 车体 [x,y] 两方向速度偏置，m/s，有限实数；非零可造成静止漂移。
+  linear_bias_mps: [0.0, 0.0]
+  # 车体 [x,y] 两方向独立高斯速度噪声标准差，m/s，每项 >= 0。
+  linear_sigma_mps: [0.0, 0.0]
+  # yaw 速度比例，无量纲，必须 > 0。
+  angular_scale: 1.0
+  # yaw 速度偏置，rad/s，有限实数。
+  angular_bias_radps: 0.0
+  # yaw 高斯速度噪声标准差，rad/s，必须 >= 0；seed 来自仿真。
+  angular_sigma_radps: 0.0

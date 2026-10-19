@@ -136,7 +136,7 @@ Model Model::load(const std::filesystem::path &file, const ModelOptions &options
         require(t == "fixed" || t == "revolute" || t == "continuous" || t == "prismatic",
                 file.string() + ": unsupported joint " + name + " type " + t);
       }
-    } else if (tag != "material")
+    } else if (tag != "material" && tag != "litesim3d")
       extensions.push_back(tag);
   }
   // Prevalidate graph before urdfdom traverses malformed cycles.

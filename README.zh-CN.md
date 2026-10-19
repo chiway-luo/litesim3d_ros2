@@ -30,13 +30,15 @@ LiteSim 3D 是基于 C++17 的三维运动学仿真器，用于 ROS 2 机器人�
 
 ## 主要功能
 
-- **机器人模型**：差速底盘、理想 Ackermann 转向、速度控制无人机，以及 URDF 和支持范围内的 SDF 模型。
-- **场景与碰撞**：三维几何碰撞、连续坡面、动态障碍，以及带材质和贴图的 SDF 场景。
+- **机器人模型**：双轮/四轮差速、具有转向关节的阿克曼、三轮/四轮普通全向插件，以及兼容的速度控制无人机；支持 URDF/Xacro 和限定范围的 SDF。
+- **场景与碰撞**：固定障碍物的三维几何碰撞、连续坡面，以及带材质和贴图的 SDF 场景；轮式机器人可配置碰撞后轮子与轮式里程计继续累计。
 - **传感器**：VLP-16、Mid-360、Mid-40 扫描预设，滚动扫描、测量噪声、IMU、里程计和可选 RGB/深度相机。
 - **ROS 2 接口**：点云、图像、TF、仿真时钟、暂停/单步控制和单机会话重置。
-- **运行示例**：四轮小车办公区、无人机飞行场地，以及 1–4 台同构机器人的共享世界仿真。
+- **运行示例**：四轮小车办公区、阿克曼、三轮/四轮全向、无人机飞行场地，以及 1–4 台同构机器人的共享世界仿真。
 
 仿真采用运动学和几何约束，不模拟接触力、悬架、轮胎动力学、电机推力或飞控动力学。传感器预设属于仿真模型，具体建模范围见 [雷达配置说明](examples/wheel_car_4w/雷达配置说明.md)。
+
+底盘、编码器里程计与五类传感器分别由独立插件包提供；可安装外部包并修改模型声明替换，无需重编核心。见 [模型组合与插件迁移](docs/usage/模型组合与插件迁移.md) 和 [插件开发](docs/development/插件开发.md)。
 
 ## 开发环境
 
@@ -78,7 +80,7 @@ bash scripts/build.sh
 source "$(python3 scripts/paths.py install)/setup.bash"
 ```
 
-默认完整构建成功应显示 **12 packages finished**。构建产物保存在源码仓库外，`scripts/paths.py install` 用于定位生成的安装环境。
+默认完整构建成功应显示 **29 packages finished**。构建产物保存在源码仓库外，`scripts/paths.py install` 用于定位生成的安装环境。
 
 ### 2. 启动仿真
 
@@ -148,7 +150,7 @@ ros2 topic echo /points_raw --once --field header --qos-reliability best_effort
 ```text
 litesim3d_ros2/
 ├── VERSION                 # 项目版本（主版本.次版本.修订版本）
-├── litesim3d_core/          # 不依赖 ROS 运行时的 C++ 内核、资源与测试
+├── litesim3d_core/          # C++ 内核、资源与测试；使用 pluginlib，不启动 DDS 节点
 ├── litesim3d_bringup/       # 公共启动流程，不依赖任何示例包
 ├── litesim3d_test_support/  # 包级 DDS 测试共享辅助模块
 ├── litesim3d_assets/        # SDF 导入、资源校验与内部适配

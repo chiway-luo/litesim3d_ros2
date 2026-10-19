@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="camera_enabled" default="false"/>
+  <link name="lidar_link"/>
+  <joint name="lidar_mount" type="fixed"><parent link="base_link"/><child link="lidar_link"/><origin xyz="0 0 0.40"/></joint>
+  <link name="imu_link"/>
+  <joint name="imu_mount" type="fixed"><parent link="base_link"/><child link="imu_link"/><origin xyz="0 0 0.22"/></joint>
+  <link name="camera_optical_frame"/>
+  <joint name="camera_mount" type="fixed"><parent link="base_link"/><child link="camera_optical_frame"/><origin xyz="0.21 0 0.32" rpy="${-pi/2} 0 ${-pi/2}"/></joint>
+  <litesim3d version="1">
+    <sensor name="roof_lidar" class="litesim3d_lidar/Lidar">
+      <parameters file="package://litesim3d_lidar/config/parameters.yaml"/>
+      <overrides>columns: 64
+max_range_m: 10.0
+self_filter: robot</overrides>
+    </sensor>
+    <sensor name="body_imu" class="litesim3d_imu/Imu">
+      <parameters file="package://litesim3d_imu/config/parameters.yaml"/>
+      <overrides>rate_hz: 50.0</overrides>
+    </sensor>
+    <sensor name="front_camera" class="litesim3d_rgb_camera/RgbCamera">
+      <parameters file="package://litesim3d_rgb_camera/config/parameters.yaml"/>
+      <overrides>enabled: $(arg camera_enabled)
+width: 160
+height: 120</overrides>
+    </sensor>
+  </litesim3d>
+</robot>

@@ -1,0 +1,5 @@
+<library path="litesim3d_imu">
+  <class name="litesim3d_imu/Imu" type="litesim3d::plugins::Imu" base_class_type="litesim3d::plugins::SensorPlugin">
+    <description>Imu, API version 1.</description>
+  </class>
+</library>

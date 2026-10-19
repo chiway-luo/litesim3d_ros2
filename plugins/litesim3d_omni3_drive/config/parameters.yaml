@@ -1,0 +1,48 @@
+# 必填：普通全向轮约束列表，包含每个独立 continuous 驱动关节；不支持麦克纳姆滚子模型。
+# 车体 x 前、y 左、z 上；数组顺序无物理意义，但每个 joint 必须唯一。
+# 三轮/四轮驱动插件分别要求恰好 3/4 项；里程计允许 3 或 4 项；约束矩阵必须满秩。
+wheels:
+  # 必填：独立驱动关节名称，必须存在于组合 URDF。
+  - joint: wheel_0_joint
+    # 必填：轮中心相对 base 的 x 坐标，m，有限实数；须与 URDF 一致。
+    x_m: 0.3
+    # 必填：轮中心相对 base 的 y 坐标，m，有限实数；须与 URDF 一致。
+    y_m: 0
+    # 必填：轮正向滚动方向相对 +x 的逆时针角，rad；正轴为 [-sin(a),cos(a),0]。
+    rolling_angle_rad: 1.570796326794897
+    # 必填：本轮有效半径，m，必须 > 0；被动滚子允许垂直于滚动方向的自由运动。
+    radius_m: 0.1
+  # 必填：独立驱动关节名称，必须存在于组合 URDF。
+  - joint: wheel_1_joint
+    # 必填：轮中心相对 base 的 x 坐标，m，有限实数；须与 URDF 一致。
+    x_m: -0.1499999999999999
+    # 必填：轮中心相对 base 的 y 坐标，m，有限实数；须与 URDF 一致。
+    y_m: 0.2598076211353316
+    # 必填：轮正向滚动方向相对 +x 的逆时针角，rad；正轴为 [-sin(a),cos(a),0]。
+    rolling_angle_rad: 3.665191429188092
+    # 必填：本轮有效半径，m，必须 > 0；被动滚子允许垂直于滚动方向的自由运动。
+    radius_m: 0.1
+  # 必填：独立驱动关节名称，必须存在于组合 URDF。
+  - joint: wheel_2_joint
+    # 必填：轮中心相对 base 的 x 坐标，m，有限实数；须与 URDF 一致。
+    x_m: -0.1500000000000001
+    # 必填：轮中心相对 base 的 y 坐标，m，有限实数；须与 URDF 一致。
+    y_m: -0.2598076211353315
+    # 必填：轮正向滚动方向相对 +x 的逆时针角，rad；正轴为 [-sin(a),cos(a),0]。
+    rolling_angle_rad: 5.759586531581287
+    # 必填：本轮有效半径，m，必须 > 0；被动滚子允许垂直于滚动方向的自由运动。
+    radius_m: 0.1
+# 驱动速度限制；车体 x 前、y 左、z 上，正 yaw 绕 +z。
+limits:
+  # 平移速度向量模长上限，m/s，必须 > 0。
+  max_linear_speed_mps: 1.0
+  # 绕 +z 角速度绝对值上限，rad/s，必须 > 0。
+  max_angular_speed_radps: 2.0
+  # 平移加速度上限，m/s²，必须 > 0。
+  acceleration_mps2: 0.5
+  # 减速或反向时的平移加速度上限，m/s²，必须 > 0。
+  deceleration_mps2: 1.0
+  # yaw 角加速度上限，rad/s²，必须 > 0。
+  angular_acceleration_radps2: 2.0
+  # true：忽略加速度限制但保留速度与关节限制；false：使用上述加速度。
+  unlimited_acceleration: false

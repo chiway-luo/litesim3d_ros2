@@ -11,12 +11,15 @@ examples/wheel_car_4w/
 ├── wheel_car_4w_description/          # 独立模型包
 │   ├── package.xml
 │   ├── CMakeLists.txt
-│   └── urdf/wheel_car_4w.urdf         # 有注释的完整 URDF，无需先展开 Xacro
+│   ├── urdf/wheel_car_4w.urdf         # 原始机械文件，保持不变，可独立 RViz
+│   ├── urdf/sensors.xacro             # 传感器挂载与插件声明
+│   ├── urdf/simulation.urdf.xacro     # 组合机械、传感器、底盘与里程计
+│   └── config/                      # 共享几何（构建提取）及实例覆盖
 └── wheel_car_4w_sim/                  # 独立仿真启动包
     ├── package.xml
     ├── CMakeLists.txt
     ├── config/
-    │   ├── runtime.yaml              # SDF 模式底盘、传感器及地形绑定
+    │   ├── runtime.yaml              # 组合模型路径、碰撞策略及地形绑定
     │   ├── simulation.yaml           # 保留旧 URDF/YAML 回归入口
     │   ├── ros.yaml                  # 控制类型、QoS、TF、暂停、RSP 等 ROS 参数
     │   └── lidars/                   # vlp16、mid360、mid40，带厂家来源与建模说明
@@ -25,7 +28,7 @@ examples/wheel_car_4w/
     └── test/test_wheel_car_4w.py      # 安装态核心/ROS/启动故障与可选 GUI 测试
 ```
 
-仿真包复用 `litesim3d_core`、`litesim3d_ros2` 和 `litesim3d_interfaces`。wheel_car_4w_models 提供默认 SDF 资源，description 保留旧 URDF；三个示例包都经 ament 安装，运行时使用 package 资源索引，启动终端不必处于源码目录。
+仿真包复用 `litesim3d_core`、`litesim3d_ros2` 和 `litesim3d_interfaces`。wheel_car_4w_models 提供默认 SDF 资源，description 保留原始 URDF 并提供仿真组合 Xacro；三个示例包都经 ament 安装，运行时使用 package 资源索引，启动终端不必处于源码目录。
 
 ## 2. 构建后，一条 launch 启动
 
@@ -131,25 +134,42 @@ rolling 点云中的 time 是相对 header 的秒偏移，尚未去畸变。无�
 
 后轮关节 `rear_left_wheel_joint`、`rear_right_wheel_joint` 代表两侧独立驱动；前轮用 URDF mimic 按 1:1 跟随同侧后轮。小车整体采用**同侧等速的差速等效运动学**；不模拟四个独立电机、轮胎侧滑力、悬架或真实 Ackermann 转向机构。四个轮子的碰撞体都参与支撑和障碍检查。
 
+障碍物固定在初始位姿，碰撞不会推动、旋转或弹开它们。场景 link 使用显式 collision；缺失时由该 link 的 visual 补齐碰撞几何。
+
+本例的 `config/runtime.yaml`（默认 SDF + 插件入口）启用：
+
+```yaml
+robot:
+  continue_on_collision: true
+```
+
+旧 `simulation.yaml` 兼容入口使用 `robot.drive.continue_on_collision`。
+
+启用后，车体被障碍挡住，但驱动轮及前轮 mimic 继续转动，`/joint_states`、`/odom`、`odom → base_footprint` TF 和里程计路径继续按轮速累计。激光、相机、IMU 和 `/sim/ground_truth/wheel_car_4w/odom` 使用真实受阻状态。`/odom` 是从轮速积分的平面里程计，即使 `odom.mode: ideal` 也会因顶住障碍而偏离真值；外部激光/视觉里程计算法根据实际传感器数据自行估计。
+
+设为 `false` 则碰撞时轮子一起停止，恢复原有行为。内核缺省值为 `false`，本小车示例显式设为 `true`。限速、加减速、零速度指令、命令超时和暂停仍生效，倒车可离开障碍；无支撑、不可通行台阶等地形错误仍停止驱动。该参数只接受轮式模型，不适用于无人机。修改后重新构建并启动新会话，重置会清除轮式里程计漂移。
+
 模型 root 是没有几何/惯性的 `base_footprint`，base_link 与它固定重合，均位于车体中心的地面投影。TF 链为：
 
 ```text
 odom -> base_footprint -> base_link -> 四个 wheel_link
                                  ├-> lidar_mount_link -> lidar_link
-                                 └-> imu_link
+                                 ├-> imu_link
+                                 └-> camera_link -> camera_optical_frame
 ```
 
 `odom -> base_footprint` 由仿真发布；其余边由 RSP 发布。不能同时再发 `odom -> base_link`，否则会让 base_link 出现两个父节点。IMU 静止、水平时 z 比力约为 +9.80665 m/s²，不是零；orientation_covariance[0]=-1。
 
-SDF 四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。修改轮径、轮距时同时修改 `wheel_car_4w_models/models/wheel_car_4w/model.sdf` 和 `runtime.yaml/robot.drive`，否则加载会拒绝。
+组合模型四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。轮径、轮距从未改动的机械 URDF 在构建时提取到共享 geometry.yaml，底盘和里程计读取同一值。新机器人若修改机械尺寸，应维护自己的模型并重新构建，不能只修改里程计侧的尺寸。
 
 ## 5. 修改参数
 
 默认 SDF 模式使用以下文件：
 
 - [office.sdf](wheel_car_4w_models/worlds/office.sdf)：场景模型、初始位姿、灯光、步长和默认目标速率。
-- [model.sdf](wheel_car_4w_models/models/wheel_car_4w/model.sdf)：四轮车 link/joint、visual/collision 和材质。
-- [runtime.yaml](wheel_car_4w_sim/config/runtime.yaml)：底盘、传感器、噪声和地形支持绑定。
+- [simulation.urdf.xacro](wheel_car_4w_description/urdf/simulation.urdf.xacro)：默认机器人结构与插件；原 SDF 机器人模型仅在未指定 robot.urdf 的兼容路径中使用。
+- [sensors.xacro](wheel_car_4w_description/urdf/sensors.xacro)：传感器挂载、插件、参数引用。
+- [runtime.yaml](wheel_car_4w_sim/config/runtime.yaml)：组合模型路径、碰撞策略和地形支持。
 - [ros.yaml](wheel_car_4w_sim/config/ros.yaml)：命令类型、QoS、TF、暂停和 RSP 参数。
 
 修改已安装资源的源码后重新构建；或指定自己的资源根及 runtime。资源职责、贴图兼容矩阵和碰撞预算见 [SDF 与独立窗口](../../docs/usage/SDF与独立窗口.md)。
@@ -164,17 +184,17 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 
 | 想改什么 | 改哪个字段 |
 | --- | --- |
-| 最大速度/转速 | robot.drive.max_v / max_w |
-| 加速和停车快慢 | acceleration / deceleration / angular_acceleration |
+| 最大速度/转速 | description/config/motion.yaml 的 limits.max_linear_speed_mps / max_angular_speed_radps |
+| 加速和停车快慢 | 底盘插件 limits.acceleration_mps2 / deceleration_mps2 / angular_acceleration_radps2 |
 | 初始位置/航向 | world SDF 中对应 include/model 的 pose，单位米/弧度 |
-| 雷达频率/点数 | lidars[0].rate_hz / columns / vertical_angles_deg，rings 同步调整 |
-| 雷达安装位置 | SDF lidar link/joint 的 pose |
+| 雷达频率/点数 | sensors.yaml 的 lidar.rate_hz / columns / vertical_angles_deg；环数由角度数组推导 |
+| 雷达安装位置 | 本例复用原始机械 URDF 的 lidar_mount_joint；新增传感器在 sensors.xacro 定义 |
 | 测距误差 | range_bias_m / range_sigma_m / dropout |
 | 最大量程边界显示 | publish_range_boundary；默认开启，距离由max_range_m决定；辅助点与实际回波分话题 |
 | IMU 误差 | accel_bias / gyro_bias / accel_sigma / gyro_sigma |
-| 非理想里程计 | odom.mode=noisy，再设置 scale/bias/sigma；不改变真实运动 |
+| 非理想里程计 | odometry 插件的 noise，设置 scale/bias/sigma；不改变真实运动 |
 | 场景障碍 | SDF include/model；尺寸和 pose 按米/弧度 |
-| 动态障碍 | 目前使用旧 YAML 入口的 motion；新 SDF 入口仅支持静态环境 |
+| 障碍物运动 | 当前所有环境障碍固定；旧 motion 字段拒绝非零速度 |
 | 算法要求 reliable | ros.yaml 中 sensor_reliable=true |
 | 算法发 TwistStamped | cmd_mode=stamped；时间戳用当前 /clock、frame=base_link |
 | 外部估计器接管 odom TF | publish_odom_tf=false、external_odom_tf=true；输出到 URDF root |
@@ -196,6 +216,7 @@ python3 docs/examples/ros_client.py --stamped --drive --duration 5
 | --- | --- |
 | assets_root / world | wheel_car_4w_models share / office.sdf |
 | runtime | 安装的 config/runtime.yaml |
+| model_arguments | {}；Xacro 参数映射，例如 {camera_enabled: true} |
 | gui | true；仅查看三维场景，false 无窗口 |
 | collision_budget_enabled | false；仅关闭预算，保留碰撞检测 |
 | real_time_factor | 空使用 SDF；0 不限速 |

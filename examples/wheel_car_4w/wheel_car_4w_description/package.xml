@@ -7,6 +7,13 @@
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <build_depend>python3</build_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>litesim3d_diff_drive</exec_depend>
+  <exec_depend>litesim3d_diff_odometry</exec_depend>
+  <exec_depend>litesim3d_lidar</exec_depend>
+  <exec_depend>litesim3d_imu</exec_depend>
+  <exec_depend>litesim3d_rgb_camera</exec_depend>
   <url type="repository">https://github.com/chiway-luo/litesim3d_ros2</url>
   <url type="bugtracker">https://github.com/chiway-luo/litesim3d_ros2/issues</url>
   <export><build_type>ament_cmake</build_type></export>

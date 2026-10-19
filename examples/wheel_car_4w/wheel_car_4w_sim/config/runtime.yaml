@@ -1,4 +1,4 @@
-# SDF owns all geometry and initial poses. This file contains LiteSim runtime bindings.
+# SDF 提供固定环境、时钟步长和出生位姿；组合 Xacro 提供完整机器人与插件。
 schema_version: 1
 units: m_rad_s
 simulation:
@@ -11,216 +11,19 @@ simulation:
   collision_budget_enabled: false
 robot:
   id: wheel_car_4w
+  urdf: package://wheel_car_4w_description/urdf/simulation.urdf.xacro
   base_link: base_link
-  motion_model: differential_drive
-  initial_joints:
-    rear_left_wheel_joint: 0.0
-    rear_right_wheel_joint: 0.0
+  # true：真实车体受阻，编码器和轮式里程计仍随驱动累计；false：停止驱动累计。
+  continue_on_collision: true
+  support_links: [rear_left_wheel_link, rear_right_wheel_link, front_left_wheel_link, front_right_wheel_link]
   visual_collision_fallback: false
   sensor_geometry: visual
-  sensor_overrides: {}
-  drive:
-    wheel_radius: 0.12
-    wheel_separation: 0.58
-    left_joint: rear_left_wheel_joint
-    right_joint: rear_right_wheel_joint
-    support_links:
-    - rear_left_wheel_link
-    - rear_right_wheel_link
-    - front_left_wheel_link
-    - front_right_wheel_link
-    max_v: 0.8
-    max_w: 1.5
-    acceleration: 0.5
-    deceleration: 1.0
-    angular_acceleration: 2.0
-    unlimited_acceleration: false
-    wheelbase: 0.48
-    max_steering_rad: 0.6
 terrain:
   enabled: true
   max_slope_deg: 20.0
   clearance_m: 0.0
   continuity_m: 0.02
-lidars:
-- name: roof_lidar
-  link: lidar_link
-  topic: points_raw
-  rate_hz: 10.0
-  columns: 512
-  rings: 16
-  vertical_angles_deg:
-  - -15
-  - -13
-  - -11
-  - -9
-  - -7
-  - -5
-  - -3
-  - -1
-  - 1
-  - 3
-  - 5
-  - 7
-  - 9
-  - 11
-  - 13
-  - 15
-  min_range_m: 0.1
-  max_range_m: 50.0
-  publish_range_boundary: true
-  horizontal_start_deg: -180.0
-  horizontal_end_deg: 180.0
-  scan_mode: rolling
-  scan_pattern: spinning
-  point_layout: xyzirt_v1
-  self_filter: robot
-  excluded_links: []
-  ring_delays_s:
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  range_bias_m: 0.0
-  range_sigma_m: 0.01
-  dropout: 0.0
-# Set enabled: true, or launch with cameras:=true. Units: pixels / simulated Hz / degrees / metres.
-# RGB is the default. Explicitly choose rgbd for color + depth, or depth for depth only.
-cameras:
-- name: front_camera
-  enabled: false
-  type: rgb
-  link: camera_optical_frame
-  topic: camera/front
-  width: 640
-  height: 480
-  rate_hz: 15.0
-  horizontal_fov_deg: 70.0
-  near_clip_m: 0.1
-  far_clip_m: 20.0
-imus:
-- name: body_imu
-  link: imu_link
-  topic: imu/data_raw
-  rate_hz: 200.0
-  accel_bias:
-  - 0.0
-  - 0.0
-  - 0.0
-  gyro_bias:
-  - 0.0
-  - 0.0
-  - 0.0
-  accel_sigma:
-  - 0.0
-  - 0.0
-  - 0.0
-  gyro_sigma:
-  - 0.0
-  - 0.0
-  - 0.0
-odom:
-  mode: ideal
-  linear_scale: 1.0
-  angular_scale: 1.0
-  linear_bias: 0.0
-  angular_bias: 0.0
-  linear_sigma: 0.0
-  angular_sigma: 0.0
-  pose_covariance:
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  twist_covariance:
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
 entity_bindings:
   ground:
     support: true
     reflectivity: 0.35
-mimic_joints:
-  front_left_wheel_joint:
-    joint: rear_left_wheel_joint
-    multiplier: 1.0
-  front_right_wheel_joint:
-    joint: rear_right_wheel_joint
-    multiplier: 1.0

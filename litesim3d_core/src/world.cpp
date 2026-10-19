@@ -1,4 +1,4 @@
-#include "litesim3d/sim.hpp"
+#include "litesim3d/sensor_plugin.hpp"
 #include <algorithm>
 #include <regex>
 #include <yaml-cpp/yaml.h>
@@ -113,16 +113,12 @@ Cloud Simulator::makeCloud(const Cloud &pending,
       config_.lidars.begin(), config_.lidars.end(),
       [&](const LidarConfig &c) { return c.topic == pending.topic; });
   require(found != config_.lidars.end(), "unknown pending sensor");
-  const auto frames = model_.fk(snapshot.joints);
-  const Pose mount =
-      frames.at(config_.base_link).inverse() * frames.at(found->link);
-  const auto local = model_.placed(model_.sensor, mount.inverse(),
-                                   config_.base_link, snapshot.joints);
-  auto cloud = scanTrajectory(
-      scene_, *found, pending.stamp,
-      [this, mount](uint64_t t) { return trajectory(t) * mount; }, local,
-      streamSeed(config_.seed, config_.robot_id), pending.frame_index,
-      config_.threads);
+  auto output = sampleSensor(found->name,pending.stamp,pending.frame_index,snapshot);
+  require(output.clouds.size() == 1 && output.imus.empty() && output.cameras.empty(),
+          "lidar plugin must return one cloud");
+  auto cloud = std::move(output.clouds[0]);
+  require(cloud.topic == found->topic && cloud.frame == found->link && cloud.stamp == pending.stamp &&
+          cloud.frame_index == pending.frame_index,"lidar plugin returned inconsistent metadata");
   require(cloud.completion_stamp <= snapshot.stamp,
           "scan sampled future state");
   return cloud;
@@ -134,12 +130,19 @@ void Simulator::completeScans(std::vector<Event> &events) {
 }
 World::World(Config config, Model model, Scene scene,
              std::vector<RobotSpec> specs) {
+  require(!specs.empty() && specs.size() <= 4, "world supports 1..4 robots");
+  std::set<std::string> ids;
+  for (const auto &spec : specs) {
+    require(std::regex_match(spec.id, std::regex("[A-Za-z][A-Za-z0-9_]*")) &&
+        ids.insert(spec.id).second, "invalid/duplicate world robot id");
+    config.robot_id = spec.id; config.initial_pose = spec.initial;
+    robots_.push_back(std::make_unique<Simulator>(config,model,scene));
+  }
+  config = robots_.front()->config();
   require(std::none_of(config.cameras.begin(),config.cameras.end(),[](const CameraConfig &c){return c.enabled;}),
           "camera rendering currently requires the single-robot SDF launch");
   config.validate();
-  require(!specs.empty() && specs.size() <= 4, "world supports 1..4 robots");
   validateCollisionBudget(config, model, scene, specs.size());
-  std::set<std::string> ids;
   uint64_t horizon = config.step_ns;
   for (const auto &lidar : config.lidars)
     if (lidar.scan_mode == "rolling")
@@ -154,20 +157,14 @@ World::World(Config config, Model model, Scene scene,
   require(std::ceil(horizon * 1e-9 * schedule_rate) + 4 <= config.history_limit,
           "world peer history budget exceeded");
   std::map<std::string, std::shared_ptr<Motion>> world_motions;
-  for (const auto &spec : specs) {
-    require(std::regex_match(spec.id, std::regex("[A-Za-z][A-Za-z0-9_]*")) &&
-                ids.insert(spec.id).second,
-            "invalid/duplicate world robot id");
+  for (auto &owned_robot : robots_) {
     for (const auto &l : config.lidars)
       require(l.topic.front() != '/', "world sensor topics must be relative");
     for (const auto &i : config.imus)
       require(i.topic.front() != '/', "world sensor topics must be relative");
-    config.robot_id = spec.id;
-    config.initial_pose = spec.initial;
-    robots_.push_back(std::make_unique<Simulator>(config, model, scene));
-    robots_.back()->defer_scans_ = true;
-    robots_.back()->peer_history_ns_ = horizon;
-    auto &owned_scene = robots_.back()->scene_;
+    owned_robot->defer_scans_ = true;
+    owned_robot->peer_history_ns_ = horizon;
+    auto &owned_scene = owned_robot->scene_;
     for (auto *role :
          {&owned_scene.visual, &owned_scene.collision, &owned_scene.sensor})
       for (auto &g : *role)

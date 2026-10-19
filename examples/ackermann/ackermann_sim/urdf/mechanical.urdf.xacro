@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<robot name="ackermann" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="g" value="${xacro.load_yaml('$(find ackermann_sim)/config/geometry.yaml')['common']}"/>
+  <xacro:property name="d" value="${xacro.load_yaml('$(find ackermann_sim)/config/geometry.yaml')['drive']}"/>
+  <material name="body"><color rgba="0.1 0.4 0.7 1"/></material>
+  <material name="rubber"><color rgba="0.08 0.08 0.09 1"/></material>
+  <material name="spoke"><color rgba="0.95 0.65 0.1 1"/></material>
+  <link name="base_footprint"/>
+  <joint name="base_fixed" type="fixed"><parent link="base_footprint"/><child link="base_link"/></joint>
+  <link name="base_link">
+    <visual><origin xyz="${g['wheelbase_m']/2} 0 0.22"/><geometry><box size="${g['wheelbase_m']+0.2} ${g['track_width_m']-0.1} 0.16"/></geometry><material name="body"/></visual>
+    <collision><origin xyz="${g['wheelbase_m']/2} 0 0.22"/><geometry><box size="${g['wheelbase_m']+0.2} ${g['track_width_m']-0.1} 0.16"/></geometry></collision>
+  </link>
+  <xacro:macro name="wheel" params="name parent x y z">
+    <link name="${name}_link">
+      <visual><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="${g['wheel_radius_m']}" length="0.04"/></geometry><material name="rubber"/></visual>
+      <visual><geometry><box size="0.15 0.045 0.015"/></geometry><material name="spoke"/></visual>
+      <collision><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="${g['wheel_radius_m']}" length="0.04"/></geometry></collision>
+    </link>
+    <joint name="${name}_joint" type="continuous"><parent link="${parent}"/><child link="${name}_link"/><origin xyz="${x} ${y} ${z}"/><axis xyz="0 1 0"/><limit effort="20" velocity="30"/></joint>
+  </xacro:macro>
+  <xacro:macro name="axle_side" params="side sign">
+    <xacro:wheel name="rear_${side}_wheel" parent="base_link" x="0" y="${sign*g['track_width_m']/2}" z="${g['wheel_radius_m']}"/>
+    <link name="${side}_steering_link"/>
+    <joint name="${side}_steering_joint" type="revolute">
+      <parent link="base_link"/><child link="${side}_steering_link"/>
+      <origin xyz="${g['wheelbase_m']} ${sign*g['track_width_m']/2} ${g['wheel_radius_m']}"/>
+      <axis xyz="0 0 1"/><limit lower="${-g['max_steering_rad']}" upper="${g['max_steering_rad']}" effort="20" velocity="10"/>
+    </joint>
+    <xacro:wheel name="front_${side}_wheel" parent="${side}_steering_link" x="0" y="0" z="0"/>
+  </xacro:macro>
+  <xacro:axle_side side="left" sign="${1}"/>
+  <xacro:axle_side side="right" sign="${-1}"/>
+</robot>

@@ -429,7 +429,7 @@ TEST(EXT03M3, WorldBudgetsTerminalStateAndMotionSharing) {
   EXPECT_GT(supported.robot(0).snapshot().world_base.translation().x(), 0);
 }
 
-TEST(EXT01M3, ConfigMotionAndWorldValidation) {
+TEST(EXT01M3, ConfiguredObstaclesAreFixedAndWorldValidation) {
   const auto root =
       std::filesystem::temp_directory_path() / "lws-m3-validation";
   std::filesystem::create_directories(root);
@@ -446,8 +446,27 @@ TEST(EXT01M3, ConfigMotionAndWorldValidation) {
   save();
   Scene scene;
   auto c = Config::load(path, scene);
-  ASSERT_TRUE(scene.sensor[0].motion);
-  EXPECT_NEAR(scene.sensor[0].at(1'000'000'001).translation().x(), 6, 1e-9);
+  ASSERT_FALSE(scene.sensor[0].motion);
+  EXPECT_NEAR(scene.sensor[0].at(1'000'000'001).translation().x(), 5, 1e-9);
+  EXPECT_EQ(c.resolved["ignored_entity_motion"], Json::array({"moving"}));
+  EXPECT_EQ(c.resolved["obstacles_fixed"], true);
+  // Legacy visual-only obstacles must still block the robot while retaining
+  // their initial pose, even when the old motion binding requested movement.
+  n["entities"][0]["visual"] = n["entities"][0]["geometry"];
+  n["entities"][0]["sensor_geometry"] = n["entities"][0]["geometry"];
+  n["entities"][0].remove("geometry");
+  n["robot"]["drive"]["continue_on_collision"] = true;
+  save();
+  c = Config::load(path, scene);
+  ASSERT_EQ(scene.collision.size(), 1u);
+  c.timeout = 60; c.drive.unlimited_acceleration = true;
+  c.lidars[0].columns = 1; c.lidars[0].vertical_angles = {0};
+  Simulator fixed(c, Model::load(c.urdf), scene);
+  ASSERT_TRUE(fixed.command({1, 0})); step3(fixed, 1000);
+  EXPECT_GT(fixed.contactCount(), 0u);
+  EXPECT_NEAR(fixed.snapshot().world_base.translation().x(), 4.55, 2e-5);
+  EXPECT_NEAR(fixed.snapshot().odom_base.translation().x(), 5, 1e-9);
+  EXPECT_DOUBLE_EQ(fixed.scene().collision[0].at(fixed.snapshot().stamp).translation().x(), 5);
   n["entities"][0]["support"] = true;
   save();
   EXPECT_THROW(Config::load(path, scene), std::runtime_error);

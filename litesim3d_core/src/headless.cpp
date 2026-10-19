@@ -13,11 +13,11 @@ int main(int argc, char **argv) {
     litesim3d::require(count > 0 && count <= 10000000, "steps must be in 1..10000000");
     litesim3d::Scene scene;
     auto config = litesim3d::Config::load(argv[1], scene);
-    litesim3d::require(std::none_of(config.cameras.begin(), config.cameras.end(),
-        [](const auto &camera) { return camera.enabled; }),
-        "sim_headless has no renderer; disable cameras or use the SDF ROS launch with gui:=false");
     auto model = litesim3d::Model::load(config.urdf, config.model_options);
     litesim3d::Simulator sim(config, model, scene);
+    litesim3d::require(std::none_of(sim.config().cameras.begin(), sim.config().cameras.end(),
+        [](const auto &camera) { return camera.enabled; }),
+        "sim_headless has no renderer; disable cameras or use the SDF ROS launch with gui:=false");
     sim.pause(false);
     uint64_t frames = 0, points = 0;
     const double v = argc > 4 ? std::stod(argv[4]) : 0, w = argc > 5 ? std::stod(argv[5]) : 0,

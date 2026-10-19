@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="camera_enabled" default="false"/>
+  <!-- 原始机械模型已有 lidar_link/imu_link；直接绑定，避免重复 link/TF。 -->
+  <link name="camera_link">
+    <visual>
+      <origin xyz="-0.025 0 0"/>
+      <geometry><box size="0.05 0.09 0.035"/></geometry>
+      <material name="camera_black"><color rgba="0.08 0.10 0.13 1"/></material>
+    </visual>
+    <collision><origin xyz="-0.025 0 0"/><geometry><box size="0.05 0.09 0.035"/></geometry></collision>
+  </link>
+  <joint name="camera_mount_joint" type="fixed">
+    <parent link="base_link"/><child link="camera_link"/><origin xyz="0.40 0 0.375"/>
+  </joint>
+  <link name="camera_optical_frame"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/><child link="camera_optical_frame"/>
+    <origin rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+  <litesim3d version="1">
+    <sensor name="roof_lidar" class="litesim3d_lidar/Lidar">
+      <parameters file="package://litesim3d_lidar/config/parameters.yaml"/>
+      <parameters file="package://wheel_car_4w_description/config/sensors.yaml" section="lidar"/>
+    </sensor>
+    <sensor name="body_imu" class="litesim3d_imu/Imu">
+      <parameters file="package://litesim3d_imu/config/parameters.yaml"/>
+    </sensor>
+    <sensor name="front_camera" class="litesim3d_rgb_camera/RgbCamera">
+      <parameters file="package://litesim3d_rgb_camera/config/parameters.yaml"/>
+      <overrides>enabled: $(arg camera_enabled)
+topic: camera/front</overrides>
+    </sensor>
+  </litesim3d>
+</robot>

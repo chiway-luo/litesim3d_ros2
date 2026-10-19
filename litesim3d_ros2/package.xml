@@ -12,5 +12,17 @@
   <test_depend>python3-psutil</test_depend><test_depend>ros2launch</test_depend><test_depend>ros2run</test_depend>
   <url type="repository">https://github.com/chiway-luo/litesim3d_ros2</url>
   <url type="bugtracker">https://github.com/chiway-luo/litesim3d_ros2/issues</url>
+  <exec_depend>litesim3d_lidar</exec_depend>
+  <exec_depend>litesim3d_imu</exec_depend>
+  <exec_depend>litesim3d_rgb_camera</exec_depend>
+  <exec_depend>litesim3d_depth_camera</exec_depend>
+  <exec_depend>litesim3d_rgbd_camera</exec_depend>
+  <test_depend>litesim3d_diff_drive</test_depend>
+  <test_depend>litesim3d_ackermann_drive</test_depend>
+  <test_depend>litesim3d_omni3_drive</test_depend>
+  <test_depend>litesim3d_omni4_drive</test_depend>
+  <test_depend>litesim3d_diff_odometry</test_depend>
+  <test_depend>litesim3d_ackermann_odometry</test_depend>
+  <test_depend>litesim3d_omni_odometry</test_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

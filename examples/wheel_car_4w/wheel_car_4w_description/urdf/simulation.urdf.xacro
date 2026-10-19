@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="wheel_car_4w" version="1.0" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- 原始机械 URDF 不变；所有仿真扩展在此组合层。 -->
+  <xacro:include filename="$(find wheel_car_4w_description)/urdf/wheel_car_4w.urdf"/>
+  <xacro:include filename="$(find wheel_car_4w_description)/urdf/sensors.xacro"/>
+  <litesim3d version="1">
+    <chassis name="drive" class="litesim3d_diff_drive/DifferentialDrive">
+      <parameters file="package://litesim3d_diff_drive/config/parameters.yaml"/>
+      <parameters file="package://wheel_car_4w_description/config/geometry.yaml"/>
+      <parameters file="package://wheel_car_4w_description/config/motion.yaml"/>
+    </chassis>
+    <odometry name="wheel_odometry" class="litesim3d_diff_odometry/DifferentialOdometry">
+      <parameters file="package://litesim3d_diff_odometry/config/parameters.yaml"/>
+      <parameters file="package://wheel_car_4w_description/config/geometry.yaml"/>
+    </odometry>
+  </litesim3d>
+</robot>

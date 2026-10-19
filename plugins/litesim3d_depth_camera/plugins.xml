@@ -1,0 +1,5 @@
+<library path="litesim3d_depth_camera">
+  <class name="litesim3d_depth_camera/DepthCamera" type="litesim3d::plugins::DepthCamera" base_class_type="litesim3d::plugins::SensorPlugin">
+    <description>DepthCamera, API version 1.</description>
+  </class>
+</library>

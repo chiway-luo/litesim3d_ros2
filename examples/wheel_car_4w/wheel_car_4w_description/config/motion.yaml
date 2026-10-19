@@ -1,0 +1,6 @@
+# 机器人实例仅覆盖速度上限；其余限制采用插件 config/parameters.yaml 的完整默认值。
+limits:
+  # 车体平移速度上限，m/s，>0。
+  max_linear_speed_mps: 0.8
+  # yaw 角速度上限，rad/s，>0。
+  max_angular_speed_radps: 1.5

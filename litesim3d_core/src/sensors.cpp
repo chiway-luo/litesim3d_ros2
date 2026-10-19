@@ -40,6 +40,7 @@ Cloud scanTrajectory(const Scene &scene, const LidarConfig &cfg, uint64_t start,
   Cloud c;
   c.stamp = start;
   c.completion_stamp = start;
+  c.frame_index = frame;
   c.frame = cfg.link;
   c.topic = cfg.topic;
   c.height = uint32_t(cfg.vertical_angles.size());
@@ -132,6 +133,8 @@ void ImuConfig::validate() const {
   require(accel_bias.allFinite() && gyro_bias.allFinite() && accel_sigma.allFinite() &&
               gyro_sigma.allFinite() && accel_sigma.minCoeff() >= 0 && gyro_sigma.minCoeff() >= 0,
           "imu: invalid noise/bias");
+  require(std::isfinite(accel_range) && accel_range >= 0 && std::isfinite(gyro_range) && gyro_range >= 0,
+          "imu: measurement ranges must be finite and non-negative");
 }
 ImuSample sampleImu(const ImuConfig &cfg, const Kinematics &body, const Pose &mount,
                     uint64_t stamp, uint64_t seed, uint64_t sample) {
@@ -151,6 +154,8 @@ ImuSample sampleImu(const ImuConfig &cfg, const Kinematics &body, const Pose &mo
   for (int i = 0; i < 3; ++i) {
     result.acceleration[i] += cfg.accel_bias[i] + cfg.accel_sigma[i] * randomNormal(ak, sample, i);
     result.angular_velocity[i] += cfg.gyro_bias[i] + cfg.gyro_sigma[i] * randomNormal(gk, sample, i);
+    if (cfg.accel_range > 0) result.acceleration[i] = std::clamp(result.acceleration[i],-cfg.accel_range,cfg.accel_range);
+    if (cfg.gyro_range > 0) result.angular_velocity[i] = std::clamp(result.angular_velocity[i],-cfg.gyro_range,cfg.gyro_range);
     result.acceleration_covariance[i * 4] = cfg.accel_sigma[i] * cfg.accel_sigma[i];
     result.angular_velocity_covariance[i * 4] = cfg.gyro_sigma[i] * cfg.gyro_sigma[i];
   }

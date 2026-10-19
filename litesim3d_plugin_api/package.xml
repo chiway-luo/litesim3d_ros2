@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_plugin_api</name><version>0.4.0</version>
+  <description>Public LiteSim3D chassis, encoder odometry and sensor plugin interfaces.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>pluginlib</depend><depend>eigen</depend><depend>nlohmann-json-dev</depend>
+  <buildtool_depend>pkg-config</buildtool_depend>
+  <depend>yaml-cpp</depend><depend>tinyxml2</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

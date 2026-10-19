@@ -19,6 +19,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#include "litesim3d/sensor_plugin.hpp"
 #include <litesim3d_interfaces/srv/render_cameras.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -80,10 +81,13 @@ public:
     }
     auto model = litesim3d::Model::load(cfg.urdf, cfg.model_options);
     sim_ = std::make_unique<litesim3d::Simulator>(cfg, model, scene);
+    cfg = sim_->config();
     stats_ = create_publisher<std_msgs::msg::String>("/sim/stats", rclcpp::QoS(1).best_effort());
     const auto scene_file = declare_parameter<std::string>("scene_description", "");
     if (!scene_file.empty()) {
       scene_description_ = litesim3d::Json::parse(litesim3d::readText(scene_file));
+      scene_description_["cameras"] = litesim3d::Json::array();
+      for (const auto &camera : cfg.cameras) scene_description_["cameras"].push_back(camera.json());
       scene_description_["run_id"] = sim_->run_id;
       scene_description_pub_ = create_publisher<std_msgs::msg::String>(
           "/sim/scene_description", rclcpp::QoS(1).reliable().transient_local());
@@ -297,6 +301,14 @@ private:
       litesim3d::require(frame.camera_name == c.name && frame.info.header.stamp == request->header.stamp &&
           frame.info.width == c.width && frame.info.height == c.height && frame.info.header.frame_id == c.link,
           "camera response metadata mismatch");
+      // The renderer supplies ideal truth-based pixels; the selected plugin owns
+      // measurement effects. Preserve response metadata and byte ordering.
+      litesim3d::plugins::ImageFrame pixels;
+      pixels.stamp_ns = event.snapshot.stamp; pixels.width = c.width; pixels.height = c.height;
+      pixels.depth_big_endian = frame.depth.is_bigendian;
+      pixels.color.swap(frame.color.data); pixels.depth.swap(frame.depth.data);
+      sim_->processCamera(event.cameras[i],pixels);
+      pixels.color.swap(frame.color.data); pixels.depth.swap(frame.depth.data);
       auto send = [&](sensor_msgs::msg::Image &image, const std::string &channel, const char *encoding, unsigned bytes) {
         litesim3d::require(image.header == frame.info.header && image.encoding == encoding &&
             image.width == c.width && image.height == c.height && image.step == c.width * bytes &&
@@ -369,8 +381,8 @@ private:
         o.child_frame_id = prefix_ + sim_->config().base_link;
         o.pose.pose = poseMsg(e.snapshot.odom_base);
         o.twist.twist.linear.x = e.snapshot.odom_v;
-        o.twist.twist.linear.y = e.snapshot.lateral;
-        o.twist.twist.linear.z = e.snapshot.vertical;
+        o.twist.twist.linear.y = e.snapshot.odom_lateral;
+        o.twist.twist.linear.z = e.snapshot.odom_vertical;
         o.twist.twist.angular.z = e.snapshot.odom_w;
         o.pose.covariance = sim_->config().pose_covariance;
         o.twist.covariance = sim_->config().twist_covariance;
@@ -381,6 +393,8 @@ private:
         truth.pose.covariance.fill(0);
         truth.twist.covariance.fill(0);
         truth.twist.twist.linear.x = e.snapshot.v;
+        truth.twist.twist.linear.y = e.snapshot.lateral;
+        truth.twist.twist.linear.z = e.snapshot.vertical;
         truth.twist.twist.angular.z = e.snapshot.w;
         truth_->publish(truth);
         geometry_msgs::msg::PoseStamped p;

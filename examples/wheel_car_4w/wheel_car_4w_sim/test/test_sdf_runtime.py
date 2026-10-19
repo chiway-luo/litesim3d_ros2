@@ -13,6 +13,8 @@ from rclpy.node import NodeNameNonExistentError
 from rclpy.qos import qos_profile_sensor_data
 from std_srvs.srv import SetBool
 import yaml
+import xml.etree.ElementTree as ET
+from litesim3d_bringup.model import prepare_config, override
 from test_wheel_car_4w import Example
 
 
@@ -23,12 +25,13 @@ def example(tmp_path):
     car = Example(tmp_path, monitor_only=True)
     car.subscribe("stats", String, "/sim/stats")
     car.subscribe("scene_state", String, "/sim/scene_state")
-    data = yaml.safe_load((car.share / "config/runtime.yaml").read_text())
-    lidar = data["lidars"][0]
-    lidar.update(columns=32, rings=1, vertical_angles_deg=[0], ring_delays_s=[0],
-                 scan_mode="snapshot", publish_range_boundary=False, range_sigma_m=0)
-    runtime = tmp_path / "runtime.yaml"
-    runtime.write_text(yaml.safe_dump(data))
+    runtime = prepare_config(car.share / "config/runtime.yaml", tmp_path / "model")
+    data = yaml.safe_load(runtime.read_text())
+    model = ET.parse(data["robot"]["urdf"])
+    override(model.find("./litesim3d/sensor[@name='roof_lidar']"), {
+        "columns":32, "vertical_angles_deg":[0], "ring_delays_s":[0],
+        "scan_mode":"snapshot", "publish_range_boundary":False, "range_sigma_m":0})
+    model.write(data["robot"]["urdf"], encoding="unicode")
     yield car, runtime
     car.close()
 

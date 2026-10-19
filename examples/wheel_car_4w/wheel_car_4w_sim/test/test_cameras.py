@@ -13,6 +13,9 @@ from sensor_msgs.msg import Image, CameraInfo
 from litesim3d_interfaces.srv import Step
 from std_msgs.msg import String
 import yaml
+import copy
+import xml.etree.ElementTree as ET
+from litesim3d_bringup.model import prepare_config, override
 from test_wheel_car_4w import Example, stamp
 
 pytestmark = pytest.mark.skipif(os.environ.get("LWS_GUI_TESTS") != "1",
@@ -27,11 +30,16 @@ def camera_car(tmp_path):
 
 
 def configuration(car, kind="rgb", width=320, height=180, rate=15):
-    data = yaml.safe_load((car.share / "config/runtime.yaml").read_text())
-    data["lidars"][0]["columns"] = 32
-    data["cameras"][0].update(enabled=True, type=kind, width=width, height=height, rate_hz=rate)
-    path = car.directory / "runtime.yaml"
-    path.write_text(yaml.safe_dump(data))
+    path = prepare_config(car.share / "config/runtime.yaml", car.directory / "model")
+    data = yaml.safe_load(path.read_text())
+    model = ET.parse(data["robot"]["urdf"])
+    override(model.find("./litesim3d/sensor[@name='roof_lidar']"), {"columns":32})
+    camera = model.find("./litesim3d/sensor[@name='front_camera']")
+    package = f"litesim3d_{kind}_camera"
+    camera.set("class", package + "/" + {"rgb":"RgbCamera", "rgbd":"RgbdCamera", "depth":"DepthCamera"}[kind])
+    camera.find("parameters").set("file", f"package://{package}/config/parameters.yaml")
+    override(camera, {"enabled":True, "width":width, "height":height, "rate_hz":rate})
+    model.write(data["robot"]["urdf"], encoding="unicode")
     return path
 
 
@@ -84,8 +92,9 @@ def test_images_resolution_calibration_exact_stamps_and_pause(camera_car, kind, 
     runtime = configuration(car, kind, width, height, rate)
     subscribe(car, kind)
     # The launch override also exercises the disabled-by-default example path.
-    data=yaml.safe_load(runtime.read_text());data["cameras"][0]["enabled"]=False
-    runtime.write_text(yaml.safe_dump(data))
+    data=yaml.safe_load(runtime.read_text());model=ET.parse(data["robot"]["urdf"])
+    override(model.find("./litesim3d/sensor[@name='front_camera']"), {"enabled":False})
+    model.write(data["robot"]["urdf"], encoding="unicode")
     car.start(runtime=str(runtime), cameras="true", paused="true", reliable_sensors=True)
     assert_no_camera_preview(car)
     channels = [c for c in ("color", "depth") if c in car.messages]
@@ -150,8 +159,12 @@ def test_images_resolution_calibration_exact_stamps_and_pause(camera_car, kind, 
 def test_multiple_cameras_independent_rates_and_frame_prefix(camera_car):
     car=camera_car;runtime=configuration(car,kind="rgbd")
     data=yaml.safe_load(runtime.read_text())
-    second=dict(data["cameras"][0],name="auxiliary",topic="camera/aux",type="rgb",rate_hz=7,width=160,height=120)
-    data["cameras"].append(second);runtime.write_text(yaml.safe_dump(data))
+    model=ET.parse(data["robot"]["urdf"])
+    second=copy.deepcopy(model.find("./litesim3d/sensor[@name='front_camera']"))
+    second.set("name","auxiliary");second.set("class","litesim3d_rgb_camera/RgbCamera")
+    second.find("parameters").set("file","package://litesim3d_rgb_camera/config/parameters.yaml")
+    override(second,{"topic":"camera/aux","rate_hz":7,"width":160,"height":120})
+    model.find("litesim3d").append(second);model.write(data["robot"]["urdf"], encoding="unicode")
     params=yaml.safe_load((car.share/"config/ros.yaml").read_text())
     params["/litesim3d"]["ros__parameters"]["frame_prefix"]="rig/"
     ros=car.directory/"ros.yaml";ros.write_text(yaml.safe_dump(params))

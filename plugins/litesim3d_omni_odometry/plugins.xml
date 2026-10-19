@@ -1,0 +1,5 @@
+<library path="litesim3d_omni_odometry">
+  <class name="litesim3d_omni_odometry/OmniOdometry" type="litesim3d::plugins::OmniOdometry" base_class_type="litesim3d::plugins::OdometryPlugin">
+    <description>OmniOdometry, API version 1.</description>
+  </class>
+</library>

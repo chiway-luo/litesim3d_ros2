@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<sdf version="1.9"><world name="room">
+  <physics name="timing" type="ignored" default="true"><max_step_size>0.01</max_step_size><real_time_factor>1</real_time_factor></physics>
+  <scene><ambient>0.4 0.4 0.4 1</ambient><background>0.08 0.1 0.13 1</background></scene>
+  <light name="sun" type="directional"><direction>-0.4 -0.3 -1</direction><diffuse>1 1 1 1</diffuse></light>
+  <!-- 只提供机器人身份和 root 出生位姿；完整几何由组合 URDF 提供。 -->
+  <model name="omni3"><static>false</static><link name="spawn"/></model>
+  <model name="ground"><static>true</static><pose>0 0 -0.05 0 0 0</pose><link name="floor">
+    <visual name="floor"><geometry><box><size>20 20 0.1</size></box></geometry><material><diffuse>0.55 0.58 0.6 1</diffuse></material></visual>
+    <collision name="floor"><geometry><box><size>20 20 0.1</size></box></geometry></collision>
+  </link></model>
+  <model name="wall"><static>true</static><pose>2.5 0 1 0 0 0</pose><link name="wall">
+    <visual name="wall"><geometry><box><size>0.1 8 2</size></box></geometry><material><diffuse>0.8 0.6 0.3 1</diffuse></material></visual>
+    <collision name="wall"><geometry><box><size>0.1 8 2</size></box></geometry></collision>
+  </link></model>
+  <model name="side_wall"><static>true</static><pose>0 2.5 1 0 0 0</pose><link name="wall">
+    <visual name="wall"><geometry><box><size>8 0.1 2</size></box></geometry></visual>
+    <collision name="wall"><geometry><box><size>8 0.1 2</size></box></geometry></collision>
+  </link></model>
+</world></sdf>

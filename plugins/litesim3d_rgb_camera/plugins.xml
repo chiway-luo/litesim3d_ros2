@@ -1,0 +1,5 @@
+<library path="litesim3d_rgb_camera">
+  <class name="litesim3d_rgb_camera/RgbCamera" type="litesim3d::plugins::RgbCamera" base_class_type="litesim3d::plugins::SensorPlugin">
+    <description>RgbCamera, API version 1.</description>
+  </class>
+</library>

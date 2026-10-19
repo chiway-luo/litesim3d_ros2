@@ -246,7 +246,7 @@ def test_EXT05_ackermann_feedback_loop_from_measured_odom(h):
     (h.directory/'feedback.json').write_text(json.dumps({'target':target,'position_error':error,'trace':trace}))
 
 
-def test_EXT01_dynamic_ros_points_and_visual_time(h):
+def test_EXT01_configured_obstacle_stays_fixed_in_ros_points_and_visuals(h):
     m2_config(h)
     h.config['lidars'][0].update(rings=1,vertical_angles_deg=[0.0],columns=100,
                                horizontal_start_deg=0.0,horizontal_end_deg=.5,self_filter='robot')
@@ -258,9 +258,11 @@ def test_EXT01_dynamic_ros_points_and_visual_time(h):
     assert h.step(20,'moving-scan').success
     h.until(lambda:bool(h.messages['dynamic']))
     for x,y,z,intensity,ring,t in struct.iter_unpack('<ffffH2xf',bytes(h.messages['dynamic'][0].data)):
-        assert x == pytest.approx(5-.2+t,abs=1e-5)
-    h.until(lambda:bool(h.messages['scene']) and ns(h.messages['scene'][-1].markers[0].header.stamp)==100_000_001)
-    assert h.messages['scene'][-1].markers[0].pose.position.x==pytest.approx(5.15)
+        assert x == pytest.approx(5-.2,abs=1e-5)
+    # Fixed geometry is latched once; advancing time does not animate markers.
+    h.until(lambda:bool(h.messages['scene']))
+    assert ns(h.messages['scene'][-1].markers[0].header.stamp)==1
+    assert h.messages['scene'][-1].markers[0].pose.position.x==pytest.approx(5.05)
 
 
 def test_EXT06_vendor_bytes_nan_timing_and_actual_pcl_read(h):

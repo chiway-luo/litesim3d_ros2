@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <litesim3d_plugin_api/declarations.hpp>
 #include <optional>
 #include <random>
 #include <set>
@@ -218,6 +219,7 @@ struct ImuConfig {
   double rate = 200;
   Vec3 accel_bias = Vec3::Zero(), gyro_bias = Vec3::Zero();
   Vec3 accel_sigma = Vec3::Zero(), gyro_sigma = Vec3::Zero();
+  double accel_range = 0, gyro_range = 0; // zero disables clipping; SI units
   void validate() const;
 };
 // Pinhole sensor bound to a ROS optical link: +z forward, +x right, +y down.
@@ -227,6 +229,8 @@ struct CameraConfig {
   bool enabled = true;
   unsigned width = 640, height = 480;
   double rate = 15, horizontal_fov = 70 * pi / 180, near_clip = .1, far_clip = 20;
+  Vec3 color_bias = Vec3::Zero(), color_sigma = Vec3::Zero(); // RGB digital numbers [0,255]
+  double depth_bias = 0, depth_sigma = 0; // metres
   bool color() const { return type == "rgb" || type == "rgbd"; }
   bool depth() const { return type == "depth" || type == "rgbd"; }
   void validate() const;
@@ -257,6 +261,8 @@ struct Drive {
   double wheel_radius = 0.1, wheel_separation = 0.5;
   double max_v = 1, max_w = 2, acceleration = 0.5, deceleration = 1, angular_acceleration = 2;
   bool unlimited_acceleration = false;
+  // Keep wheel encoders running against a blocked chassis (never disables collision).
+  bool continue_on_collision = false;
   std::string left_joint = "left_wheel_joint", right_joint = "right_wheel_joint";
   std::set<std::string> support_links = {"left_wheel", "right_wheel"};
   void validate() const;
@@ -283,6 +289,8 @@ struct Config {
   std::filesystem::path urdf;
   ModelOptions model_options;
   Json resolved, resources;
+  std::vector<plugins::Declaration> plugins;
+  bool sensors_resolved = false; // typed arrays below are the loaded plugin descriptors
   static Config load(const std::filesystem::path &file, Scene &scene,
                      const std::shared_ptr<LoadControl> &control = {});
   uint64_t timeoutPhaseNs() const;
@@ -301,7 +309,7 @@ struct Snapshot {
   std::map<std::string, double> joints, joint_velocities;
   double v = 0, w = 0;
   double lateral = 0, vertical = 0;
-  double odom_v = 0, odom_w = 0;
+  double odom_v = 0, odom_w = 0, odom_lateral = 0, odom_vertical = 0;
   Vec3 linearVelocity() const { return Vec3(v, lateral, vertical); }
 };
 struct Event {
@@ -342,6 +350,7 @@ public:
   Json diagnostics() const;
   const std::vector<Contact> &contacts() const { return contacts_; }
   uint64_t contactCount() const { return contact_count_; }
+  void processCamera(size_t index, plugins::ImageFrame &image);
   std::string run_id;
 
 private:
@@ -355,6 +364,7 @@ private:
     double old_v, old_w, new_v, new_w;
     Pose old_pose;
     Vec3 old_linear = Vec3::Zero(), new_linear = Vec3::Zero();
+    plugins::DriveStep plugin_drive;
   };
   void beginStep();
   uint64_t nextEvent(uint64_t end) const;
@@ -366,11 +376,25 @@ private:
   uint64_t peer_history_ns_ = 0;
   std::vector<Event> advanceStep();
   void move(double dt, uint64_t end_stamp);
-  std::optional<Contact> clearance(const Pose &p, double &distance) const;
+  std::optional<Contact> clearance(const Pose &p, double &distance,
+      const std::map<std::string, double> *joints = nullptr) const;
+  void initializeMotionPlugins();
+  void initializeSensorPlugins(const plugins::Initialization &);
+  plugins::SensorOutput sampleSensor(const std::string &name, uint64_t stamp,
+      uint64_t sample_index, const Snapshot &snapshot) const;
+  void moveSteering(const std::map<std::string, double> &targets);
   Pose trajectory(uint64_t stamp) const;
   Config config_;
   Model model_;
   Scene scene_;
+  // The loader outlives its instances; the API also protects external owners.
+  std::unique_ptr<plugins::Loader> plugin_loader_;
+  std::shared_ptr<plugins::ChassisPlugin> chassis_plugin_;
+  std::shared_ptr<plugins::OdometryPlugin> odometry_plugin_;
+  std::map<std::string, std::shared_ptr<plugins::SensorPlugin>> sensor_plugins_;
+  std::map<std::string, plugins::SensorDescription> sensor_descriptions_;
+  plugins::Twist plugin_drive_velocity_;
+  double accepted_motion_fraction_ = 1;
   Snapshot current_;
   Pose origin_;
   State state_ = State::Ready;
@@ -385,7 +409,8 @@ private:
   std::deque<History> history_;
   Kinematics kinematics_;
   uint64_t motion_samples_ = 0, contact_count_ = 0, discontinuities_ = 0, evicted_inputs_ = 0;
-  bool motion_blocked_ = false;
+  bool motion_blocked_ = false, drive_blocked_ = false;
+  double drive_v_ = 0, drive_w_ = 0;
   uint64_t odom_index_ = 1;
   std::map<std::string, std::pair<uint32_t, StepResult>> requests_;
   std::vector<Contact> contacts_;

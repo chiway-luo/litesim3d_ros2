@@ -127,6 +127,20 @@ TEST(URDFMimic, CollisionStopsFollowerVelocity) {
   EXPECT_DOUBLE_EQ(s.snapshot().joint_velocities.at("follower"), 0);
   EXPECT_DOUBLE_EQ(s.snapshot().joint_velocities.at("left_wheel_joint"), 0);
 }
+TEST(URDFMimic, CollisionOptionKeepsFollowerPositionAndVelocity) {
+  const auto text = replace(readText(resources / "urdf/r01.urdf"), "</robot>", R"(
+<link name="follower_link"/>
+<joint name="follower" type="continuous"><parent link="base_link"/><child link="follower_link"/>
+<axis xyz="0 1 0"/><limit effort="100" velocity="1000"/>
+<mimic joint="left_wheel_joint" multiplier="-2" offset="0.3"/></joint></robot>)");
+  auto c = config(); c.drive.continue_on_collision = true;
+  Simulator s(c, importText(text), scene({box("wall", {.8, 0, .5}, {.1, 2, 1})}));
+  advance(s, 400, .8, 0);
+  ASSERT_FALSE(s.contacts().empty());
+  EXPECT_DOUBLE_EQ(s.snapshot().v, 0);
+  EXPECT_NEAR(s.snapshot().joint_velocities.at("follower"), -16, 1e-12);
+  EXPECT_NEAR(s.snapshot().joints.at("follower"), -31.7, 1e-9);
+}
 TEST(COR02, IntegerClock) {
   auto s = simulator();
   s.pause(false);

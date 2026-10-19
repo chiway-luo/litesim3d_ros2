@@ -1,0 +1,20 @@
+# 必填示例：URDF 安装 link；数据使用此 link 的轴向，右手坐标系。
+link: imu_link
+# 必填示例：sensor_msgs/Imu 话题；多机器人使用相对话题。
+topic: imu/data_raw
+# 是否启用采样；false 仍校验挂载和参数。
+enabled: true
+# 采样频率，Hz，(0,2000]。
+rate_hz: 200.0
+# 安装坐标系 xyz 三轴加速度偏差，m/s²，有限数；含重力比力。
+accel_bias: [0.0, 0.0, 0.0]
+# 安装坐标系 xyz 三轴角速度偏差，rad/s，有限数。
+gyro_bias: [0.0, 0.0, 0.0]
+# xyz 独立高斯加速度噪声标准差，m/s²，各项 ≥0。
+accel_sigma: [0.0, 0.0, 0.0]
+# xyz 独立高斯角速度噪声标准差，rad/s，各项 ≥0。
+gyro_sigma: [0.0, 0.0, 0.0]
+# 加速度每轴对称量程，m/s²，≥0；0 不裁剪，正值在偏差/噪声之后裁剪。
+accel_range_mps2: 0.0
+# 角速度每轴对称量程，rad/s，≥0；0 不裁剪；不提供姿态估计。
+gyro_range_radps: 0.0

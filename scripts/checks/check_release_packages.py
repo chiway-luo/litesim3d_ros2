@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Build/test one ROS package at a time, with only installed local dependencies.
+"""Build one ROS package at a time, then test against the complete installed set.
 
 Run in a fresh Humble environment after rosdep install. The work directory must
 be outside the checkout. No repository parent, sibling source package, or root
 VERSION file is copied alongside the package being built.
+Tests run in a second pass because core integration tests load downstream sensor
+plugins. Each test restores only its own source tree at the original build path.
 """
 import argparse
 import hashlib
@@ -13,6 +15,7 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import xml.etree.ElementTree as ET
 
@@ -21,7 +24,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def packages():
     found = {}
-    for manifest in sorted([*ROOT.glob('*/package.xml'), *(ROOT / 'examples').rglob('package.xml')]):
+    for manifest in sorted([*ROOT.glob('*/package.xml'), *(ROOT / 'examples').rglob('package.xml'),
+                            *(ROOT / 'plugins').rglob('package.xml')]):
+        if (manifest.parent / 'COLCON_IGNORE').exists():
+            continue  # External overlay examples have their own isolated-build acceptance script.
         xml = ET.parse(manifest).getroot()
         name = xml.findtext('name')
         if name in found:
@@ -91,7 +97,8 @@ def main():
     prefix = work / 'install'
     current = work / 'current-source'
     env = {**os.environ, 'CMAKE_BUILD_PARALLEL_LEVEL': str(args.jobs), 'MAKEFLAGS': f'-j{args.jobs}',
-           'ROS_LOCALHOST_ONLY': '1', 'PYTHONDONTWRITEBYTECODE': '1', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'}
+           'ROS_LOCALHOST_ONLY': '1', 'ROS_LOG_DIR': str(log_dir / 'ros-logs'),
+           'PYTHONDONTWRITEBYTECODE': '1', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'}
 
     def save():
         record_path.write_text(json.dumps(record, indent=2) + '\n')
@@ -117,6 +124,24 @@ def main():
                 return 124
 
     test_failures = []
+    cmake_args = ['-DCMAKE_BUILD_TYPE=RelWithDebInfo', '-DBUILD_TESTING=ON']
+    if sys.platform == 'darwin' and env.get('CONDA_PREFIX'):
+        conda = env['CONDA_PREFIX']
+        cmake_args += ['-DCMAKE_C_COMPILER=/usr/bin/clang', '-DCMAKE_CXX_COMPILER=/usr/bin/clang++',
+                       '-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON', f'-DCMAKE_INSTALL_RPATH={prefix}/lib;{conda}/lib',
+                       f'-DCMAKE_EXE_LINKER_FLAGS=-Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs -L{conda}/lib',
+                       f'-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs -L{conda}/lib']
+
+    def restore_source(source):
+        if current.exists():
+            shutil.rmtree(current)
+        shutil.copytree(source, current, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '.DS_Store', '._*'))
+
+    def package_args(name):
+        return ['--base-paths', str(current), '--build-base', str(work / 'build'),
+                '--install-base', str(prefix), '--merge-install', '--packages-select', name,
+                '--executor', 'sequential', '--event-handlers', 'console_direct+']
+
     save()
     for name in order:
         source, dependencies = found[name]
@@ -124,26 +149,39 @@ def main():
         parent_hashes = {dep: record['packages'][dep]['signature'] for dep in sorted(dependencies & found.keys())}
         signature = hashlib.sha256(json.dumps([own_hash, parent_hashes], sort_keys=True).encode()).hexdigest()
         old = record['packages'].get(name, {})
-        if old.get('status') == 'PASS' and old.get('signature') == signature:
-            print(f'{name}: unchanged verified package', flush=True)
+        if old.get('build_exit') == 0 and old.get('signature') == signature:
+            print(f'{name}: unchanged installed package; test reuse checked after all plugins are installed', flush=True)
             continue
-        if current.exists():
-            shutil.rmtree(current)
-        shutil.copytree(source, current, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '.DS_Store', '._*'))
+        restore_source(source)
         entry = {'source_sha256': own_hash, 'signature': signature, 'dependencies': parent_hashes,
                  'status': 'RUNNING', 'started_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
         record['packages'][name] = entry
         save()
-        common = ['--base-paths', str(current), '--build-base', str(work / 'build'),
-                  '--install-base', str(prefix), '--merge-install', '--packages-select', name,
-                  '--executor', 'sequential', '--event-handlers', 'console_direct+']
-        entry['build_exit'] = run(name, 'build', ['colcon', '--log-base', str(work / 'log'), 'build', *common,
-            '--cmake-force-configure', '--cmake-args', '-DCMAKE_BUILD_TYPE=RelWithDebInfo', '-DBUILD_TESTING=ON'], 1800)
-        if entry['build_exit'] == 0:
-            entry['test_exit'] = run(name, 'test', ['colcon', '--log-base', str(work / 'log'), 'test', *common,
-                                                   '--return-code-on-test-failure'], 1500)
-            entry['results_exit'] = run(name, 'results', ['colcon', 'test-result', '--test-result-base',
-                                                        str(work / 'build' / name), '--verbose'], 60)
+        entry['build_exit'] = run(name, 'build', ['colcon', '--log-base', str(work / 'log'), 'build', *package_args(name),
+            '--cmake-force-configure', '--cmake-args', *cmake_args], 1800)
+        entry['status'] = 'BUILT' if entry['build_exit'] == 0 else 'FAIL'
+        save()
+        if entry['build_exit'] != 0:
+            record['status'] = 'FAIL'; save()
+            print(f'{name}: BUILD FAILED; see {log_dir}', flush=True)
+            return 1
+
+    # Recheck all tests if any installed runtime changes, including a plugin
+    # which depends on the core rather than being a core build dependency.
+    runtime_signature = hashlib.sha256(json.dumps({name: record['packages'][name]['signature']
+        for name in order}, sort_keys=True).encode()).hexdigest()
+    record['test_runtime_signature'] = runtime_signature
+    for name in order:
+        entry = record['packages'][name]
+        if entry.get('status') == 'PASS' and entry.get('test_runtime_signature') == runtime_signature:
+            print(f'{name}: unchanged verified runtime', flush=True)
+            continue
+        restore_source(found[name][0])
+        entry['test_exit'] = run(name, 'test', ['colcon', '--log-base', str(work / 'log'), 'test', *package_args(name),
+                                               '--return-code-on-test-failure'], 1500)
+        entry['results_exit'] = run(name, 'results', ['colcon', 'test-result', '--test-result-base',
+                                                    str(work / 'build' / name), '--verbose'], 60)
+        entry['test_runtime_signature'] = runtime_signature
         entry['status'] = 'PASS' if all(entry.get(key) == 0 for key in ('build_exit', 'test_exit', 'results_exit')) else 'FAIL'
         save()
         if entry['status'] != 'PASS':
@@ -165,9 +203,10 @@ def main():
     for variable in ('CMAKE_PREFIX_PATH', 'AMENT_PREFIX_PATH'):
         search_paths.extend(filter(None, env.get(variable, '').split(os.pathsep)))
     consumer = record['installed_consumer'] = {}
+    consumer_args = [f"-DCMAKE_BUILD_RPATH={env['CONDA_PREFIX']}/lib"] if sys.platform == 'darwin' and env.get('CONDA_PREFIX') else []
     consumer['configure_exit'] = run('installed_consumer', 'configure', [
         'cmake', '-S', str(ROOT / 'scripts/fixtures/core_consumer'), '-B', str(consumer_build),
-        '-DCMAKE_PREFIX_PATH=' + ';'.join(dict.fromkeys(search_paths))], 120)
+        '-DCMAKE_PREFIX_PATH=' + ';'.join(dict.fromkeys(search_paths)), *consumer_args], 120)
     if consumer['configure_exit'] == 0:
         consumer['build_exit'] = run('installed_consumer', 'build', [
             'cmake', '--build', str(consumer_build), '--parallel', str(args.jobs)], 180)

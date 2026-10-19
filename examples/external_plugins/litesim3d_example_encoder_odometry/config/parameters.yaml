@@ -1,0 +1,10 @@
+# 必填：左 continuous 编码器关节，正转方向使车体向 +x。
+left_joint: left_wheel_joint
+# 必填：右 continuous 编码器关节，轴向与左轮一致。
+right_joint: right_wheel_joint
+# 必填：编码器轮有效半径，m，必须 > 0；示例值。
+wheel_radius_m: 0.1
+# 必填：两轮中心距，m，必须 > 0；示例值。
+wheel_separation_m: 0.5
+# 距离标定比例，无量纲，必须 > 0；1.0 表示不修正，测试用 1.25 验证替换生效。
+distance_scale: 1.0

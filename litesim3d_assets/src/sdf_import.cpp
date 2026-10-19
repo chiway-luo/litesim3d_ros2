@@ -5,12 +5,14 @@
 #include <assimp/postprocess.h>
 #include <tinyxml2.h>
 #include <yaml-cpp/yaml.h>
+#include <urdf_parser/urdf_parser.h>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 
 // The output is an internal, disposable adapter for the existing deterministic
-// kernel. SDF remains the only geometry source; never edit generated URDF/YAML.
+// kernel. SDF owns scenery and spawn poses. An explicit composed URDF owns the
+// complete robot; without one, the legacy SDF robot is converted as before.
 namespace {
 using J = litesim3d::Json;
 using P = gz::math::Pose3d;
@@ -165,6 +167,27 @@ void urdfGeometry(tinyxml2::XMLDocument &d, tinyxml2::XMLNode *n, const J &g) {
   if (type == "cylinder") e->SetAttribute("length",g.at("length").get<double>());
   if (type == "mesh") { e->SetAttribute("filename",g.at("uri").get<std::string>().c_str()); e->SetAttribute("scale",triple(g.at("scale")).c_str()); }
 }
+P urdfPose(const urdf::Pose &p) {
+  return P(gz::math::Vector3d(p.position.x,p.position.y,p.position.z),
+           gz::math::Quaterniond(p.rotation.w,p.rotation.x,p.rotation.y,p.rotation.z));
+}
+J renderGeometry(const urdf::GeometrySharedPtr &g, const fs::path &base) {
+  require(bool(g), "missing URDF visual geometry");
+  if(g->type==urdf::Geometry::BOX) {
+    auto b=std::dynamic_pointer_cast<urdf::Box>(g);
+    return {{"type","box"},{"size",{b->dim.x,b->dim.y,b->dim.z}}};
+  }
+  if(g->type==urdf::Geometry::SPHERE)
+    return {{"type","sphere"},{"radius",std::dynamic_pointer_cast<urdf::Sphere>(g)->radius}};
+  if(g->type==urdf::Geometry::CYLINDER) {
+    auto c=std::dynamic_pointer_cast<urdf::Cylinder>(g);
+    return {{"type","cylinder"},{"radius",c->radius},{"length",c->length}};
+  }
+  require(g->type==urdf::Geometry::MESH,"unsupported URDF visual geometry");
+  auto mesh=std::dynamic_pointer_cast<urdf::Mesh>(g);
+  auto file=resource(mesh->filename,base);auditMesh(file);
+  return {{"type","mesh"},{"uri",file.string()},{"scale",{mesh->scale.x,mesh->scale.y,mesh->scale.z}}};
+}
 struct Importer {
   fs::path source, output;
   YAML::Node runtime;
@@ -189,6 +212,39 @@ struct Importer {
     require(!foundRobot, "duplicate robot model"); foundRobot = true;
     require(m.ModelCount() == 0, "nested articulated robot models require flattening before import");
     require(!m.Static(), "driven robot must not be static");
+    if(runtime["robot"]["urdf"]) {
+      require(!runtime["mimic_joints"],"composed URDF owns mimic joints; remove runtime mimic_joints");
+      const fs::path file=runtime["robot"]["urdf"].as<std::string>();
+      require(file.extension()!=".xacro","expand Xacro with litesim3d_bringup prepare_config before sdf_import");
+      const auto xml=litesim3d::readText(file);
+      litesim3d::ModelOptions options;options.allow_visual_only=true;
+      auto model=litesim3d::Model::load(file,options); // validate graph before urdfdom traversal
+      auto parsed=urdf::parseURDF(xml);require(bool(parsed),"invalid composed robot URDF");
+      for(const auto &[name,link]:parsed->links_) {
+        size_t index=0;
+        for(const auto &v:link->visual_array) {
+          J mat={{"transparency",0.0},{"cast_shadows",true}};
+          if(v->material) {
+            auto &c=v->material->color;
+            mat["diffuse"]=mat["ambient"]={c.r,c.g,c.b,c.a};
+            if(!v->material->texture_filename.empty())mat["albedo_map"]=resource(v->material->texture_filename,file.parent_path()).string();
+          }
+          description["visuals"].push_back({{"id",robotName+"/"+name+"/visual_"+std::to_string(index++)},
+            {"binding",name},{"pose",pose(urdfPose(v->origin))},{"geometry",renderGeometry(v->geometry,file.parent_path())},{"material",mat}});
+        }
+      }
+      std::map<std::string,double> joints;
+      if(auto initial=runtime["robot"]["initial_joints"])for(auto pair:initial)joints[pair.first.as<std::string>()]=pair.second.as<double>();
+      const auto frames=model.fk(joints);
+      const auto baseLink=runtime["robot"]["base_link"].as<std::string>();
+      require(frames.count(baseLink),"robot base_link not found in composed URDF");
+      const auto &bp=frames.at(baseLink);Eigen::Quaterniond q(bp.linear());
+      P rootBase(gz::math::Vector3d(bp.translation().x(),bp.translation().y(),bp.translation().z()),
+                 gz::math::Quaterniond(q.w(),q.x(),q.y(),q.z()));
+      runtime["robot"]["initial_pose"]=poseYaml(world*rootBase);
+      description["robot_model"]={{"source",file.string()},{"sha256",litesim3d::sha256(file)},{"root",model.root}};
+      return;
+    }
     tinyxml2::XMLDocument d; auto *r=child(d,&d,"robot"); r->SetAttribute("name",robotName.c_str());
     std::map<std::string,P> links;
     for (uint64_t i=0;i<m.LinkCount();++i) {
@@ -250,13 +306,14 @@ struct Importer {
     auto file=output/"robot.urdf"; require(d.SaveFile(file.c_str())==tinyxml2::XML_SUCCESS,"cannot write generated URDF");
     runtime["robot"]["urdf"]=file.string();
   }
-  void model(const sdf::Model &m,const P &parent,const std::string &scope,bool inheritedStatic=false) {
+  void model(const sdf::Model &m,const P &parent,const std::string &scope) {
     const auto base=baseOf(m.Element(),source.parent_path());
     const auto world=parent*resolved(m.SemanticPose());
     const auto name=scope.empty()?m.Name():scope+"::"+m.Name();
     modelNames.insert(name);
     if(name==robotName) {robot(m,world,base);return;}
-    require(m.Static()||inheritedStatic,"non-static model lacks a supported motion binding: "+name);
+    // Every environment model is fixed at its declared initial pose, including
+    // SDF models whose <static> flag is absent or false.
     for(uint64_t j=0;j<m.JointCount();++j)
       require(m.JointByIndex(j)->Type()==sdf::JointType::FIXED,"articulated scenery is unsupported: "+name);
     const auto binding=runtime["entity_bindings"][name];
@@ -270,6 +327,10 @@ struct Importer {
         const auto &s=*l.VisualByIndex(v);visual(s,lp,"",name+"/"+l.Name()+"/"+s.Name(),base);
         entity(geometry(*s.Geom(),base),lp*resolved(s.SemanticPose()),name,"visual",binding);
         entity(geometry(*s.Geom(),base),lp*resolved(s.SemanticPose()),name,"sensor_geometry",binding);
+        if(l.CollisionCount()==0) {
+          hasCollision=true;
+          entity(geometry(*s.Geom(),base),lp*resolved(s.SemanticPose()),name,"collision",binding);
+        }
       }
       for(uint64_t c=0;c<l.CollisionCount();++c) {
         hasCollision=true;
@@ -279,7 +340,7 @@ struct Importer {
     }
     require(!binding["support"]||!binding["support"].as<bool>()||hasCollision,
       "support model has no collision: "+name);
-    for(uint64_t i=0;i<m.ModelCount();++i)model(*m.ModelByIndex(i),world,name,true);
+    for(uint64_t i=0;i<m.ModelCount();++i)model(*m.ModelByIndex(i),world,name);
   }
 };
 } // namespace
@@ -291,12 +352,14 @@ int main(int argc,char **argv) {
     require(!fs::exists(importer.output)||fs::is_empty(importer.output),"output directory must be empty");
     fs::create_directories(importer.output);
     importer.runtime=YAML::LoadFile(argv[2]);
-    require(!importer.runtime["entities"]&&!importer.runtime["robot"]["urdf"]&&!importer.runtime["robot"]["initial_pose"],
+    require(!importer.runtime["entities"]&&!importer.runtime["robot"]["initial_pose"],
       "runtime YAML must not duplicate SDF geometry or initial pose");
+    if(importer.runtime["robot"]["urdf"])
+      importer.runtime["robot"]["urdf"]=resource(importer.runtime["robot"]["urdf"].as<std::string>(),fs::canonical(argv[2]).parent_path()).string();
     importer.robotName=importer.runtime["robot"]["id"].as<std::string>();
     importer.runtime["entities"]=YAML::Node(YAML::NodeType::Sequence);
     importer.runtime["scene_format"]="role_entries";
-    importer.runtime["robot"]["allow_visual_only"]=true;
+    if(!importer.runtime["robot"]["urdf"])importer.runtime["robot"]["allow_visual_only"]=true;
     importer.runtime["simulation"]["collision_budget_enabled"]=std::string(argv[4])=="true";
     sdf::ParserConfig config;
     config.SetFindCallback([&](const std::string &uri){return resource(uri,importer.source.parent_path(),true).string();});
@@ -341,23 +404,26 @@ int main(int argc,char **argv) {
     for(auto l:importer.runtime["lidars"])if(l["pattern_file"])
       l["pattern_file"]=resource(l["pattern_file"].as<std::string>(),fs::canonical(argv[2]).parent_path()).string();
     manifest[fs::canonical(argv[2]).string()]=litesim3d::sha256(argv[2]);
-    importer.description["resources"]=manifest;
     importer.description["robot_id"]=importer.robotName;
+    importer.description["obstacles_fixed"]=true;
     importer.description["source"]=importer.source.string();
-    importer.description["scene_id"]=litesim3d::sha256Text(importer.description.dump());
     std::ofstream(importer.output/"runtime.yaml")<<importer.runtime;
     // Validate all kinematics, ray/collision geometry and budgets before launch.
     litesim3d::Scene scene;auto cfg=litesim3d::Config::load(importer.output/"runtime.yaml",scene);
     auto model=litesim3d::Model::load(cfg.urdf,cfg.model_options);
     litesim3d::Simulator validation(cfg,model,scene);
+    for(const auto &plugin:validation.config().plugins)
+      for(const auto &file:plugin.parameter_files)manifest[file.string()]=litesim3d::sha256(file);
     importer.description["cameras"]=J::array();
-    for(const auto &c:cfg.cameras)importer.description["cameras"].push_back(c.json());
+    for(const auto &c:validation.config().cameras)importer.description["cameras"].push_back(c.json());
     auto frames=model.fk(validation.snapshot().joints);
     const auto wr=validation.snapshot().world_base*frames.at(cfg.base_link).inverse();
     for(const auto &[name,local]:frames) {
       litesim3d::Pose p=wr*local;Eigen::Quaterniond q(p.linear());
       importer.description["initial_link_poses"][name]={p.translation().x(),p.translation().y(),p.translation().z(),q.x(),q.y(),q.z(),q.w()};
     }
+    importer.description["resources"]=manifest;
+    importer.description["scene_id"]=litesim3d::sha256Text(importer.description.dump());
     std::ofstream(importer.output/"scene.json")<<importer.description.dump(2)<<'\n';
     std::cout<<J({{"scene_id",importer.description["scene_id"]},{"visuals",importer.description["visuals"].size()},
       {"resources",manifest.size()},{"collision_budget_enabled",std::string(argv[4])=="true"}}).dump()<<'\n';

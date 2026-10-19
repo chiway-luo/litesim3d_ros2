@@ -1,0 +1,5 @@
+<library path="litesim3d_lidar">
+  <class name="litesim3d_lidar/Lidar" type="litesim3d::plugins::Lidar" base_class_type="litesim3d::plugins::SensorPlugin">
+    <description>Lidar, API version 1.</description>
+  </class>
+</library>
