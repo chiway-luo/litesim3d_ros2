@@ -4,13 +4,13 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(ament_cmake REQUIRED)
 find_package(litesim3d_core REQUIRED)
 find_package(nlohmann_json REQUIRED)
-set(DEPS rclcpp rmw geometry_msgs sensor_msgs nav_msgs rosgraph_msgs std_msgs std_srvs diagnostic_msgs visualization_msgs tf2_ros tf2_msgs litesim3d_interfaces)
+set(DEPS rclcpp rcl rmw geometry_msgs sensor_msgs nav_msgs rosgraph_msgs std_msgs std_srvs diagnostic_msgs visualization_msgs tf2_ros tf2_msgs litesim3d_interfaces)
 foreach(dep ${DEPS})
   find_package(${dep} REQUIRED)
 endforeach()
 # Record the installed ROS/launch implementation independently of the core hash.
 set(bridge_sources src/sim_node.cpp src/sim_world_node.cpp src/point_adapter.cpp
-  src/point_adapter.hpp src/sim_ouster_adapter.cpp src/sim_cloud_probe.cpp
+  src/point_adapter.hpp src/service_responses.hpp src/sim_ouster_adapter.cpp src/sim_cloud_probe.cpp
   launch/demo.launch.py launch/world.launch.py scripts/sim_session)
 set(bridge_fingerprint "")
 foreach(source ${bridge_sources})

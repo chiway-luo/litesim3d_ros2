@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(response_fault LANGUAGES CXX)
+find_package(ament_cmake REQUIRED)
+find_package(rcl REQUIRED)
+add_library(response_fault SHARED response_fault.cpp)
+target_compile_features(response_fault PRIVATE cxx_std_17)
+ament_target_dependencies(response_fault rcl)
+target_link_libraries(response_fault ${CMAKE_DL_LIBS})

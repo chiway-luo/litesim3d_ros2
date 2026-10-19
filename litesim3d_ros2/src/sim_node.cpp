@@ -1,5 +1,6 @@
 #include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
+#include "service_responses.hpp"
 #include <chrono>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <fstream>
@@ -173,8 +174,8 @@ public:
             accept(m->twist, uint64_t(m->header.stamp.sec) * 1000000000 + m->header.stamp.nanosec,
                    m->header.frame_id);
           });
-    pause_service_ = create_service<std_srvs::srv::SetBool>(
-        "/sim/pause", [this](std_srvs::srv::SetBool::Request::SharedPtr request,
+    pause_service_ = litesim3d_ros::createResponseService<std_srvs::srv::SetBool>(
+        *this, "/sim/pause", [this](std_srvs::srv::SetBool::Request::SharedPtr request,
                              std_srvs::srv::SetBool::Response::SharedPtr response) {
           try {
             sim_->pause(request->data);
@@ -189,8 +190,8 @@ public:
           }
           publishStatus();
         });
-    step_service_ = create_service<litesim3d_interfaces::srv::Step>(
-        "/sim/step", [this](litesim3d_interfaces::srv::Step::Request::SharedPtr request,
+    step_service_ = litesim3d_ros::createResponseService<litesim3d_interfaces::srv::Step>(
+        *this, "/sim/step", [this](litesim3d_interfaces::srv::Step::Request::SharedPtr request,
                             litesim3d_interfaces::srv::Step::Response::SharedPtr response) {
           std::vector<litesim3d::Event> events;
           litesim3d::StepResult result;
@@ -209,8 +210,8 @@ public:
           response->time_ns = result.time_ns;
           publishStatus();
         });
-    pose_service_ = create_service<litesim3d_interfaces::srv::SetPose>(
-        "/sim/set_pose",
+    pose_service_ = litesim3d_ros::createResponseService<litesim3d_interfaces::srv::SetPose>(
+        *this, "/sim/set_pose",
         [this](litesim3d_interfaces::srv::SetPose::Request::SharedPtr request,
                litesim3d_interfaces::srv::SetPose::Response::SharedPtr response) {
           try {

@@ -1,5 +1,6 @@
 #include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
+#include "service_responses.hpp"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -208,8 +209,8 @@ public:
               }
             }
         });
-    pause_ = create_service<std_srvs::srv::SetBool>(
-        "/sim/pause", [this](std_srvs::srv::SetBool::Request::SharedPtr q,
+    pause_ = litesim3d_ros::createResponseService<std_srvs::srv::SetBool>(
+        *this, "/sim/pause", [this](std_srvs::srv::SetBool::Request::SharedPtr q,
                              std_srvs::srv::SetBool::Response::SharedPtr a) {
           try {
             world_->pause(q->data);
@@ -221,8 +222,8 @@ public:
             a->message = e.what();
           }
         });
-    step_ = create_service<litesim3d_interfaces::srv::Step>(
-        "/sim/step",
+    step_ = litesim3d_ros::createResponseService<litesim3d_interfaces::srv::Step>(
+        *this, "/sim/step",
         [this](litesim3d_interfaces::srv::Step::Request::SharedPtr q,
                litesim3d_interfaces::srv::Step::Response::SharedPtr a) {
           try {

@@ -8,6 +8,8 @@ history; no earlier tagged releases or publication dates are implied. See the
 
 Forthcoming
 -----------
+* Retain and retry timed-out service responses in a shared bounded module for single/world nodes, preserving the original request identity and result without re-executing commands. Add Linux fault-injection coverage for recovery, expiry, capacity, fatal errors and shutdown; keep the original reset stress test and client deadline.
+* Declare the directly used RCL dependency and include response handling in the bridge source fingerprint.
 * Bound every slow-consumer poll by the configured sensor history depth and scan period; record system-clock steps so a broad timestamp span cannot hide old-frame backlog.
 * Retry unanswered read-only member readiness probes within the original startup deadline, cleaning pending requests and still requiring an actual executor response before reset succeeds.
 * Wait for an observed clock before reading its timestamp in stamped-command and headless tests; ready status does not guarantee clock callback order.
