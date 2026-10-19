@@ -2,19 +2,32 @@
 
 本例采用 `robot.motion_model: multicopter`，通过 ROS 2 速度指令控制机体三轴平移和偏航。机体保持水平，使用限速、加减速与三维几何碰撞约束；适合三维建图、避障与导航接口验证。当前不模拟电机推力、桨叶转动、空气动力学、姿态飞控或自由落体。初始位置为世界坐标 `(-8, -8, 1.2)` 米，零速度时悬停；IMU 仍包含重力比力。
 
+## 目录
+
+```text
+drone_3d/
+├── drone_3d_models/        # 无人机专用资源包
+│   ├── models/            # quadrotor、aerial_course、textured_crate
+│   └── worlds/            # drone_arena.sdf
+└── drone_3d_sim/
+    ├── config/            # 运动与传感器配置、ROS 参数
+    ├── launch/            # 无人机启动入口
+    └── test/              # ROS 与图形回归
+```
+
 ## 启动
 
 按仓库 [README](../../README.zh-CN.md) 安装依赖和构建，在同一个已 source 的 Humble 环境中执行：
 
 ```bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=160 ROS_LOCALHOST_ONLY=1
+export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 launch drone_3d_sim drone_3d.launch.py
 ```
 
 默认打开只读三维窗口，只允许旋转、平移、缩放。碰撞预算和相机默认关闭，RViz 默认关闭。同一 ROS domain 每次只启动一个仿真世界。关闭观察窗口不会停止仿真；Ctrl+C 退出整个 launch。
 
-复杂飞行场地为 24 × 24 米，包含不同高度的门框、立柱、桥梁、悬空梁、阶梯平台、货架和起降区。门框开口、桥下和桌下按实际几何保留通路；所有碰撞检测都启用。地图、机器人、贴图均由共享的 [`litesim_models`](../wheel_car_4w/litesim_models/README.md) 资源包安装，通过 ament share 和本次 launch 的 `GZ_SIM_RESOURCE_PATH` 定位。
+复杂飞行场地为 24 × 24 米，包含不同高度的门框、立柱、桥梁、悬空梁、阶梯平台、货架和起降区。门框开口、桥下和桌下按实际几何保留通路；所有碰撞检测都启用。地图、机器人、贴图均由独立的 [`drone_3d_models`](drone_3d_models/README.md) 资源包安装，通过 ament share 和本次 launch 的 `GZ_SIM_RESOURCE_PATH` 定位，不读取小车资源目录。
 
 ```bash
 # 无观察窗口；传感器和运动仿真继续运行。
@@ -54,7 +67,8 @@ ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
 
 - [`runtime.yaml`](drone_3d_sim/config/runtime.yaml)：传感器、速度限制、超时和运动类型。`drive.max_v` 是 XYZ 合速度上限，`acceleration` / `deceleration` 是合加速度上限，`max_w` / `angular_acceleration` 限制偏航；不需要轮关节或车轮参数。
 - [`ros.yaml`](drone_3d_sim/config/ros.yaml)：ROS 参数、QoS 和 TF。使用 `params:=/绝对路径/ros.yaml` 加载自定义文件。
-- [`drone_arena.sdf`](../wheel_car_4w/litesim_models/worlds/drone_arena.sdf)：地图、机器人初始位姿、步长、默认目标 RTF 和观察相机初始视角。
+- [`drone_arena.sdf`](drone_3d_models/worlds/drone_arena.sdf)：地图、机器人初始位姿、步长、默认目标 RTF 和观察相机初始视角。
+- [`quadrotor/model.sdf`](drone_3d_models/models/quadrotor/model.sdf)：机体、传感器安装位置、visual/collision 和材质。
 - `terrain.enabled` 必须为 false，里程计目前只支持 `odom.mode: ideal`。所有配置在启动时读取，修改后重新启动。
 
 相机默认禁用、类型为 `rgb`。开启普通相机只发布 640 × 480、15 Hz 的彩色图像及 CameraInfo，不打开摄像头窗口：
@@ -65,4 +79,4 @@ ros2 launch drone_3d_sim drone_3d.launch.py cameras:=true
 
 需要深度数据时复制 runtime 文件，将相机 `type` 改为 `rgbd`（彩色与深度）或 `depth`（仅深度），再传入 `runtime:=/绝对路径/runtime.yaml cameras:=true`。修改 `width`、`height`、`rate_hz` 控制分辨率与仿真帧率。话题为 `/camera/front/color/image_raw` 和按类型启用的 `/camera/front/depth/image_raw`，分别为 `rgb8` 与 `32FC1` 米制光轴深度，配有同时间戳 `camera_info`。无图形窗口的相机也需要可用的渲染后端，详见 [SDF 与相机说明](../../docs/usage/SDF与独立窗口.md)。
 
-该示例复用四轮包的 SDF 启动流程，拥有独立 runtime、ROS 参数和模型；不需要启动小车节点。修改地图可直接编辑 SDF，或修改并运行仓库内的 `scripts/fixtures/generate_example_worlds.py`，后者会重建办公区与飞行场地的生成资源。
+该示例复用四轮包的 SDF 启动流程，拥有独立 runtime、ROS 参数和模型资源包；不需要启动小车节点。修改地图可直接编辑 SDF，或修改并运行仓库内的 `scripts/fixtures/generate_example_worlds.py`，后者将办公区写入 `wheel_car_4w_models`，将四旋翼和飞行场地写入 `drone_3d_models`。

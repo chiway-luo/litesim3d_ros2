@@ -19,7 +19,7 @@ from rosgraph_msgs.msg import Clock
 
 
 def generate_test_description():
-    os.environ.setdefault("ROS_DOMAIN_ID", "165")
+    os.environ.setdefault("ROS_DOMAIN_ID", "5")
     os.environ["ROS_LOCALHOST_ONLY"]="1"
     path=Path(get_package_share_directory("litesim3d_ros2"))/"launch/demo.launch.py"
     demo=IncludeLaunchDescription(PythonLaunchDescriptionSource(str(path)),launch_arguments={"rviz":"false"}.items())

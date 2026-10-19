@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(litesim_models)
+project(drone_3d_models)
 find_package(ament_cmake REQUIRED)
 install(DIRECTORY models worlds DESTINATION share/${PROJECT_NAME})
 install(FILES README.md DESTINATION share/${PROJECT_NAME})

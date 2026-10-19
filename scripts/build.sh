@@ -2,6 +2,7 @@
 set -euo pipefail
 # Activate your ROS 2 Humble environment before running this script.
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$project_dir/scripts/checks/check_versions.py"
 if ! command -v colcon >/dev/null; then
   echo 'Activate ROS 2 Humble first (Ubuntu: source /opt/ros/humble/setup.bash).' >&2
   exit 1

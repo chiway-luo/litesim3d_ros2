@@ -35,7 +35,7 @@ project.rename(stage/"sources-unavailable")
 assert not project.exists()
 command=['bash','-c','source "$1/setup.bash"; exec launch_test "$2" --junit-xml "$3"',
          'install-check',str(prefix),str(ROOT/"litesim3d_ros2/test/launch_m1.py"),str(out/"install-launch.xml")]
-env.update(ROS_DOMAIN_ID="167",ROS_LOCALHOST_ONLY="1",ROS_LOG_DIR=str(out/"install-ros-logs"))
+env.update(ROS_DOMAIN_ID="7",ROS_LOCALHOST_ONLY="1",ROS_LOG_DIR=str(out/"install-ros-logs"))
 with (out/"install-launch.log").open("w") as log:
     launch=subprocess.run(command,cwd=stage,env=env,stdout=log,stderr=subprocess.STDOUT,timeout=30)
 headless=subprocess.run([str(prefix/"bin/sim_headless"),str(prefix/"share/litesim3d_core/config/demo.yaml"),

@@ -2,10 +2,8 @@
 import json
 import math
 import os
-from pathlib import Path
 import struct
 import subprocess
-import sys
 
 import pytest
 import yaml
@@ -14,13 +12,12 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
 from rclpy.time import Time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'wheel_car_4w/wheel_car_4w_sim/test'))
-from test_wheel_car_4w import Example, stamp
+from litesim3d_test_support import SimulationHarness, stamp
 
 
 @pytest.fixture
 def drone(tmp_path):
-    rig = Example(tmp_path, package='drone_3d_sim', launch_file='drone_3d.launch.py')
+    rig = SimulationHarness(tmp_path, package='drone_3d_sim', launch_file='drone_3d.launch.py')
     rig.subscribe('truth', Odometry, '/sim/ground_truth/quadrotor/odom', 100)
     yield rig
     rig.close()

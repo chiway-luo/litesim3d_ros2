@@ -10,6 +10,7 @@ import time
 import psutil
 import pytest
 import rclpy
+from rclpy.context import Context
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.qos import qos_profile_sensor_data, ReliabilityPolicy
@@ -299,17 +300,32 @@ def test_ROS07_slow_consumer_queue_and_thirty_second_pause(h):
     h.subscribe('points',PointCloud2,'/points_raw',reliable=False)
     h.rsp();p=h.sim();h.ready();h.until(lambda:len(h.messages['points'])>=3)
     proc=psutil.Process(p.pid);before=proc.memory_info().rss
-    slow=Node('slow_consumer',context=h.context)
-    slow_executor=SingleThreadedExecutor(context=h.context);slow_executor.add_node(slow)
-    received=[]
+    # Model an independent consumer with its own ROS context; the fast
+    # observer and deliberately stalled reader have separate participants.
+    slow_context=Context();rclpy.init(context=slow_context)
+    slow=Node('slow_consumer',context=slow_context)
+    slow_executor=SingleThreadedExecutor(context=slow_context);slow_executor.add_node(slow)
+    received=[];polls=[]
     slow_sub=slow.create_subscription(PointCloud2,'/points_raw',lambda m:received.append(ns(m.header.stamp)),qos_profile_sensor_data)
     try:
+        h.until(lambda:json.loads(h.status().get('subscription_matches','{}')).get('/points_raw',0)>=2)
         for _ in range(10):
-            h.spin(.95);slow_executor.spin_once(timeout_sec=.05)
+            # Make the consumer slow relative to actual production, after DDS
+            # matching, so each poll follows a known backlog of new scans.
+            target=len(h.messages['points'])+10
+            h.until(lambda:len(h.messages['points'])>=target)
+            # spin_once may handle another entity or a timeout. One consumer
+            # poll means one cloud callback, not merely one executor call.
+            previous=len(received);deadline=time.monotonic()+2
+            while len(received)==previous and time.monotonic()<deadline:
+                slow_executor.spin_once(timeout_sec=.05)
+            assert len(received)==previous+1
+            polls.append({'latest':ns(h.messages['points'][-1].header.stamp),'received':received.copy()})
+        (h.directory/'slow-consumer.json').write_text(json.dumps({'polls':polls,'status':h.status()},indent=2))
         assert 5<=len(received)<=10
         assert received[-1]-received[0]>5*10**9
     finally:
-        slow_executor.shutdown();slow.destroy_node()
+        slow_executor.shutdown();slow.destroy_node();slow_context.shutdown()
     before_pause_count=len(h.messages['points'])
     # Stop the receiving executor for 30 wall seconds. DDS and simulator continue.
     time.sleep(30)

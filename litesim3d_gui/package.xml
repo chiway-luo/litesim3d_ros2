@@ -2,12 +2,15 @@
 <package format="3">
   <name>litesim3d_gui</name><version>0.4.0</version>
   <description>SDF rendering, RGB/depth camera sensors and read-only scene/image viewers.</description>
-  <maintainer email="maintainer@example.com">litesim3d contributors</maintainer>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
   <license>Apache-2.0</license><buildtool_depend>ament_cmake</buildtool_depend>
-  <depend>sensor_msgs</depend><depend>litesim3d_interfaces</depend><depend>rclcpp</depend><depend>std_msgs</depend><depend>nlohmann_json</depend>
+  <depend>sensor_msgs</depend><depend>litesim3d_interfaces</depend><depend>rclcpp</depend><depend>std_msgs</depend><build_depend>nlohmann-json-dev</build_depend>
   <depend>ignition-rendering6</depend><depend>qtbase5-dev</depend>
   <build_depend>libqt5-svg-dev</build_depend>
   <exec_depend>libqt5-svg</exec_depend>
   <depend>assimp</depend>
+  <buildtool_depend>pkg-config</buildtool_depend>
+  <url type="repository">https://github.com/chiway-luo/litesim3d_ros2</url>
+  <url type="bugtracker">https://github.com/chiway-luo/litesim3d_ros2/issues</url>
   <export><build_type>ament_cmake</build_type></export>
 </package>

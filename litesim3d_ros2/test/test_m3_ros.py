@@ -314,9 +314,13 @@ def test_EXT06_vendor_bytes_nan_timing_and_actual_pcl_read(h):
 
 
 def test_EXT06_independent_voxel_centroids_and_invalid_vendor_input(h):
-    h.subscribe('probe',String,'/probe_status')
-    h.process('pcl',[executable('sim_cloud_probe')])
-    pub=h.node.create_publisher(PointCloud2,'/points_ouster',qos_profile_sensor_data)
+    # The input and result endpoints are discovered independently. Request the
+    # retained result so a single cloud cannot outrun status-side discovery.
+    h.subscribe('probe',String,'/probe_status',durable=True)
+    # This validates exact payloads, including rejection of each invalid input;
+    # best-effort delivery may drop the only sample while DDS settles.
+    h.process('pcl',[executable('sim_cloud_probe'),'--ros-args','-p','sensor_reliable:=true'])
+    pub=h.node.create_publisher(PointCloud2,'/points_ouster',10)
     h.until(lambda:pub.get_subscription_count()==1)
     cloud=PointCloud2();cloud.width=3;cloud.height=1;cloud.point_step=48;cloud.row_step=144
     for name,offset,kind in [('x',0,7),('y',4,7),('z',8,7),('intensity',16,7),('t',20,6),

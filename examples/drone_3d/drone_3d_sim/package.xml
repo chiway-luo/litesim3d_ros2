@@ -1,18 +1,26 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>drone_3d_sim</name>
-  <version>0.1.0</version>
+  <version>0.4.0</version>
   <description>Velocity-controlled multicopter and a complex three-dimensional SDF flight course.</description>
-  <maintainer email="maintainer@example.com">litesim3d contributors</maintainer>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <exec_depend>wheel_car_4w_sim</exec_depend>
-  <exec_depend>litesim_models</exec_depend>
+  <exec_depend>litesim3d_bringup</exec_depend>
+  <exec_depend>litesim3d_ros2</exec_depend>
+  <exec_depend>drone_3d_models</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>rclpy</test_depend>
+  <test_depend>litesim3d_test_support</test_depend>
+  <test_depend>geometry_msgs</test_depend><test_depend>nav_msgs</test_depend>
+  <test_depend>sensor_msgs</test_depend><test_depend>python3-yaml</test_depend>
+  <test_depend>python3-pyqt5</test_depend><test_depend>ros2run</test_depend>
+  <test_depend>litesim3d_gui</test_depend>
   <test_depend>litesim3d_interfaces</test_depend>
+  <url type="repository">https://github.com/chiway-luo/litesim3d_ros2</url>
+  <url type="bugtracker">https://github.com/chiway-luo/litesim3d_ros2/issues</url>
   <export><build_type>ament_cmake</build_type></export>
 </package>

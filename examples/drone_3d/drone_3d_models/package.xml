@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>drone_3d_models</name><version>0.4.0</version>
+  <description>Self-contained quadrotor model, materials and SDF flight course for LiteSim.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license><buildtool_depend>ament_cmake</buildtool_depend>
+  <url type="repository">https://github.com/chiway-luo/litesim3d_ros2</url>
+  <url type="bugtracker">https://github.com/chiway-luo/litesim3d_ros2/issues</url>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

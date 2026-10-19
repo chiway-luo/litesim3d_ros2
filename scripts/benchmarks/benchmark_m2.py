@@ -201,7 +201,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True);parser.add_argument('--mode',choices=['performance','soak','explore'],default='performance')
     parser.add_argument('--warmup',type=float,default=30);parser.add_argument('--duration',type=float)
-    parser.add_argument('--resume',action='store_true');parser.add_argument('--domain',type=int,default=162);parser.add_argument('--repeat',type=int,default=5);parser.add_argument('--gui',choices=['off','on','both'],default='both')
+    parser.add_argument('--resume',action='store_true');parser.add_argument('--domain',type=int,default=2);parser.add_argument('--repeat',type=int,default=5);parser.add_argument('--gui',choices=['off','on','both'],default='both')
     args=parser.parse_args();args.output=args.output.resolve();args.config=args.config.resolve()
     args.output.mkdir(parents=True,exist_ok=True)
     os.environ['ROS_DOMAIN_ID']=str(args.domain);os.environ['ROS_LOCALHOST_ONLY']='1';os.environ['ROS_LOG_DIR']=str(args.output/'ros_logs')

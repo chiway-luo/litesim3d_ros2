@@ -14,7 +14,7 @@ from benchmarks.benchmark_m2 import measure,environment
 def main():
     p=argparse.ArgumentParser();p.add_argument('--config',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     a=p.parse_args();a.config=a.config.resolve();a.output=a.output.resolve();a.output.mkdir(parents=True,exist_ok=True)
-    os.environ['ROS_DOMAIN_ID']='166';os.environ['ROS_LOCALHOST_ONLY']='1';os.environ['ROS_LOG_DIR']=str(a.output/'ros_logs')
+    os.environ['ROS_DOMAIN_ID']='6';os.environ['ROS_LOCALHOST_ONLY']='1';os.environ['ROS_LOG_DIR']=str(a.output/'ros_logs')
     (a.output/'B0.json').write_text(json.dumps(environment(),indent=2))
     records=[];error=None
     try:

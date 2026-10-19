@@ -1,0 +1,27 @@
+<sdf version="1.9">
+  <model name="column">
+    <static>true</static>
+    <link name="body">
+      <visual name="visual">
+        <geometry>
+          <cylinder>
+            <radius>0.25</radius>
+            <length>1.6</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <diffuse>.73 .76 .81 1</diffuse>
+          <ambient>.73 .76 .81 1</ambient>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <cylinder>
+            <radius>0.25</radius>
+            <length>1.6</length>
+          </cylinder>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

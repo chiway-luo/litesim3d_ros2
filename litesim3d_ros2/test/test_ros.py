@@ -42,7 +42,9 @@ class Harness:
         self.directory = directory
         directory.mkdir(parents=True, exist_ok=True)
         Harness.serial += 1
-        os.environ["ROS_DOMAIN_ID"] = str(int(os.environ.get("LWS_TEST_DOMAIN_BASE", "170")) + Harness.serial % 50)
+        # Keep the default pool below Linux's ephemeral-port overlap, and
+        # separate it from the example harness's 60..99 pool.
+        os.environ["ROS_DOMAIN_ID"] = str(int(os.environ.get("LWS_TEST_DOMAIN_BASE", "10")) + Harness.serial % 50)
         os.environ["ROS_LOCALHOST_ONLY"] = "1"
         os.environ["ROS_LOG_DIR"] = str(directory / "ros_logs")
         self.env = os.environ.copy()
@@ -177,6 +179,9 @@ def test_T_ROS_01_topics_and_commands(h, mode):
     kind = Twist if mode == "twist" else TwistStamped
     publisher = h.node.create_publisher(kind, "/robot/cmd_vel", 1)
     h.until(lambda: publisher.get_subscription_count() == 1)
+    if mode == "stamped":
+        # Status and clock callbacks have independent delivery order.
+        h.until(lambda: bool(h.messages["clock"]))
     for _ in range(25):
         command = kind()
         if mode == "twist":
@@ -310,7 +315,14 @@ def test_T_ROS_08_pause_step_service(h):
 @pytest.mark.parametrize("delayed",[False,True])
 def test_T_ROS_10_startup_order(h,delayed):
     if delayed:
-        h.sim(startup_timeout=3.0);h.spin(.5);assert h.status().get("ready")!="true";h.rsp()
+        # Observe the initialized, waiting node before starting its dependency.
+        # Use the normal startup budget; the separate timeout test exercises
+        # deadline failure without relying on a short DDS discovery window.
+        process=h.sim()
+        h.until(lambda:bool(h.status()))
+        assert process.poll() is None and h.status()["ready"]=="false"
+        assert h.status()["step"]=="0" and h.status()["time_ns"]=="1"
+        h.rsp()
     else:
         h.rsp();h.spin(.3);h.sim()
     h.ready();h.until(lambda:len(h.messages["clock"])>10)
@@ -360,7 +372,8 @@ def test_T_ODO_06_external_tf(h):
 
 def test_T_DEL_02_03_installed_headless(h):
     h.env.pop("DISPLAY",None)
-    h.rsp();h.sim();h.ready();h.until(lambda:ns(h.messages["clock"][-1].clock)>300_000_000)
+    h.rsp();h.sim();h.ready()
+    h.until(lambda:bool(h.messages["clock"]) and ns(h.messages["clock"][-1].clock)>300_000_000)
     manifest=json.loads((h.directory/"manifest.json").read_text())
     assert manifest["model"]["source"].startswith(str(h.share))
     assert manifest["model"]["resources"]=={}  # R01 has no external mesh files.

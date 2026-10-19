@@ -1,5 +1,9 @@
 # 测试文档
 
+原生 ARM64 构建、Debian 安装与两套 Lima 环境见 [Humble ARM64 与 Lima 环境验证](HumbleARM64与Lima环境验证.md)。
+
+本轮 0.4.0 的模块拆分、Ubuntu/Humble 逐包构建及 Debian 预检见 [Humble 分包发布验证](Humble分包发布验证.md)。
+
 2026-10-19 的桌面补测、新无人机与办公区结果见 [无人机与办公场景验证](无人机与办公场景验证.md)。
 
 2026-10-18 的 SDF 资源、独立窗口、碰撞预算和真实速率验收见 [SDF 实现验证](SDF实现验证.md)。
@@ -7,6 +11,8 @@
 这里集中保存回归入口、验收门槛与历史记录。普通安装和运行不需要测试证据，见 [使用文档](../usage/README.md)。以下命令从源码仓库根目录、已激活 Humble 的 Bash 终端执行。
 
 ## 当前源码的检查与回归
+
+仓库集成测试还需要 Xacro；Ubuntu 可安装 `ros-humble-xacro`。它是仓库工具的测试依赖，运行仿真无需调用 Xacro。
 
 先构建并加载安装环境：
 
@@ -22,6 +28,7 @@ source "$(python3 scripts/paths.py install)/setup.bash"
 | 仓库文档 | `python3 scripts/checks/check_repository_docs.py` | 不依赖历史日志，检查仓库内链接、使用流程中的个人路径与 Shell 语法 |
 | 完整功能回归 | `bash scripts/test_m3.sh` | 内核、M1/M2/M3 ROS、100 次会话重置、报告门禁负例、四轮示例、无人机、SDF 场景、单机/多机 launch |
 | M1 / M2 子集 | `bash scripts/test_m1.sh` / `bash scripts/test_m2.sh` | 按阶段选择测试，非完整新版本验收 |
+| 逐包独立发布检查 | `python3 scripts/checks/check_release_packages.py --work-dir /tmp/litesim-release-check` | 每次只有当前包源码，依赖来自已安装前缀，并执行该包测试 |
 | 安装后独立运行 | `python3 scripts/checks/check_m3_install.py` | 新目录构建、隐藏源码副本后验证安装资源和节点 |
 | 真实桌面补测 | `bash scripts/test_desktop.sh` | 原 10 项桌面用例和无人机用例；须有桌面与 Ogre 渲染后端 |
 | 四轮示例 | 见 [四轮车与雷达测试](四轮车与雷达测试.md) | 真实 ROS 接口、配置、TF 和子进程退出 |

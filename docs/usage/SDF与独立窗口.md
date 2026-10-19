@@ -1,6 +1,6 @@
 # SDF 与独立三维窗口
 
-四轮小车默认使用 SDF 世界和 `litesim_models` 资源包。运行时通过 ament 获取包 share 路径，launch 将 `models/`、`worlds/` 加入本次进程树的 `GZ_SIM_RESOURCE_PATH`，不修改 shell 或系统设置。
+四轮小车使用 `wheel_car_4w_models` 资源包，无人机使用 `drone_3d_models` 资源包。两个包分别保存各自的 SDF 模型、世界、网格和贴图。运行时通过 ament 获取对应包的 share 路径，launch 将该包的 `models/`、`worlds/` 加入本次进程树的 `GZ_SIM_RESOURCE_PATH`，不修改 shell 或系统设置。
 
 无人机的速度模型、复杂场景和传感器配置见 [无人机示例](../../examples/drone_3d/README.md)。
 
@@ -31,16 +31,18 @@ ros2 run litesim3d_gui viewer
 ## 模型与参数的职责
 
 ```text
-examples/wheel_car_4w/litesim_models/
-├── models/<模型名>/
-│   ├── model.config
-│   ├── model.sdf
-│   ├── meshes/
-│   └── materials/textures/
-└── worlds/{office,drone_arena,warehouse}.sdf
+examples/
+├── wheel_car_4w/wheel_car_4w_models/
+│   ├── models/{wheel_car_4w,office_layout,textured_crate,...}/
+│   └── worlds/{office,warehouse}.sdf
+└── drone_3d/drone_3d_models/
+    ├── models/{quadrotor,aerial_course,textured_crate}/
+    └── worlds/drone_arena.sdf
 ```
 
-包使用 ament 安装到 `share/litesim_models`；`get_package_share_directory("litesim_models")` 依据安装索引定位，不依赖源码位于哪个 `src` 的旁边。资源可以搬迁后重新构建或重新 source。
+每个模型目录包含 `model.config`、`model.sdf`，按需附带 `meshes/` 和 `materials/textures/`。两个包各自携带 `textured_crate` 的网格和贴图副本，资源解析不依赖另一示例目录。
+
+包使用 ament 分别安装到 `share/wheel_car_4w_models` 和 `share/drone_3d_models`；`get_package_share_directory()` 依据包名查询安装索引，不依赖源码位置。资源可以搬迁后重新构建或重新 source。以下参数表以小车为例；无人机默认 `assets_root` 为 `drone_3d_models` 的 share 路径，默认世界为 `drone_arena.sdf`。
 
 SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光。可选 `<gui><camera><pose>` 指定世界坐标系下的观察初始视角，仅影响查看器；不引入其他交互控件。`<physics>` 的 `max_step_size`、`real_time_factor` 提供积分步长及默认目标速率；这里只使用计时参数，仍是运动学内核，不执行 Ode/Bullet 刚体求解。
 
@@ -48,7 +50,7 @@ SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光�
 
 | launch 参数 | 默认和含义 |
 | --- | --- |
-| `assets_root` | `litesim_models` 包 share 路径；覆盖时目录下仍需有 models/worlds |
+| `assets_root` | `wheel_car_4w_models` 包 share 路径；覆盖时目录下仍需有 models/worlds |
 | `world` | `office.sdf`；单文件名相对 assets_root/worlds，也可指定显式文件路径 |
 | `runtime` | 安装的 config/runtime.yaml |
 | `gui` | true；false 关闭三维观察窗口，相机渲染由 cameras 配置独立决定 |
@@ -65,7 +67,7 @@ SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光�
 
 ```bash
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
-  assets_root:=/绝对路径/litesim_models \
+  assets_root:=/绝对路径/wheel_car_4w_models \
   world:=factory.sdf runtime:=/绝对路径/runtime.yaml
 ```
 
@@ -73,7 +75,7 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 
 ## 当前兼容范围
 
-三维查看器使用 [LiteSim SVG 图标](../../litesim3d_gui/resources/icons/litesim3d.svg)（蓝色圆角底、白色立方体与青色扫描环）。矢量资源随程序编译，Qt 启用高清图标渲染；安装包另包含由同一 SVG 导出的 PNG 和 macOS ICNS。
+三维查看器使用 [LiteSim SVG 图标](../../litesim3d_gui/resources/icons/litesim3d.svg)（蓝色圆角底、白色立方体与青色扫描环）。矢量资源随程序编译，Qt 启用高清图标渲染；安装包另包含由同一 SVG 导出的 PNG。
 
 | 内容 | 当前行为 |
 | --- | --- |
@@ -113,9 +115,9 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 
 ## 构建与平台
 
-新增依赖为 libsdformat12、Gazebo Rendering 6、Qt5 Widgets。Ubuntu 安装命令见仓库 README。macOS RoboStack 的 Ogre-Next 若缺 Metal，构建脚本按固定版本和 SHA-256 下载并在本项目产物目录编译 Metal 插件，不修改全局 ROS 安装；此适配目前锁定 Ogre-Next 2.2.6。第一次构建需要网络，后续使用经哈希校验的缓存。
+开发与运行环境为 Ubuntu 22.04 + ROS 2 Humble。SDF 与图形模块依赖 libsdformat12、Gazebo Rendering 6、Qt 5 Widgets 和 Qt 5 SVG；依赖安装命令见 [开发环境](../../README.zh-CN.md#开发环境)，构建方式见 [安装与构建](安装与构建.md)。
 
-无需图形包时使用 `LWS_BUILD_GUI=0 bash scripts/build.sh`，运行时加 `gui:=false cameras:=false`。单独内核构建保持不依赖 ROS、Qt 或 Ogre。启用 RGB/深度相机需要图形包和可用的 Ogre2 图形环境，即使关闭所有窗口也需要渲染后端。macOS 图形已本机实测；本次 Ubuntu 图形和外部工厂模型尚未实测，不能从既有 Linux 内核测试推断新 GUI 已通过。
+无需图形包时使用 `LWS_BUILD_GUI=0 bash scripts/build.sh`，运行时加 `gui:=false cameras:=false`。单独内核构建保持不依赖 ROS、Qt 或 Ogre。启用 RGB/深度相机需要图形包和可用的 Ogre2 图形环境，即使关闭所有窗口也需要渲染后端。图形功能的验证需对应具体平台和渲染环境，内核测试通过不代表图形功能已完成验证。
 
 完整证据与尚未验证项见 [SDF 实现验证](../testing/SDF实现验证.md)。
 

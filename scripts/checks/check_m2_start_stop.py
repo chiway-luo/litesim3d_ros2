@@ -16,7 +16,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--config',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--cycles',type=int,default=100);a=p.parse_args()
     a.output=a.output.resolve();a.output.mkdir(parents=True,exist_ok=True)
-    os.environ['ROS_DOMAIN_ID']='164';os.environ['ROS_LOCALHOST_ONLY']='1';os.environ['ROS_LOG_DIR']=str(a.output/'ros_logs')
+    os.environ['ROS_DOMAIN_ID']='4';os.environ['ROS_LOCALHOST_ONLY']='1';os.environ['ROS_LOG_DIR']=str(a.output/'ros_logs')
     self=psutil.Process();records=[];error=None
     try:
         for cycle in range(a.cycles):

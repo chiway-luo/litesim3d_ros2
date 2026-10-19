@@ -9,7 +9,8 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
-ASSETS = ROOT / 'examples/wheel_car_4w/litesim_models'
+CAR_ASSETS = ROOT / 'examples/wheel_car_4w/wheel_car_4w_models'
+DRONE_ASSETS = ROOT / 'examples/drone_3d/drone_3d_models'
 
 
 def sub(parent, tag, text=None, **attrs):
@@ -56,13 +57,13 @@ def save(root, path):
                     ET.tostring(root, encoding='unicode') + '\n')
 
 
-def save_model(root, name):
-    save(root, ASSETS / 'models' / name / 'model.sdf')
+def save_model(root, name, assets):
+    save(root, assets / 'models' / name / 'model.sdf')
     config = ET.Element('model')
     sub(config, 'name', name); sub(config, 'version', '1.0')
     sub(config, 'sdf', 'model.sdf', version='1.9')
     sub(config, 'description', 'LiteSim3D procedural example geometry; metres.')
-    save(config, ASSETS / 'models' / name / 'model.config')
+    save(config, assets / 'models' / name / 'model.config')
 
 
 WALL = (.78, .82, .86)
@@ -127,7 +128,7 @@ def office():
         solid(link,f'pot_{i}',(x,y,.22),(.24,.44),WOOD,kind='cylinder')
         solid(link,f'plant_{i}',(x,y,.75),(.40,),GREEN,kind='sphere',collision=False)
     box('corridor_guide', (4,0,.008), (27,.12,.012), (.20,.52,.58), collision=False)
-    save_model(root,'office_layout')
+    save_model(root,'office_layout',CAR_ASSETS)
 
 
 def arena():
@@ -160,7 +161,7 @@ def arena():
     box('landing_pad',(-8,-8,.015),(2.4,2.4,.02),(.16,.49,.51),collision=False)
     for x in (-8.45,-7.55): box(f'pad_h{x}',(x,-8,.03),(.12,1.2,.01),(.92,.94,.89),collision=False)
     box('pad_cross',(-8,-8,.03),(1,.12,.01),(.92,.94,.89),collision=False)
-    save_model(root,'aerial_course')
+    save_model(root,'aerial_course',DRONE_ASSETS)
 
 
 def drone():
@@ -186,10 +187,10 @@ def drone():
         if name=='camera_optical_frame': solid(mount,'camera',(0,0,0),(.1,.08,.06),DARK)
         joint=sub(model,'joint',name=name+'_joint',type='fixed')
         sub(joint,'parent','base_link');sub(joint,'child',name)
-    save_model(root,'quadrotor')
+    save_model(root,'quadrotor',DRONE_ASSETS)
 
 
-def world(name, robot, layout, floor_size, robot_pose, view):
+def world(name, robot, layout, floor_size, robot_pose, view, assets):
     root=ET.Element('sdf',version='1.9');w=sub(root,'world',name=name)
     physics=sub(w,'physics',name='litesim_timing',type='ignored',default='true')
     sub(physics,'max_step_size','.005');sub(physics,'real_time_factor','1')
@@ -204,10 +205,10 @@ def world(name, robot, layout, floor_size, robot_pose, view):
     # Mesh/MTL texture resource is also exercised by both larger scenes.
     include=sub(w,'include');sub(include,'uri','model://textured_crate')
     sub(include,'pose','15 5 .5 0 0 .3' if name=='office' else '8 -10 .5 0 0 .3')
-    save(root,ASSETS/'worlds'/f'{name}.sdf')
+    save(root,assets/'worlds'/f'{name}.sdf')
 
 
 if __name__=='__main__':
     office();arena();drone()
-    world('office','wheel_car_4w','office_layout',(28,22),(0,0,0,0,0,0),(-16,-20,34,0,.87,.78539816))
-    world('drone_arena','quadrotor','aerial_course',(24,24),(-8,-8,1.2,0,0,0),(-22,-25,26,0,.66,.85))
+    world('office','wheel_car_4w','office_layout',(28,22),(0,0,0,0,0,0),(-16,-20,34,0,.87,.78539816),CAR_ASSETS)
+    world('drone_arena','quadrotor','aerial_course',(24,24),(-8,-8,1.2,0,0,0),(-22,-25,26,0,.66,.85),DRONE_ASSETS)

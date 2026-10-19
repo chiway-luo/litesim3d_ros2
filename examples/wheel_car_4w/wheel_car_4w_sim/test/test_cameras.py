@@ -96,7 +96,17 @@ def test_images_resolution_calibration_exact_stamps_and_pause(camera_car, kind, 
         .get(f"/camera/front/{channel}/image_raw", 0) >= 1 for channel in channels))
     count=100 if rate==30 else 200
     frames=rate//2 if rate==30 else rate
-    steps(car, count, "sample-window")
+    # Drain each batch before advancing again. The publisher has KEEP_LAST(5)
+    # history; reliable transport is not an unbounded burst recorder. At most
+    # three frames per batch keeps this exact-payload test within that contract.
+    requests = [(min(20, count - offset), f"sample-window-{offset}") for offset in range(0, count, 20)]
+    completed = 0
+    for batch, identity in requests:
+        steps(car, batch, identity)
+        completed += batch
+        expected_count = completed * rate // 200  # This example uses 5 ms steps.
+        car.until(lambda: all(len(car.messages[c]) == expected_count
+            and len(car.messages[c+"_info"]) == expected_count for c in channels))
     car.until(lambda: all(len(car.messages[c]) == frames and len(car.messages[c+"_info"]) == frames for c in channels))
     expected = [1 + round(i * 1e9 / rate) for i in range(1, frames+1)]
     for channel in channels:
@@ -128,7 +138,9 @@ def test_images_resolution_calibration_exact_stamps_and_pause(camera_car, kind, 
     car.spin(.5)
     assert all(not car.messages[c] for c in channels), "paused camera continued sampling"
     # A retry of an idempotent step must not republish old frames.
-    steps(car, count, "sample-window");car.spin(.2)
+    for batch, identity in requests:
+        steps(car, batch, identity)
+    car.spin(.2)
     assert all(not car.messages[c] for c in channels)
     (car.directory / "camera-evidence.json").write_text(json.dumps({"type":kind,"width":width,"height":height,
         "rate_hz":rate,"timestamps_ns":expected,"pause":"PASS","step_retry":"PASS",

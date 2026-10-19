@@ -174,9 +174,27 @@ class Session(Node):
                 self.wait_startup(client.service_is_ready, deadline, name + ' parameter service')
                 # Parameter services exist at Node construction, but their response requires
                 # an active executor. Consumers initialize their subscriptions before spinning.
-                future = client.call_async(GetParameters.Request())
-                self.wait_startup(future.done, deadline, name + ' executor response')
-                future.result()
+                # A restarted server can receive a request before its response
+                # endpoint is matched. Retry this read-only probe within the
+                # original startup deadline, requiring a real response to pass.
+                attempt = 0
+                while True:
+                    attempt += 1
+                    future = client.call_async(GetParameters.Request())
+                    retry_at = min(deadline, time.monotonic() + 1.0)
+                    try:
+                        self.wait_startup(lambda: future.done() or time.monotonic() >= retry_at,
+                                          deadline, name + ' executor response')
+                        if future.done():
+                            future.result()
+                            break
+                    finally:
+                        if not future.done():
+                            client.remove_pending_request(future)
+                            future.cancel()
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('consumer readiness timed out: ' + name + ' executor response')
+                    self.record('member_executor_probe_retry', name=name, attempt=attempt)
                 self.record('member_executor_ready', name=name)
             finally:
                 self.destroy_client(client)

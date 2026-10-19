@@ -9,15 +9,15 @@ import xml.etree.ElementTree as ET
 
 import pytest
 import yaml
-from ament_index_python.packages import get_package_prefix, get_package_share_directory
+from ament_index_python.packages import get_package_prefix
 
 
 @pytest.fixture
 def scene(tmp_path):
     models = tmp_path / "assets"
-    shutil.copytree(Path(get_package_share_directory("litesim_models")), models)
+    shutil.copytree(Path(__file__).parent / "fixtures/assets", models)
     runtime = tmp_path / "bindings.yaml"
-    shutil.copy(Path(get_package_share_directory("wheel_car_4w_sim")) / "config/runtime.yaml", runtime)
+    shutil.copy(Path(__file__).parent / "fixtures/runtime.yaml", runtime)
     return models, runtime
 
 
@@ -271,28 +271,3 @@ def test_pbr_maps_are_preserved_and_manifested(scene, tmp_path):
     for key,value in maps.items():
         assert item["material"][key].endswith(value)
         assert item["material"][key] in data["resources"]
-
-
-@pytest.mark.parametrize('world,package,visual_min', [('office.sdf','wheel_car_4w_sim',170),
-                                                     ('drone_arena.sdf','drone_3d_sim',90)])
-@pytest.mark.parametrize('budget',[False,True])
-def test_complex_examples_import_from_installed_resources(tmp_path,world,package,visual_min,budget):
-    assets=Path(get_package_share_directory('litesim_models'))
-    runtime=Path(get_package_share_directory(package))/'config/runtime.yaml'
-    output=tmp_path/'imported'
-    tool=Path(get_package_prefix('litesim3d_assets'))/'lib/litesim3d_assets/sdf_import'
-    result=subprocess.run([str(tool),str(assets/'worlds'/world),str(runtime),str(output),str(budget).lower()],
-        env={**os.environ,'GZ_SIM_RESOURCE_PATH':str(assets/'models')},cwd=tmp_path,capture_output=True,text=True,timeout=30)
-    assert result.returncode==0,result.stderr
-    scene=json.loads((output/'scene.json').read_text())
-    assert len(scene['visuals'])>=visual_min
-    assert len(scene['view_pose'])==7
-    assert any(path.endswith('checker.png') for path in scene['resources'])
-    cfg=yaml.safe_load((output/'runtime.yaml').read_text())
-    assert cfg['simulation']['collision_budget_enabled']==budget
-    binary=Path(get_package_prefix('litesim3d_core'))/'bin/sim_headless'
-    result=subprocess.run([str(binary),str(output/'runtime.yaml'),'20',str(tmp_path/'manifest.json')],
-        capture_output=True,text=True,timeout=30)
-    assert result.returncode==0,result.stderr
-    report=json.loads((tmp_path/'manifest.json').read_text())
-    assert report['status']['contact_count']==0

@@ -1,0 +1,22 @@
+<sdf version="1.9">
+  <model name="textured_crate">
+    <static>true</static>
+    <link name="body">
+      <visual name="textured_mesh">
+        <geometry>
+          <mesh>
+            <uri>meshes/crate.obj</uri>
+            <scale>1 1 1</scale>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="simple_box">
+        <geometry>
+          <box>
+            <size>1 1 1</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

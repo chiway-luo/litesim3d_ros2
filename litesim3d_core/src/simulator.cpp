@@ -753,7 +753,7 @@ Json Simulator::manifest(const std::string &reason) const {
       {"accel_bias", vectorJson(c.accel_bias)}, {"gyro_bias", vectorJson(c.gyro_bias)},
       {"accel_sigma", vectorJson(c.accel_sigma)}, {"gyro_sigma", vectorJson(c.gyro_sigma)}});
   return {{"run_id", run_id},
-          {"version", "0.3.0"},
+          {"version", LWS_VERSION},
           {"compiler", __VERSION__},
           {"core_source_sha256", LWS_CORE_SHA256},
           {"urdfdom_version", LWS_URDFDOM_VERSION},

@@ -24,8 +24,10 @@ python3 "$project_dir/scripts/checks/run_checked.py" --timeout 180 --xml "$run_d
   python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/litesim3d_assets/test" --basetemp="$run_dir/sdf" --junitxml="$run_dir/sdf.xml" || status=1
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout 180 --xml "$run_dir/drone-runner.xml" --log "$run_dir/drone.log" -- \
   python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/examples/drone_3d/drone_3d_sim/test" --basetemp="$run_dir/drone" --junitxml="$run_dir/drone.xml" || status=1
+python3 "$project_dir/scripts/checks/run_checked.py" --timeout 180 --xml "$run_dir/integration-runner.xml" --log "$run_dir/integration.log" -- \
+  python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/scripts/integration" --basetemp="$run_dir/integration" --junitxml="$run_dir/integration.xml" || status=1
 for milestone in m1 m3; do
-  ROS_DOMAIN_ID=164 launch_test "$project_dir/litesim3d_ros2/test/launch_$milestone.py" \
+  ROS_DOMAIN_ID=4 launch_test "$project_dir/litesim3d_ros2/test/launch_$milestone.py" \
     --junit-xml "$run_dir/launch-$milestone.xml" > "$run_dir/launch-$milestone.log" 2>&1 || status=1
 done
 if [[ "${LWS_M3_PERFORMANCE:-0}" == 1 ]]; then

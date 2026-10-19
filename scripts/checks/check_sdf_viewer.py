@@ -30,7 +30,7 @@ def main():
     for variant in ("obj","dae","pbr"):
         folder=args.output / variant
         assets=folder / "assets"
-        shutil.copytree(get_package_share_directory("litesim_models"),assets)
+        shutil.copytree(get_package_share_directory("wheel_car_4w_models"),assets)
         model=assets / "models/textured_crate/model.sdf"
         tree=ET.parse(model)
         if variant=="dae":
@@ -43,7 +43,7 @@ def main():
                               "metalness_map":"black.png","emissive_map":"black.png","light_map":"white.png"}.items():
                 ET.SubElement(metal,key).text="materials/textures/"+value
         tree.write(model,encoding="unicode")
-        env={**os.environ,"GZ_SIM_RESOURCE_PATH":str(assets / "models"),"ROS_LOCALHOST_ONLY":"1","ROS_DOMAIN_ID":"199"}
+        env={**os.environ,"GZ_SIM_RESOURCE_PATH":str(assets / "models"),"ROS_LOCALHOST_ONLY":"1","ROS_DOMAIN_ID":"9"}
         plugin=Path(get_package_prefix("litesim3d_gui")) / "lib/litesim3d_gui/ogre2"
         if (plugin / "RenderSystem_Metal.dylib").is_file():
             env["OGRE2_RESOURCE_PATH"]=str(plugin)

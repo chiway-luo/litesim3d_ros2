@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_bringup</name><version>0.4.0</version>
+  <description>Reusable SDF and legacy YAML simulation launch pipeline.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>litesim3d_assets</exec_depend>
+  <exec_depend>litesim3d_core</exec_depend>
+  <exec_depend>litesim3d_ros2</exec_depend>
+  <exec_depend>litesim3d_gui</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <url type="repository">https://github.com/chiway-luo/litesim3d_ros2</url>
+  <url type="bugtracker">https://github.com/chiway-luo/litesim3d_ros2/issues</url>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

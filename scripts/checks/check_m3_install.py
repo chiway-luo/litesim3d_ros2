@@ -19,14 +19,14 @@ def run(name,arguments):
     command=['bash','-c','source "$1/setup.bash"; shift; exec "$@"','m3-install',prefix,*arguments]
     with (out/(name+'.log')).open('w') as log:
         return subprocess.run(command,cwd=record['stage'],env=env,stdout=log,stderr=subprocess.STDOUT,timeout=180).returncode
-env.update(ROS_DOMAIN_ID='164',ROS_LOCALHOST_ONLY='1',ROS_LOG_DIR=str(out/'ros_logs'),PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+env.update(ROS_DOMAIN_ID='4',ROS_LOCALHOST_ONLY='1',ROS_LOG_DIR=str(out/'ros_logs'),PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
 record['m3_launch_exit']=run('world-launch',['launch_test',str(ROOT/'litesim3d_ros2/test/launch_m3.py'),
                                            '--junit-xml',str(out/'world-launch.xml')])
 record['adapter_exit']=run('pcl',[sys.executable,'-m','pytest','-q',
     str(ROOT/'litesim3d_ros2/test/test_m3_ros.py')+'::test_EXT06_vendor_bytes_nan_timing_and_actual_pcl_read',
     '--basetemp',str(out/'pcl'),'--junitxml',str(out/'pcl.xml'),'-o',f'cache_dir={out / "pytest-cache"}'])
 record['sdf_examples_exit']=run('sdf-examples',[sys.executable,'-m','pytest','-q',
-    str(ROOT/'litesim3d_assets/test/test_sdf_import.py')+'::test_complex_examples_import_from_installed_resources',
+    str(ROOT/'scripts/integration/test_example_assets.py')+'::test_complex_examples_import_from_installed_resources',
     str(ROOT/'examples/drone_3d/drone_3d_sim/test/test_drone.py')+'::test_flight_xyz_yaw_sensors_pause_and_watchdog',
     str(ROOT/'examples/drone_3d/drone_3d_sim/test/test_drone.py')+'::test_descent_stops_at_floor_with_budget_disabled',
     '--basetemp',str(out/'sdf-examples'),'--junitxml',str(out/'sdf-examples.xml'),'-o',f'cache_dir={out / "pytest-cache"}'])

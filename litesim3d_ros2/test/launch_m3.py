@@ -18,7 +18,7 @@ from sensor_msgs.msg import PointCloud2
 
 
 def generate_test_description():
-    os.environ.setdefault('ROS_DOMAIN_ID','164')
+    os.environ.setdefault('ROS_DOMAIN_ID','4')
     os.environ['ROS_LOCALHOST_ONLY']='1'
     path=Path(get_package_share_directory('litesim3d_ros2'))/'launch/world.launch.py'
     demo=IncludeLaunchDescription(PythonLaunchDescriptionSource(str(path)))

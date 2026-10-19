@@ -7,7 +7,7 @@
 ```text
 examples/wheel_car_4w/
 ├── README.md
-├── litesim_models/                    # SDF 世界、模型、网格和贴图资源包
+├── wheel_car_4w_models/                    # SDF 世界、模型、网格和贴图资源包
 ├── wheel_car_4w_description/          # 独立模型包
 │   ├── package.xml
 │   ├── CMakeLists.txt
@@ -25,7 +25,7 @@ examples/wheel_car_4w/
     └── test/test_wheel_car_4w.py      # 安装态核心/ROS/启动故障与可选 GUI 测试
 ```
 
-仿真包复用 `litesim3d_core`、`litesim3d_ros2` 和 `litesim3d_interfaces`。litesim_models 提供默认 SDF 资源，description 保留旧 URDF；三个示例包都经 ament 安装，运行时使用 package 资源索引，启动终端不必处于源码目录。
+仿真包复用 `litesim3d_core`、`litesim3d_ros2` 和 `litesim3d_interfaces`。wheel_car_4w_models 提供默认 SDF 资源，description 保留旧 URDF；三个示例包都经 ament 安装，运行时使用 package 资源索引，启动终端不必处于源码目录。
 
 ## 2. 构建后，一条 launch 启动
 
@@ -35,7 +35,7 @@ examples/wheel_car_4w/
 evidence_dir="$(python3 scripts/paths.py evidence)"
 mkdir -p "$evidence_dir"
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=160
+export ROS_DOMAIN_ID=70
 export ROS_LOCALHOST_ONLY=1
 export ROS_LOG_DIR="${evidence_dir}/wheel-car-4w/manual-logs"
 mkdir -p "$ROS_LOG_DIR"
@@ -72,7 +72,7 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py cameras:=true
 evidence_dir="$(python3 scripts/paths.py evidence)"
 mkdir -p "$evidence_dir"
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=160
+export ROS_DOMAIN_ID=70
 export ROS_LOCALHOST_ONLY=1
 export ROS_LOG_DIR="${evidence_dir}/wheel-car-4w/manual-logs"
 ```
@@ -141,14 +141,14 @@ odom -> base_footprint -> base_link -> 四个 wheel_link
 
 `odom -> base_footprint` 由仿真发布；其余边由 RSP 发布。不能同时再发 `odom -> base_link`，否则会让 base_link 出现两个父节点。IMU 静止、水平时 z 比力约为 +9.80665 m/s²，不是零；orientation_covariance[0]=-1。
 
-SDF 四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。修改轮径、轮距时同时修改 `litesim_models/models/wheel_car_4w/model.sdf` 和 `runtime.yaml/robot.drive`，否则加载会拒绝。
+SDF 四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。修改轮径、轮距时同时修改 `wheel_car_4w_models/models/wheel_car_4w/model.sdf` 和 `runtime.yaml/robot.drive`，否则加载会拒绝。
 
 ## 5. 修改参数
 
 默认 SDF 模式使用以下文件：
 
-- [office.sdf](litesim_models/worlds/office.sdf)：场景模型、初始位姿、灯光、步长和默认目标速率。
-- [model.sdf](litesim_models/models/wheel_car_4w/model.sdf)：四轮车 link/joint、visual/collision 和材质。
+- [office.sdf](wheel_car_4w_models/worlds/office.sdf)：场景模型、初始位姿、灯光、步长和默认目标速率。
+- [model.sdf](wheel_car_4w_models/models/wheel_car_4w/model.sdf)：四轮车 link/joint、visual/collision 和材质。
 - [runtime.yaml](wheel_car_4w_sim/config/runtime.yaml)：底盘、传感器、噪声和地形支持绑定。
 - [ros.yaml](wheel_car_4w_sim/config/ros.yaml)：命令类型、QoS、TF、暂停和 RSP 参数。
 
@@ -156,7 +156,7 @@ SDF 四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 lin
 
 ```bash
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
-  assets_root:="$PWD/examples/wheel_car_4w/litesim_models" \
+  assets_root:="$PWD/examples/wheel_car_4w/wheel_car_4w_models" \
   runtime:="$PWD/examples/wheel_car_4w/wheel_car_4w_sim/config/runtime.yaml"
 ```
 
@@ -194,7 +194,7 @@ python3 docs/examples/ros_client.py --stamped --drive --duration 5
 
 | 参数 | 默认与用途 |
 | --- | --- |
-| assets_root / world | litesim_models share / office.sdf |
+| assets_root / world | wheel_car_4w_models share / office.sdf |
 | runtime | 安装的 config/runtime.yaml |
 | gui | true；仅查看三维场景，false 无窗口 |
 | collision_budget_enabled | false；仅关闭预算，保留碰撞检测 |

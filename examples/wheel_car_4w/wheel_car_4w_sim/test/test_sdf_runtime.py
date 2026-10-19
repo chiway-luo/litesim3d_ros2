@@ -9,6 +9,7 @@ import time
 
 import pytest
 from std_msgs.msg import String
+from rclpy.node import NodeNameNonExistentError
 from rclpy.qos import qos_profile_sensor_data
 from std_srvs.srv import SetBool
 import yaml
@@ -100,6 +101,15 @@ def test_pause_keeps_wall_statistics_alive_and_clock_stops(example):
 def test_viewer_only_subscribes_and_can_close_without_stopping_simulation(example):
     car, runtime = example
     car.start(runtime=str(runtime), gui="true", paused="false", real_time_factor="0.5")
+    # Simulator readiness precedes renderer startup and independent graph discovery.
+    def viewer_ready():
+        try:
+            subscriptions = car.node.get_subscriber_names_and_types_by_node("litesim_viewer", "/")
+        except NodeNameNonExistentError:
+            return False
+        return (bool(car.messages["stats"]) and
+                {"/sim/scene_state", "/sim/stats"} <= {name for name, _ in subscriptions})
+    car.until(viewer_ready, timeout=15)
     publishers = car.node.get_publisher_names_and_types_by_node("litesim_viewer", "/")
     assert set(name for name, _ in publishers) <= {"/rosout", "/parameter_events"}
     subscriptions = car.node.get_subscriber_names_and_types_by_node("litesim_viewer", "/")

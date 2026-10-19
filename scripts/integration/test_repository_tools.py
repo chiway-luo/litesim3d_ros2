@@ -1,6 +1,9 @@
 import importlib.util
 from pathlib import Path
 import sys
+import subprocess
+import pytest
+from ament_index_python.packages import get_package_share_directory
 import xml.etree.ElementTree as ET
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -34,3 +37,20 @@ def test_DEL04_runner_propagates_assertions_and_timeout(tmp_path):
         result=r.run([sys.executable,'-c',code],timeout,xml,log)
         assert (result==0)==(name=='pass')
         assert bool(ET.parse(xml).find('.//failure') is not None)==(name!='pass')
+
+
+def test_T_URD_18_xacro(tmp_path):
+    spec=importlib.util.spec_from_file_location("prepare_xacro",ROOT/"scripts/prepare_xacro.py")
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    share=Path(get_package_share_directory("litesim3d_core"))
+    a=module.expand(share/"urdf/r04.xacro",tmp_path/"a.urdf",["length:=0.8"])
+    b=module.expand(share/"urdf/r04.xacro",tmp_path/"b.urdf",["length:=1.2"])
+    assert a["expanded_sha256"]!=b["expanded_sha256"] and a["includes"]
+    assert ET.parse(tmp_path/"a.urdf").find(".//box").get("size").startswith("0.8")
+    assert ET.parse(tmp_path/"b.urdf").find(".//box").get("size").startswith("1.2")
+    bad=tmp_path/"bad.xacro"
+    bad.write_text('<robot xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:include filename="missing.xacro"/></robot>')
+    with pytest.raises(subprocess.CalledProcessError):module.expand(bad,tmp_path/"bad.urdf")
+    assert not (tmp_path/"bad.urdf").exists()
+
+

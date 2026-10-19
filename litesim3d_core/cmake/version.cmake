@@ -1,0 +1,11 @@
+# Package-local metadata also works in Bloom's single-package release archives.
+set(_litesim_manifest "${CMAKE_CURRENT_LIST_DIR}/../package.xml")
+file(READ "${_litesim_manifest}" _litesim_manifest_xml)
+string(REGEX MATCH "<version>([0-9]+\\.[0-9]+\\.[0-9]+)</version>" _litesim_version_match "${_litesim_manifest_xml}")
+if(NOT _litesim_version_match)
+  message(FATAL_ERROR "package.xml must contain a major.minor.patch version")
+endif()
+set(LITESIM3D_VERSION "${CMAKE_MATCH_1}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_litesim_manifest}")
+set(LITESIM3D_VERSION_FILE "${CMAKE_CURRENT_BINARY_DIR}/VERSION")
+file(WRITE "${LITESIM3D_VERSION_FILE}" "${LITESIM3D_VERSION}\n")
