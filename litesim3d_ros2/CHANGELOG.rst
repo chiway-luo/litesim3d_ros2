@@ -8,6 +8,7 @@ history; no earlier tagged releases or publication dates are implied. See the
 
 Forthcoming
 -----------
+* Bound every slow-consumer poll by the configured sensor history depth and scan period; record system-clock steps so a broad timestamp span cannot hide old-frame backlog.
 * Retry unanswered read-only member readiness probes within the original startup deadline, cleaning pending requests and still requiring an actual executor response before reset succeeds.
 * Wait for an observed clock before reading its timestamp in stamped-command and headless tests; ready status does not guarantee clock callback order.
 * Use low ROS domain IDs in default tests and launch checks to avoid Linux ephemeral UDP port overlap.

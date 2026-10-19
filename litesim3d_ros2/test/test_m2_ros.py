@@ -305,10 +305,11 @@ def test_ROS07_slow_consumer_queue_and_thirty_second_pause(h):
     slow_context=Context();rclpy.init(context=slow_context)
     slow=Node('slow_consumer',context=slow_context)
     slow_executor=SingleThreadedExecutor(context=slow_context);slow_executor.add_node(slow)
-    received=[];polls=[]
+    received=[];polls=[];clock_offsets=[]
     slow_sub=slow.create_subscription(PointCloud2,'/points_raw',lambda m:received.append(ns(m.header.stamp)),qos_profile_sensor_data)
     try:
         h.until(lambda:json.loads(h.status().get('subscription_matches','{}')).get('/points_raw',0)>=2)
+        clock_offsets.append(time.time_ns()-time.monotonic_ns())
         for _ in range(10):
             # Make the consumer slow relative to actual production, after DDS
             # matching, so each poll follows a known backlog of new scans.
@@ -320,10 +321,26 @@ def test_ROS07_slow_consumer_queue_and_thirty_second_pause(h):
             while len(received)==previous and time.monotonic()<deadline:
                 slow_executor.spin_once(timeout_sec=.05)
             assert len(received)==previous+1
-            polls.append({'latest':ns(h.messages['points'][-1].header.stamp),'received':received.copy()})
-        (h.directory/'slow-consumer.json').write_text(json.dumps({'polls':polls,'status':h.status()},indent=2))
+            latest=ns(h.messages['points'][-1].header.stamp)
+            polls.append({'latest':latest,'received':received.copy(),'lag_ns':latest-received[-1]})
+            clock_offsets.append(time.time_ns()-time.monotonic_ns())
+        # DDS source timestamps use system time, independently of /clock. A
+        # backwards system-clock step can poison Fast DDS 2.6 KEEP_LAST history.
+        # Record that condition without skipping/retrying a failing assertion.
+        clock_steps=[b-a for a,b in zip(clock_offsets,clock_offsets[1:])]
+        period_ns=round(10**9/h.config['lidars'][0]['rate_hz'])
+        max_lag_ns=(slow_sub.qos_profile.depth+2)*period_ns
+        (h.directory/'slow-consumer.json').write_text(json.dumps({
+            'polls':polls,'status':h.status(),'clock_offset_steps_ns':clock_steps,
+            'max_allowed_lag_ns':max_lag_ns},indent=2))
         assert 5<=len(received)<=10
         assert received[-1]-received[0]>5*10**9
+        # A broad timestamp span can pass while the reader remains seconds
+        # behind. Bound every poll by its five-frame queue plus two scan periods
+        # of delivery/observation tolerance, not by the slow polling interval.
+        assert all(poll['lag_ns']<=max_lag_ns for poll in polls), {
+            'polls':polls,'clock_offset_steps_ns':clock_steps,
+            'max_allowed_lag_ns':max_lag_ns}
     finally:
         slow_executor.shutdown();slow.destroy_node();slow_context.shutdown()
     before_pause_count=len(h.messages['points'])
