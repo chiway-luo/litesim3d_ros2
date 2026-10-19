@@ -8,6 +8,7 @@ history; no earlier tagged releases or publication dates are implied. See the
 
 Forthcoming
 -----------
+* Expose the existing pending-command state in diagnostics so paused-step clients can observe command acceptance; test rejection preserving the queued command and exactly-once application without changing simulator layout or stepping semantics.
 * Read the compiled version from package-local metadata; declare pkg-config, libssl-dev and GTest for independent release builds.
 * Introduce a standalone C++17 kinematic simulation core with strict YAML configuration, URDF loading, STL/OBJ/DAE geometry, ray queries, geometric collision checks, deterministic stepping, pause and initialization controls.
 * Add continuous terrain support, per-point rolling LiDAR scans, seeded noise and dropout, raw IMU samples, independent odometry error and bounded resource checks.

@@ -116,10 +116,34 @@ class Harness:
         logs = "\n".join(p.read_text()[-3000:] for p in self.directory.glob("*.log"))
         assert predicate(), f"condition timeout\n{logs}"
 
-    def status(self):
+    def status(self, robot_id=None):
         if not self.messages["status"]:
             return {}
-        return {v.key: v.value for v in self.messages["status"][-1].status[0].values}
+        for status in self.messages["status"][-1].status:
+            values = {v.key: v.value for v in status.values}
+            if robot_id is None or values.get("robot_id") == robot_id:
+                return values
+        return {}
+
+    def publish_paused_command(self, publisher, message, robot_id=None):
+        """One control source: observe acceptance before requesting a step."""
+        def idle():
+            status = self.status(robot_id)
+            return status.get("state") == "paused" and status.get("pending_command") == "false"
+        self.until(idle)
+        run_id = self.status(robot_id)["run_id"]
+        publisher.publish(message)
+        self.until(lambda: self.status(robot_id).get("run_id") == run_id
+                   and self.status(robot_id).get("pending_command") == "true")
+
+    def wait_for_stamp(self, stamp, *keys):
+        """Topics and service responses have independent delivery order."""
+        def observed(key):
+            if not self.messages[key]:
+                return False
+            message = self.messages[key][-1]
+            return ns(message.clock if isinstance(message, Clock) else message.header.stamp) == stamp
+        self.until(lambda: all(observed(key) for key in keys))
 
     def ready(self):
         self.until(lambda: self.status().get("ready") == "true")

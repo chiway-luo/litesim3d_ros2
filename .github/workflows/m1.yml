@@ -29,10 +29,17 @@ jobs:
           source /opt/ros/humble/setup.bash
           bash scripts/build.sh
       - name: Run core and ROS regression tests
+        id: regression
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           bash scripts/test_m3.sh
+      - name: Upload regression failure evidence
+        if: ${{ failure() && steps.regression.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-failure-evidence
+          path: ${{ env.LITESIM3D_ARTIFACTS_DIR }}/evidence/m3/
       - name: Test installed resources without the source tree
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash

@@ -3,6 +3,7 @@
 #include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <limits>
 #include <thread>
 using namespace litesim3d;
 namespace {
@@ -194,6 +195,27 @@ TEST(COR05, StepIdempotency) {
   EXPECT_EQ(s.singleStep("b", 0, e).code, 2);
   s.pause(false);
   EXPECT_EQ(s.singleStep("c", 1, e).code, 1);
+}
+TEST(COR05, PendingCommandDiagnostics) {
+  auto s = simulator();
+  s.pause(true);
+  const auto before = s.snapshot().stamp;
+  EXPECT_EQ(s.diagnostics()["pending_command"], false);
+  ASSERT_TRUE(s.command({.4, 0}));
+  EXPECT_EQ(s.diagnostics()["pending_command"], true);
+  EXPECT_EQ(s.snapshot().stamp, before);
+  EXPECT_TRUE(s.manifest()["inputs"].empty());
+  EXPECT_FALSE(s.command({std::numeric_limits<double>::quiet_NaN(), 0}));
+  EXPECT_EQ(s.diagnostics()["pending_command"], true);
+  std::vector<Event> events;
+  ASSERT_TRUE(s.singleStep("apply-command", 20, events).success);
+  EXPECT_EQ(s.diagnostics()["pending_command"], false);
+  EXPECT_EQ(s.snapshot().stamp, before + 100000000ULL);
+  EXPECT_NEAR(s.snapshot().world_base.translation().x(), .04, 1e-12);
+  EXPECT_EQ(s.manifest()["inputs"].size(), 1);
+  ASSERT_TRUE(s.singleStep("apply-command", 20, events).success);
+  EXPECT_EQ(s.snapshot().stamp, before + 100000000ULL);
+  EXPECT_EQ(s.manifest()["inputs"].size(), 1);
 }
 TEST(COR06, CommandReplay) {
   std::vector<Json> histories;

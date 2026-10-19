@@ -30,9 +30,9 @@ def test_AUD01_stamped_commands_reject_wrong_robot_and_stale_input(h):
     assert graph['/r0/cmd_vel'] == ['geometry_msgs/msg/TwistStamped']
     command = TwistStamped(); command.header.frame_id = 'r0/base_link'
     command.header.stamp.nanosec = 1; command.twist.linear.x = .4
-    publisher.publish(command); h.spin(.1)
+    h.publish_paused_command(publisher, command, 'r0')
     assert h.step(20, 'valid').success
-    h.until(lambda: bool(h.messages['r0-odom']))
+    h.wait_for_stamp(100_000_001, 'r0-odom', 'r1-odom')
     assert h.messages['r0-odom'][-1].pose.pose.position.x == pytest.approx(.04)
     invalid = [('r1/base_link', 100_000_001, .4), ('', 100_000_001, .4),
                ('r0/base_link', 0, .4), ('r0/base_link', 200_000_001, .4),
@@ -43,6 +43,7 @@ def test_AUD01_stamped_commands_reject_wrong_robot_and_stale_input(h):
         h.until(lambda: int(statuses(h)['r0']['rejected_commands']) == i+1)
     assert h.step(40, 'timeout').success
     h.until(lambda: statuses(h)['r0']['command_timeout'] == 'true')
+    h.wait_for_stamp(300_000_001, 'r0-odom', 'r1-odom')
     assert h.messages['r0-odom'][-1].twist.twist.linear.x == 0
     assert statuses(h)['r1']['rejected_commands'] == '0'
     assert h.messages['r1-odom'][-1].pose.pose.position.x == 0

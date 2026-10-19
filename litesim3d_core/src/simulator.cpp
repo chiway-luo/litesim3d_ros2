@@ -672,6 +672,7 @@ Json Simulator::diagnostics() const {
           {"time_ns", current_.stamp},
           {"rejected_commands", rejected_},
           {"coalesced_commands", coalesced_},
+          {"pending_command", pending_.has_value()},
           {"command_timeout", timed_out_},
           {"contact_count", contact_count_},
           {"retained_contacts", contacts_.size()},

@@ -134,7 +134,7 @@ def test_EXT03_namespaces_clock_tf_commands_and_peer_cloud(h, count):
     command = h.node.create_publisher(Twist, '/r0/cmd_vel', 1)
     h.until(lambda:command.get_subscription_count()==1)
     value = Twist(); value.linear.x=.2
-    command.publish(value); h.spin(.1)
+    h.publish_paused_command(command, value, 'r0')
     for i in range(10):
         assert h.step(20, f'block-{i}').success
         h.until(lambda:all(len(h.messages[f'r{k}-cloud'])>=i+1 for k in range(count)))
@@ -142,10 +142,7 @@ def test_EXT03_namespaces_clock_tf_commands_and_peer_cloud(h, count):
     # DDS/callback delivery order. Compare poses only after the requested step is
     # observed on every odometry stream, not merely after its first message.
     expected_time = 1_000_000_001
-    h.until(lambda: h.messages['clock'] and ns(h.messages['clock'][-1].clock) == expected_time
-            and all(h.messages[f'r{k}-odom']
-                    and ns(h.messages[f'r{k}-odom'][-1].header.stamp) == expected_time
-                    for k in range(count)))
+    h.wait_for_stamp(expected_time, 'clock', *(f'r{k}-odom' for k in range(count)))
     observed_times = {'clock': ns(h.messages['clock'][-1].clock),
                       'odom': {f'r{k}': ns(h.messages[f'r{k}-odom'][-1].header.stamp)
                                for k in range(count)}}
@@ -171,7 +168,9 @@ def test_EXT03_namespaces_clock_tf_commands_and_peer_cloud(h, count):
     cached = h.step(20, 'block-9')
     assert cached.success and cached.time_ns==1_000_000_001
     assert not h.step(21, 'block-9').success
-    bad=Twist(); bad.linear.y=.5;command.publish(bad);h.spin(.1)
+    rejected = int(h.status('r0')['rejected_commands'])
+    bad=Twist(); bad.linear.y=.5;command.publish(bad)
+    h.until(lambda: int(h.status('r0')['rejected_commands']) == rejected + 1)
     assert h.step(20,'invalid-command').success
     assert int(h.status()['rejected_commands'])>=1
     (h.directory/'world-observations.json').write_text(json.dumps({
@@ -233,7 +232,7 @@ def test_EXT05_ackermann_feedback_loop_from_measured_odom(h):
         along=math.cos(theta)*dx+math.sin(theta)*dy
         cross=-math.sin(theta)*dx+math.cos(theta)*dy
         value=Twist();value.linear.x=max(.1,min(.7,.5+along));value.angular.z=1/6+1.5*cross+math.sin(phase-theta)
-        publisher.publish(value);h.spin(.01)
+        h.publish_paused_command(publisher, value)
         before=ns(h.messages['odom'][-1].header.stamp)
         assert h.step(10,f'feedback-{i}').success
         h.until(lambda:ns(h.messages['odom'][-1].header.stamp)>before)
