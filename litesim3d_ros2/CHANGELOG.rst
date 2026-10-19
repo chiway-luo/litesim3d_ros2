@@ -8,6 +8,7 @@ history; no earlier tagged releases or publication dates are implied. See the
 
 Forthcoming
 -----------
+* Wait for the target step timestamp on every robot's odometry before comparing shared-world poses; preserve exact position/cloud assertions and record the observed timestamps.
 * Retain and retry timed-out service responses in a shared bounded module for single/world nodes, preserving the original request identity and result without re-executing commands. Add Linux fault-injection coverage for recovery, expiry, capacity, fatal errors and shutdown; keep the original reset stress test and client deadline.
 * Declare the directly used RCL dependency and include response handling in the bridge source fingerprint.
 * Bound every slow-consumer poll by the configured sensor history depth and scan period; record system-clock steps so a broad timestamp span cannot hide old-frame backlog.

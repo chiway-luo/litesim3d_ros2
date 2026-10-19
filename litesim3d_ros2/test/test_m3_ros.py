@@ -138,9 +138,19 @@ def test_EXT03_namespaces_clock_tf_commands_and_peer_cloud(h, count):
     for i in range(10):
         assert h.step(20, f'block-{i}').success
         h.until(lambda:all(len(h.messages[f'r{k}-cloud'])>=i+1 for k in range(count)))
+    # Service responses, clock, clouds and each robot's odometry have independent
+    # DDS/callback delivery order. Compare poses only after the requested step is
+    # observed on every odometry stream, not merely after its first message.
+    expected_time = 1_000_000_001
+    h.until(lambda: h.messages['clock'] and ns(h.messages['clock'][-1].clock) == expected_time
+            and all(h.messages[f'r{k}-odom']
+                    and ns(h.messages[f'r{k}-odom'][-1].header.stamp) == expected_time
+                    for k in range(count)))
+    observed_times = {'clock': ns(h.messages['clock'][-1].clock),
+                      'odom': {f'r{k}': ns(h.messages[f'r{k}-odom'][-1].header.stamp)
+                               for k in range(count)}}
     assert h.node.count_publishers('/clock') == 1
-    assert ns(h.messages['clock'][-1].clock) == 1_000_000_001
-    h.until(lambda:all(len(h.messages[f'r{k}-odom'])>0 for k in range(count)))
+    assert ns(h.messages['clock'][-1].clock) == expected_time
     assert h.messages['r0-odom'][-1].pose.pose.position.x == pytest.approx(.2, abs=1e-8)
     for k in range(1,count):
         assert h.messages[f'r{k}-odom'][-1].pose.pose.position.x == 0
@@ -166,6 +176,7 @@ def test_EXT03_namespaces_clock_tf_commands_and_peer_cloud(h, count):
     assert int(h.status()['rejected_commands'])>=1
     (h.directory/'world-observations.json').write_text(json.dumps({
         'count':count,'tf_edges':sorted(pairs),'clock_publishers':h.node.count_publishers('/clock'),
+        'pose_comparison_times':observed_times,
         'point_plane_reference':'2 - 0.4 - 0.2 - 0.2 * (0.9 + t)',
         'statuses':[{v.key:v.value for v in s.values} for s in h.messages['status'][-1].status]}, indent=2))
 
