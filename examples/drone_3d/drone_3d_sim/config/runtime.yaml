@@ -39,7 +39,7 @@ lidars:
   point_layout: xyzirt_v1
   self_filter: robot
   publish_range_boundary: true
-  range_sigma_m: 0.005
+  range_sigma_m: 0.0  # 默认理想测距；通过 noise_config 注入误差。
 imus:
 - name: body_imu
   link: imu_link

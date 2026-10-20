@@ -11,6 +11,6 @@ lidar:
   # 排除整车；不会把空转里程计姿态用于测距。
   self_filter: robot
   # 高斯量程噪声标准差，m，>=0。
-  range_sigma_m: 0.01
+  range_sigma_m: 0.0  # 默认理想测距；通过 noise_config 注入误差。
   # 在独立 range_boundary 话题发布量程可视化辅助点。
   publish_range_boundary: true

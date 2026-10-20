@@ -15,7 +15,7 @@ from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-from litesim3d_bringup.model import prepare_config, resolve, boolean
+from litesim3d_bringup.model import prepare_config, resolve, boolean, lidar_preview_topics
 
 
 def required_exit(event, context):
@@ -58,6 +58,9 @@ def legacy_setup(context):
     rsp_parameters = node_parameters("/robot_state_publisher")
     rviz_parameters = node_parameters("/rviz2")
     sim_parameters["config"] = str(config)
+    sim_parameters["lidar_interface"] = argument("lidar_interface")
+    sim_parameters["xfer_format"] = int(argument("xfer_format"))
+    sim_parameters["livox_lidar_id"] = int(argument("livox_lidar_id"))
     if context.launch_configurations.get("scene_description"):
         sim_parameters["scene_description"] = context.launch_configurations["scene_description"]
         sim_parameters["viewer_ready_file"] = context.launch_configurations.get("viewer_ready_file", "")
@@ -74,7 +77,8 @@ def legacy_setup(context):
         directory = tempfile.mkdtemp(prefix="litesim-model-")
         try:
             config = prepare_config(config, directory, mappings=yaml.safe_load(argument("model_arguments")),
-                                    lidar_profile=selection, profiles_dir=argument("lidar_profiles_dir"))
+                                    lidar_profile=selection, profiles_dir=argument("lidar_profiles_dir"),
+                                    noise_config=argument("noise_config"))
         except BaseException:
             shutil.rmtree(directory, ignore_errors=True)
             raise
@@ -101,9 +105,16 @@ def legacy_setup(context):
         presentation = yaml.safe_load(Path(argument("rviz_config")).expanduser().read_text())
         manager = presentation["Visualization Manager"]
         manager["Global Options"]["Fixed Frame"] = prefix + "odom"
+        topics = lidar_preview_topics(config, sim_parameters["lidar_interface"], sim_parameters["xfer_format"])
         for display in manager["Displays"]:
             if display.get("Class") == "rviz_default_plugins/RobotModel":
                 display["TF Prefix"] = prefix.rstrip("/")
+            if display.get("Class") == "rviz_default_plugins/PointCloud2":
+                topic = display.get("Topic", {})
+                if isinstance(topic, dict) and topic.get("Value") in topics:
+                    topic["Value"] = topics[topic["Value"]]
+                elif isinstance(topic, str) and topic in topics:
+                    display["Topic"] = topics[topic]
         with tempfile.NamedTemporaryFile(mode="w", suffix=".rviz", prefix="litesim-rviz-", delete=False) as stream:
             yaml.safe_dump(presentation, stream, sort_keys=False)
             rviz_file = stream.name
@@ -150,7 +161,8 @@ def setup(context):
     try:
         runtime = prepare_config(Path(argument("runtime")).expanduser(), directory / "model",
                                  mappings=yaml.safe_load(argument("model_arguments")), cameras=argument("cameras"),
-                                 lidar_profile=argument("lidar_profile"), profiles_dir=argument("lidar_profiles_dir"))
+                                 lidar_profile=argument("lidar_profile"), profiles_dir=argument("lidar_profiles_dir"),
+                                 noise_config=argument("noise_config"))
         scene_directory = directory / "scene"
         importer = Path(get_package_prefix("litesim3d_assets")) / "lib/litesim3d_assets/sdf_import"
         command = [str(importer), str(world.resolve()),
@@ -213,6 +225,10 @@ def generate_launch_description():
         DeclareLaunchArgument("real_time_factor", default_value="", description="Target rate; 0 means unpaced"),
         DeclareLaunchArgument("config", default_value="", description="Optional legacy YAML; empty selects SDF mode"),
         DeclareLaunchArgument("lidar_profile", default_value="config"),
+        DeclareLaunchArgument("noise_config", default_value="", description="Optional per-sensor and wheel odometry errors YAML"),
+        DeclareLaunchArgument("lidar_interface", default_value="auto", description="auto selects official output only for Mid-360; native keeps xyzirt_v1"),
+        DeclareLaunchArgument("xfer_format", default_value="1", description="Mid-360: 1 CustomMsg, 0 Livox PointCloud2"),
+        DeclareLaunchArgument("livox_lidar_id", default_value="0"),
         DeclareLaunchArgument("lidar_profiles_dir", default_value="", description="Directory for named lidar profiles"),
         DeclareLaunchArgument("rviz", default_value="false"),
         DeclareLaunchArgument("rviz_config", default_value=str(bridge / "rviz/demo.rviz")),

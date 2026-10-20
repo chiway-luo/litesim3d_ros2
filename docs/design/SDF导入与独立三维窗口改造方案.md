@@ -37,7 +37,7 @@ Gazebo Rendering 提供渲染能力，仍需本项目实现 SDF 到渲染场景�
 | 场景 Marker 统一颜色，网格用三角形列表发布 | [sim_node.cpp](../../litesim3d_ros2/src/sim_node.cpp) | 独立窗口使用原始材质、子网格、UV 和贴图 |
 | 有 256 MiB 加载计数预算和 100 万三角形预算；这些计数不是进程实际内存硬上限 | [sim.hpp](../../litesim3d_core/include/litesim3d/sim.hpp) | 按角色拆分计数；碰撞性能预算统一受开关控制，清理默认关闭时仍会生效的旧碰撞限制 |
 | 单机、多机已有目标速率调度，墙钟迟到会拖慢仿真；已有部分计算耗时诊断 | [sim_node.cpp](../../litesim3d_ros2/src/sim_node.cpp)、[sim_world_node.cpp](../../litesim3d_ros2/src/sim_world_node.cpp) | 共用速率统计与调度模块，增加窗口状态栏 |
-| 当前多机世界复用一套机器人模型配置，范围为 1–4 台 | [M3 使用说明](../usage/M3使用说明.md) | 世界加载按 SDF 实例建立模型绑定，保留数量上限，适配不同实例的资源与配置 |
+| 当前多机世界复用一套机器人模型配置，范围为 1–4 台 | [多机器人](../usage/多机器人.md) 与 [ROS 2 接口](../api/ROS2接口.md) | 世界加载按 SDF 实例建立模型绑定，保留数量上限，适配不同实例的资源与配置 |
 
 ## 三 目录与 launch 入口
 

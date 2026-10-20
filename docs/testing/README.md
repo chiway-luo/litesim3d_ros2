@@ -1,5 +1,11 @@
 # 测试文档
 
+当前内置 RViz 视图不加载 `/scene` 场景图层，保留启动集成与点云显示。`scripts/test_desktop.sh` 验证 RViz、独立窗口及 RGB/Depth/RGB-D 实际渲染，包含相机误差与固定种子复现；`scripts/test_plugins.sh` 验证传感器/里程计计算契约。
+
+2026-10-20 的实际渲染、误差统计和 RViz 截图见[测量误差、相机渲染与 RViz 验证](测量误差与相机RViz验证.md)。
+
+当前能力摘要见[版本与验证状态](../版本与验证状态.md)。本轮文档、教程与站点验证见[文档规范化验证](文档规范化验证.md)。
+
 2026-10-19 的插件架构、组合模型、外部插件及 29 包独立检查见 [插件架构完成验证](插件架构完成验证.md)。
 
 重置后步进已执行但应答丢失的根因、修复与故障注入检查见 [重置后服务应答超时诊断](重置后服务应答超时诊断.md)。
@@ -31,7 +37,10 @@ source "$(python3 scripts/paths.py install)/setup.bash"
 
 | 范围 | 命令 | 实际作用 |
 | --- | --- | --- |
-| 仓库文档 | `python3 scripts/checks/check_repository_docs.py` | 不依赖历史日志，检查仓库内链接、使用流程中的个人路径与 Shell 语法 |
+| 仓库文档 | `python3 scripts/checks/check_repository_docs.py` | 不依赖历史日志，检查仓库内链接与锚点、页面标题、个人路径及 Shell 语法 |
+| 接口文档 | `python3 scripts/checks/check_api_docs.py` | 核对 IDL、声明参数名称及生成的插件参考表 |
+| 文档检查器负例 | `python3 -m unittest discover -s scripts/checks -p test_documentation_checks.py` | 验证错误锚点和错误 Shell 能被拒绝 |
+| 入门教程 | `python3 scripts/checks/check_documented_tutorials.py` | 执行教程原文命令，验证单机控制、IMU/TF 和消费节点负例 |
 | 系统时钟跳变诊断 | `python3 scripts/checks/check_clock_stability.py --duration 60` | 只读观察系统时间相对单调时钟的跳变；用于排查 DDS 旧帧，不检查仿真 `/clock` |
 | 完整功能回归 | `bash scripts/test_m3.sh` | 内核、M1/M2/M3 ROS、100 次会话重置、报告门禁负例、四轮示例、无人机、SDF 场景、单机/多机 launch |
 | M1 / M2 子集 | `bash scripts/test_m1.sh` / `bash scripts/test_m2.sh` | 按阶段选择测试，非完整新版本验收 |

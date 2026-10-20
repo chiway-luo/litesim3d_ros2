@@ -1,4 +1,4 @@
-# 单 launch 同时显示四轮车、三维雷达、场景、TF 和轨迹。
+# 单 launch 同时显示四轮车、三维雷达、TF 和轨迹。
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
@@ -55,13 +55,6 @@ Visualization Manager:
       Color: 70; 180; 255
       Alpha: 0.3
       Decay Time: 0
-    - Class: rviz_default_plugins/MarkerArray
-      Name: World Objects
-      Enabled: true
-      Topic:
-        Value: /scene
-        Reliability Policy: Reliable
-        Durability Policy: Transient Local
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: true

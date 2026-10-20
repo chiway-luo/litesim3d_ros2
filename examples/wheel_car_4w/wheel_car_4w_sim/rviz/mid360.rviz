@@ -1,0 +1,85 @@
+# Mid-360 单帧点云视图；launch 按 lidar_interface / xfer_format 替换话题。
+# 实体环境在独立三维窗口查看，避免遮挡贴近表面的回波。
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 30; 34; 42
+    Fixed Frame: odom
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Ground Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 20
+      Alpha: 0.15
+    - Class: rviz_default_plugins/RobotModel
+      Name: Four Wheel Car
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      TF Prefix: ""
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Mid-360 Returns
+      Enabled: true
+      Topic:
+        Value: /points_raw
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Style: Points
+      Size (Pixels): 2
+      Position Transformer: XYZ
+      Color Transformer: AxisColor
+      Axis: Z
+      Use Fixed Frame: true
+      Autocompute Value Bounds: false
+      Min Value: 0
+      Max Value: 3
+      Decay Time: 0
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Max Range Boundary (Synthetic)
+      Enabled: false
+      Topic:
+        Value: /points_raw/range_boundary
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Style: Points
+      Size (Pixels): 1
+      Color Transformer: FlatColor
+      Color: 70; 180; 255
+      Alpha: 0.3
+      Decay Time: 0
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+    - Class: rviz_default_plugins/Path
+      Name: Trajectory
+      Enabled: false
+      Topic:
+        Value: /trajectory
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 22
+      Pitch: 0.65
+      Yaw: 0.8
+      Focal Point: {X: 1.0, Y: 0, Z: 1.0}
+Window Geometry:
+  Width: 1400
+  Height: 900

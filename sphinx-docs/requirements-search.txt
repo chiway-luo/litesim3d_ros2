@@ -1,0 +1,2 @@
+# Optional local dependency; CI installs it in its disposable Python environment.
+jieba==0.42.1

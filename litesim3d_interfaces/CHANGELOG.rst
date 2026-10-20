@@ -13,4 +13,4 @@ Forthcoming
 * Add CameraFrame messages and RenderCameras service definitions for simulation-time rendering requests and RGB/depth image results.
 * Set the maintainer contact to chiwayfpv@gmail.com and provide the repository Apache-2.0 license; retain existing third-party notices.
 
-References: `Source 1 <../docs/usage/接口与模型规范.md>`_, `Source 2 <../docs/testing/SDF实现验证.md>`_.
+References: `Source 1 <../docs/api/消息与服务.md>`_, `Source 2 <../docs/testing/SDF实现验证.md>`_.

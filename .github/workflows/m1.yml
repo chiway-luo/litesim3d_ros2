@@ -21,13 +21,24 @@ jobs:
           rosdep update --rosdistro humble
           rosdep install --from-paths . --ignore-src --rosdistro humble -y
       - name: Check repository documentation
-        run: python3 scripts/checks/check_repository_docs.py
+        run: |
+          python3 scripts/checks/check_repository_docs.py
+          python3 scripts/checks/check_api_docs.py
+          python3 -m unittest discover -s scripts/checks -p test_documentation_checks.py
       - name: Build
         id: build
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           bash scripts/build.sh
+      - name: Run documented headless tutorials
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source "$(python3 scripts/paths.py install)/setup.bash"
+          python3 scripts/checks/check_documented_tutorials.py \
+            --output "$LITESIM3D_ARTIFACTS_DIR/evidence/documented-tutorials"
       - name: Run core and ROS regression tests
         id: regression
         shell: bash
@@ -53,6 +64,12 @@ jobs:
           source /opt/ros/humble/setup.bash
           source "$(python3 scripts/paths.py install)/setup.bash"
           xvfb-run -a env LWS_PRIVATE_TEST_DISPLAY=1 python3 scripts/checks/check_gui_independence.py
+      - name: Test camera rendering and desktop launch integration
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 QT_X11_NO_MITSHM=1 bash scripts/test_desktop.sh
       - name: Upload actual test evidence
         if: always()
         uses: actions/upload-artifact@v4

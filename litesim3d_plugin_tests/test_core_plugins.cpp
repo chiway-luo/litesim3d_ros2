@@ -87,6 +87,21 @@ TEST(CorePlugins, DifferentialCollisionToggleAndReverseEscape) {
     EXPECT_DOUBLE_EQ(sim.scene().collision[0].at(sim.snapshot().stamp).translation().x(), 1);
   }
 }
+TEST(CorePlugins, WheelOdometryErrorsDoNotAffectTruthOrEncoders) {
+  auto ideal_config = diffConfig(false), noisy_config = ideal_config;
+  noisy_config.plugins[1].parameters["noise"]["linear_scale_error"] = {.1, 0};
+  noisy_config.plugins[1].parameters["noise"]["linear_bias_mps"] = {.01, 0};
+  noisy_config.plugins[1].parameters["noise"]["angular_sigma_radps"] = .02;
+  Simulator ideal(ideal_config, diffModel(), {}), noisy(noisy_config, diffModel(), {});
+  ASSERT_TRUE(ideal.command({.4, .1})); ASSERT_TRUE(noisy.command({.4, .1}));
+  const auto a = advance(ideal, 100), b = advance(noisy, 100);
+  ASSERT_EQ(a.size(), b.size());
+  for (size_t i = 0; i < a.size(); ++i) {
+    EXPECT_EQ(a[i].snapshot.world_base.matrix(), b[i].snapshot.world_base.matrix());
+    EXPECT_EQ(a[i].snapshot.joints, b[i].snapshot.joints);
+  }
+  EXPECT_GT((ideal.snapshot().odom_base.translation() - noisy.snapshot().odom_base.translation()).norm(), .01);
+}
 TEST(CorePlugins, OmniLateralCollisionKeepsEncoderLateralTwistSeparateFromTruth) {
   for (int n : {3, 4}) for (bool keep_driving : {false, true}) {
     SCOPED_TRACE(std::to_string(n) + "/" + std::to_string(keep_driving));

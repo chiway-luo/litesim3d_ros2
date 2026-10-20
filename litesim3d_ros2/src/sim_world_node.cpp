@@ -1,6 +1,7 @@
 #include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
 #include "service_responses.hpp"
+#include "livox_outputs.hpp"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -51,6 +52,7 @@ geometry_msgs::msg::Pose pose(const litesim3d::Pose &p) {
 class WorldNode : public rclcpp::Node {
   struct Channels {
     std::string prefix;
+    std::unique_ptr<litesim3d_ros::LivoxOutputs> livox;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom, truth;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joints;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr description;
@@ -101,6 +103,9 @@ public:
     status_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
         "/sim/status", 10);
     tf_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    const auto lidar_interface = declare_parameter<std::string>("lidar_interface", "native");
+    const auto xfer_format = declare_parameter<int>("xfer_format", 1);
+    const auto lidar_id = declare_parameter<int>("livox_lidar_id", 0);
     channels_.resize(world_->size());
     for (size_t i = 0; i < world_->size(); ++i) {
       auto &c = channels_[i];
@@ -132,7 +137,10 @@ public:
           [this, i](rclcpp::QOSOfferedIncompatibleQoSInfo &) {
             ++channels_[i].qos_conflicts;
           };
+      c.livox = std::make_unique<litesim3d_ros::LivoxOutputs>(*this, r.config(), "/" + c.prefix,
+          c.prefix, lidar_interface, xfer_format, lidar_id, options);
       for (const auto &l : r.config().lidars) {
+        if (c.livox->handles(l.topic)) continue;
         c.clouds[l.topic] = create_publisher<sensor_msgs::msg::PointCloud2>(
             topic(l.topic), sensor_qos, options);
         if (l.publish_range_boundary)
@@ -299,6 +307,7 @@ private:
                           {"robot_state_publisher_name", rsp_name_}};
     for (size_t i = 0; i < channels_.size(); ++i) {
       m["robots"][i]["exit_reason"] = reason;
+      m["robots"][i]["livox_output"] = channels_[i].livox->description();
       m["ros_interface"]["publish_odom_tf"]
        [world_->robot(i).config().robot_id] = channels_[i].publish_tf;
     }
@@ -373,31 +382,33 @@ private:
         c.truth->publish(o);
       }
       for (const auto &p : e.clouds) {
-        sensor_msgs::msg::PointCloud2 m;
-        m.header.stamp = stamp(p.stamp);
-        m.header.frame_id = c.prefix + p.frame;
-        m.width = p.width;
-        m.height = p.height;
-        m.point_step = 24;
-        m.row_step = p.row_step;
-        m.is_dense = p.dense;
-        m.is_bigendian = false;
-        m.data = p.data;
-        const char *names[] = {"x", "y", "z", "intensity", "ring", "time"};
-        uint32_t offsets[] = {0, 4, 8, 12, 16, 20};
-        for (int f = 0; f < 6; ++f) {
-          sensor_msgs::msg::PointField field;
-          field.name = names[f];
-          field.offset = offsets[f];
-          field.count = 1;
-          field.datatype = f == 4 ? 4 : 7;
-          m.fields.push_back(field);
-        }
-        c.clouds.at(p.topic)->publish(m);
-        if (!p.range_boundary.empty()) {
-          m.data = p.range_boundary;
-          m.is_dense = false;
-          c.clouds.at(p.topic + "/range_boundary")->publish(m);
+        if (!c.livox->publish(p)) {
+          sensor_msgs::msg::PointCloud2 m;
+          m.header.stamp = stamp(p.stamp);
+          m.header.frame_id = c.prefix + p.frame;
+          m.width = p.width;
+          m.height = p.height;
+          m.point_step = 24;
+          m.row_step = p.row_step;
+          m.is_dense = p.dense;
+          m.is_bigendian = false;
+          m.data = p.data;
+          const char *names[] = {"x", "y", "z", "intensity", "ring", "time"};
+          uint32_t offsets[] = {0, 4, 8, 12, 16, 20};
+          for (int f = 0; f < 6; ++f) {
+            sensor_msgs::msg::PointField field;
+            field.name = names[f];
+            field.offset = offsets[f];
+            field.count = 1;
+            field.datatype = f == 4 ? 4 : 7;
+            m.fields.push_back(field);
+          }
+          c.clouds.at(p.topic)->publish(m);
+          if (!p.range_boundary.empty()) {
+            m.data = p.range_boundary;
+            m.is_dense = false;
+            c.clouds.at(p.topic + "/range_boundary")->publish(m);
+          }
         }
         ++c.published;
         compute_.push_back(p.compute_ms);
@@ -540,6 +551,8 @@ private:
       count_matches(clock_);
       count_matches(channels_[i].odom);
       count_matches(channels_[i].joints);
+      channels_[i].livox->matches(matches);
+      d["livox_output"] = channels_[i].livox->description();
       for (const auto &[topic, publisher] : channels_[i].clouds) count_matches(publisher);
       for (const auto &[topic, publisher] : channels_[i].imus) count_matches(publisher);
       d["subscription_matches"] = std::move(matches);

@@ -1,0 +1,28 @@
+# SDF 负责环境、时钟和出生位姿；本地组合模型增加第二个 IMU。
+schema_version: 1
+units: m_rad_s
+simulation:
+  seed: 42
+  odom_rate: 50.0
+  command_timeout: 0.5
+  threads: 2
+  history_limit: 8192
+  journal_limit: 4096
+  collision_budget_enabled: false
+robot:
+  id: wheel_car_4w
+  urdf: ../urdf/simulation.urdf.xacro
+  base_link: base_link
+  continue_on_collision: true
+  support_links: [rear_left_wheel_link, rear_right_wheel_link, front_left_wheel_link, front_right_wheel_link]
+  visual_collision_fallback: false
+  sensor_geometry: visual
+terrain:
+  enabled: true
+  max_slope_deg: 20.0
+  clearance_m: 0.0
+  continuity_m: 0.02
+entity_bindings:
+  ground:
+    support: true
+    reflectivity: 0.35

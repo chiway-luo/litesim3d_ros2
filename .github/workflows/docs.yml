@@ -1,0 +1,33 @@
+name: Documentation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  documentation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install documentation dependencies
+        run: python -m pip install -r sphinx-docs/requirements.txt -r sphinx-docs/requirements-search.txt
+      - name: Check source documentation
+        run: |
+          python scripts/checks/check_repository_docs.py
+          python scripts/checks/check_api_docs.py
+          python -m unittest discover -s scripts/checks -p test_documentation_checks.py
+      - name: Build strict documentation preview
+        run: python -P sphinx-docs/tools/build.py --output "$RUNNER_TEMP/litesim-docs"
+      - name: Upload preview and conversion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-preview
+          path: |
+            ${{ runner.temp }}/litesim-docs/html/
+            ${{ runner.temp }}/litesim-docs/warnings.log
+            ${{ runner.temp }}/litesim-docs/build-summary.json
+            ${{ runner.temp }}/litesim-docs/.sphinx-converter/manifest.json
+          include-hidden-files: true

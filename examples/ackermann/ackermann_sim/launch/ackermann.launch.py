@@ -12,7 +12,7 @@ def generate_launch_description():
     common = Path(get_package_share_directory("litesim3d_bringup"))
     defaults = {"assets_root": str(share), "world": "room.sdf",
                 "runtime": str(share / "config/runtime.yaml"), "params": str(share / "config/ros.yaml"),
-                "gui": "true", "rviz": "false", "cameras": "", "camera_view": "false",
+                "noise_config": "", "gui": "true", "rviz": "false", "cameras": "", "camera_view": "false",
                 "paused": "", "real_time_factor": "", "manifest": "", "model_arguments": "{}"}
     return LaunchDescription([
         *[DeclareLaunchArgument(k, default_value=v) for k, v in defaults.items()],

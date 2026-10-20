@@ -1,10 +1,12 @@
 """Real Ogre RGB/depth buffers through installed launch and DDS (desktop required)."""
 import json
+import hashlib
 import math
 import os
 from pathlib import Path
 import re
 import signal
+import statistics
 import struct
 import subprocess
 
@@ -187,6 +189,115 @@ def test_camera_disable_override_does_not_start_renderer(camera_car):
     assert car.node.count_publishers("/camera/front/color/image_raw")==0
     steps(car,40,"no-camera")
     car.until(lambda:bool(car.messages["cloud"]))
+
+
+def render_error_samples(directory, kind):
+    """Render co-located cameras so error checks use real ideal pixel values."""
+    car = Example(directory)
+    channels = ["color", "depth"] if kind == "rgbd" else ["color" if kind == "rgb" else "depth"]
+    try:
+        runtime = configuration(car, kind, width=160, height=120, rate=10)
+        data = yaml.safe_load(runtime.read_text())
+        model = ET.parse(data["robot"]["urdf"])
+        original = model.find("./litesim3d/sensor[@name='front_camera']")
+        errors = {}
+        for variant in ("ideal", "bias", "noise"):
+            name = "front_camera" if variant == "ideal" else "camera_" + variant
+            sensor = original if variant == "ideal" else copy.deepcopy(original)
+            sensor.set("name", name)
+            override(sensor, {"topic": "camera/" + variant})
+            if variant != "ideal":
+                model.find("litesim3d").append(sensor)
+            values = {}
+            if "color" in channels:
+                values.update(color_bias_dn=[0, 0, 0] if variant == "ideal" else [7, -5, 11],
+                              color_sigma_dn=[2, 3, 4] if variant == "noise" else [0, 0, 0])
+            if "depth" in channels:
+                values.update(depth_bias_m=0 if variant == "ideal" else .05,
+                              depth_sigma_m=.01 if variant == "noise" else 0)
+            errors[name] = values
+            for channel in channels:
+                key = variant + "_" + channel
+                topic = f"/camera/{variant}/{channel}"
+                car.subscribe(key, Image, topic + "/image_raw", 100)
+                car.subscribe(key + "_info", CameraInfo, topic + "/camera_info", 100)
+        model.write(data["robot"]["urdf"], encoding="unicode")
+        noise = directory / "noise.yaml"
+        noise.write_text(yaml.safe_dump({"sensors": errors}))
+        car.start(runtime=str(runtime), noise_config=str(noise), paused="true", reliable_sensors=True)
+        topics = [f"/camera/{v}/{c}/image_raw" for v in ("ideal", "bias", "noise") for c in channels]
+        car.until(lambda: all(json.loads(car.status().get("subscription_matches", "{}")).get(t, 0) >= 1
+                             for t in topics))
+        keys = [v + "_" + c for v in ("ideal", "bias", "noise") for c in channels]
+        for frame in range(1, 4):
+            steps(car, 20, f"render-errors-{frame}")
+            car.until(lambda: all(len(car.messages[k]) == frame and len(car.messages[k+"_info"]) == frame
+                                 for k in keys))
+        samples = {key: list(car.messages[key]) for key in keys}
+        for key, frames in samples.items():
+            assert [stamp(m.header.stamp) for m in frames] == [100_000_001, 200_000_001, 300_000_001]
+            for image, info in zip(frames, car.messages[key + "_info"]):
+                assert image.header == info.header
+                ideal_info = car.messages["ideal_" + key.rsplit("_", 1)[1] + "_info"][0]
+                assert list(info.k) == list(ideal_info.k) and list(info.d) == list(ideal_info.d)
+            if key.endswith("_color"):
+                from PyQt5.QtGui import QImage
+                image = frames[0]
+                assert QImage(bytes(image.data), image.width, image.height, image.step,
+                              QImage.Format_RGB888).save(str(directory / (key + ".png")))
+        return samples
+    finally:
+        car.close()
+
+
+@pytest.mark.parametrize("kind", ["rgb", "depth", "rgbd"])
+def test_rendered_noise_profiles_bias_statistics_and_seed_replay(tmp_path, kind):
+    samples = render_error_samples(tmp_path / "first", kind)
+    replay = render_error_samples(tmp_path / "replay", kind)
+    evidence = {"kind": kind, "seed_replay": True, "statistics": {}, "sha256": {}}
+    for key, frames in samples.items():
+        assert [bytes(m.data) for m in frames] == [bytes(m.data) for m in replay[key]], key
+        evidence["sha256"][key] = [hashlib.sha256(bytes(m.data)).hexdigest() for m in frames]
+    for channel in ("color", "depth"):
+        if "ideal_" + channel not in samples:
+            continue
+        ideal = samples["ideal_" + channel]
+        biased = samples["bias_" + channel]
+        noisy = samples["noise_" + channel]
+        assert bytes(ideal[0].data) == bytes(ideal[1].data), "zero-error static rendering changed"
+        assert bytes(noisy[0].data) != bytes(noisy[1].data), "noise must vary across timestamps"
+        if channel == "color":
+            raw = bytes(ideal[0].data)
+            assert max(raw) > 80 and len(set(raw)) > 20, "renderer returned a blank image"
+            bias = [7, -5, 11]
+            assert bytes(biased[0].data) == bytes(max(0, min(255, v + bias[i % 3]))
+                                               for i, v in enumerate(raw))
+            for component, sigma in enumerate((2, 3, 4)):
+                # Exclude clipping when estimating the Gaussian distribution.
+                residuals = [float(m.data[i]) - raw[i] - bias[component] for m in noisy
+                             for i in range(component, len(raw), 3) if 32 <= raw[i] <= 223]
+                assert len(residuals) > 1000
+                mean, deviation = statistics.mean(residuals), statistics.pstdev(residuals)
+                assert abs(mean) < .15 and deviation == pytest.approx(sigma, rel=.08)
+                evidence["statistics"][f"color_{component}"] = {"mean_dn": mean, "sigma_dn": deviation}
+        else:
+            def values(image):
+                assert image.encoding == "32FC1" and not image.is_bigendian
+                return struct.unpack("<" + "f" * (image.width * image.height), bytes(image.data))
+            raw, shifted = values(ideal[0]), values(biased[0])
+            assert sum(map(math.isfinite, raw)) > len(raw) * .1
+            for value, actual in zip(raw, shifted):
+                if math.isfinite(value) and .1 <= value + .05 <= 20:
+                    assert actual == pytest.approx(value + .05, abs=2e-6)
+                else:
+                    assert math.isnan(actual)
+            residuals = [value - raw[i] - .05 for m in noisy for i, value in enumerate(values(m))
+                         if math.isfinite(raw[i]) and .2 < raw[i] < 19.8]
+            assert len(residuals) > 1000 and all(map(math.isfinite, residuals))
+            mean, deviation = statistics.mean(residuals), statistics.pstdev(residuals)
+            assert abs(mean) < .0005 and deviation == pytest.approx(.01, rel=.05)
+            evidence["statistics"]["depth"] = {"mean_m": mean, "sigma_m": deviation}
+    (tmp_path / "camera-noise-evidence.json").write_text(json.dumps(evidence, indent=2))
 
 
 def test_closing_previews_preserves_camera_data_and_renderer_failure_is_fatal(camera_car):

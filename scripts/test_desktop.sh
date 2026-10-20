@@ -9,11 +9,14 @@ set -u
 run_dir="$(python3 "$project_dir/scripts/paths.py" evidence)/desktop/run-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$run_dir"
 export LWS_GUI_TESTS=1 LWS_4W_GUI=1 ROS_LOCALHOST_ONLY=1 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
-python3 "$project_dir/scripts/checks/run_checked.py" --timeout 300 --xml "$run_dir/runner.xml" --log "$run_dir/desktop.log" -- \
+python3 "$project_dir/scripts/checks/run_checked.py" --timeout 60 --xml "$run_dir/renderer.xml" --log "$run_dir/renderer.log" -- \
+  "$(dirname "$prefix")/build/litesim3d_gui/camera_sensor_test" "$run_dir/renderer"
+python3 "$project_dir/scripts/checks/run_checked.py" --timeout 600 --xml "$run_dir/runner.xml" --log "$run_dir/desktop.log" -- \
   python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" \
   "$project_dir/examples/wheel_car_4w/wheel_car_4w_sim/test/test_cameras.py" \
   "$project_dir/examples/wheel_car_4w/wheel_car_4w_sim/test/test_sdf_runtime.py::test_viewer_only_subscribes_and_can_close_without_stopping_simulation" \
   "$project_dir/examples/wheel_car_4w/wheel_car_4w_sim/test/test_wheel_car_4w.py::test_rviz_starts_and_consumes_installed_model" \
+  "$project_dir/litesim3d_ros2/test/test_sensor_plugins_ros.py::test_explicit_camera_plugins_real_render_noise_and_collision_truth" \
   "$project_dir/examples/drone_3d/drone_3d_sim/test/test_drone.py" \
   --basetemp="$run_dir/cases" --junitxml="$run_dir/desktop.xml"
 printf 'Desktop evidence: %s\n' "$run_dir"

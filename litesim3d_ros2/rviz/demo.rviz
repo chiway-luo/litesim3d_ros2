@@ -35,13 +35,6 @@ Visualization Manager:
       Color Transformer: AxisColor
       Axis: Z
       Decay Time: 0
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Scene
-      Enabled: true
-      Topic:
-        Value: /scene
-        Reliability Policy: Reliable
-        Durability Policy: Transient Local
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: true

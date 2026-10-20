@@ -45,7 +45,7 @@ mkdir -p "$ROS_LOG_DIR"
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```
 
-默认同时启动 RSP、仿真和独立三维查看器，**不需要再手工启动模型发布器或单独的传感器节点**。默认 16 线×512 列、10 Hz rolling 激光、1 cm测距标准差，200 Hz raw IMU，50 Hz odom，5 ms 积分步长。机械多线、球面带非重复扫描和圆形花瓣扫描的切换及真实规格参考，见 [雷达配置说明](雷达配置说明.md)。
+默认同时启动 RSP、仿真和独立三维查看器，**不需要再手工启动模型发布器或单独的传感器节点**。默认 16 线×512 列、10 Hz rolling 激光、零测距噪声，200 Hz raw IMU，50 Hz odom，5 ms 积分步长。机械多线、球面带非重复扫描和圆形花瓣扫描的切换及真实规格参考，见 [雷达配置说明](雷达配置说明.md)。
 
 桌面不可用或只测算法时关闭查看器：
 
@@ -192,7 +192,7 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 | 测距误差 | range_bias_m / range_sigma_m / dropout |
 | 最大量程边界显示 | publish_range_boundary；默认开启，距离由max_range_m决定；辅助点与实际回波分话题 |
 | IMU 误差 | accel_bias / gyro_bias / accel_sigma / gyro_sigma |
-| 非理想里程计 | odometry 插件的 noise，设置 scale/bias/sigma；不改变真实运动 |
+| 非理想里程计 | odometry 插件的 noise，设置 scale_error/bias/sigma；不改变真实运动 |
 | 场景障碍 | SDF include/model；尺寸和 pose 按米/弧度 |
 | 障碍物运动 | 当前所有环境障碍固定；旧 motion 字段拒绝非零速度 |
 | 算法要求 reliable | ros.yaml 中 sensor_reliable=true |
@@ -216,6 +216,7 @@ python3 docs/examples/ros_client.py --stamped --drive --duration 5
 | --- | --- |
 | assets_root / world | wheel_car_4w_models share / office.sdf |
 | runtime | 安装的 config/runtime.yaml |
+| noise_config | 空；按实例注入误差，见[传感器配置](../../docs/usage/传感器配置.md) |
 | model_arguments | {}；Xacro 参数映射，例如 {camera_enabled: true} |
 | gui | true；仅查看三维场景，false 无窗口 |
 | collision_budget_enabled | false；仅关闭预算，保留碰撞检测 |
@@ -274,5 +275,7 @@ mkdir -p "${evidence_dir}/wheel-car-4w/manual"
 ## 7. 后续接入
 
 - [雷达配置说明](雷达配置说明.md)：雷达预设、范围与精度语义。
-- [接入与使用手册](../../docs/usage/接入与使用手册.md)：模型、算法、参数、录包与排障。
+- [接入与使用手册](../../docs/usage/接入与使用手册.md)：启动、控制与算法接入。
+- [接口文档](../../docs/api/README.md)：消息/服务、参数和数据格式。
+- [记录与排障](../../docs/usage/记录与排障.md)：录包、回放与故障定位。
 - [四轮车与雷达测试](../../docs/testing/四轮车与雷达测试.md)：测试入口、结果与未验证范围。

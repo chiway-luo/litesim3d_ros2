@@ -75,7 +75,7 @@ lidars:
     ring_delays_s:                  # 各线延迟 s；16 个值；<1/(10*512)=0.0001953125。
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     range_bias_m: 0.0              # 固定测距偏置 m，可正可负。
-    range_sigma_m: 0.01            # 每点高斯标准差 m；1 cm 使静止帧也有测距波动，设0可理想复现。
+    range_sigma_m: 0.0  # 默认理想测距；通过 noise_config 注入误差。
     dropout: 0.0                    # [0,1] 丢点概率；保留槽位，xyz=NaN。
 
 imus:
@@ -91,8 +91,8 @@ imus:
 
 odom:
   mode: ideal                      # ideal / noisy；非默认误差必须同时选择 noisy。
-  linear_scale: 1.0                # 正数，无量纲，线速度比例误差。
-  angular_scale: 1.0               # 正数，无量纲，角速度比例误差。
+  linear_scale_error: 0.0          # 无量纲，必须 > -1；0 理想，0.02 表示 +2%。
+  angular_scale_error: 0.0         # 无量纲，必须 > -1；0 理想。
   linear_bias: 0.0                 # m/s，测量速度偏置。
   angular_bias: 0.0                # rad/s，测量角速度偏置。
   linear_sigma: 0.0                # m/s，非负速度噪声标准差。

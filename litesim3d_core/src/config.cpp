@@ -412,12 +412,19 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
       }
     }
     if (auto o = n["odom"]) {
-      keys(o, {"pose_covariance", "twist_covariance", "mode", "linear_scale", "angular_scale", "linear_bias", "angular_bias", "linear_sigma", "angular_sigma"}, "odom");
+      keys(o, {"pose_covariance", "twist_covariance", "mode", "linear_scale", "angular_scale",
+               "linear_scale_error", "angular_scale_error", "linear_bias", "angular_bias", "linear_sigma", "angular_sigma"}, "odom");
       const auto mode = get<std::string>(o, "mode", "ideal");
       require(mode == "ideal" || mode == "noisy", "invalid odom mode");
       cfg.odom_error.enabled = mode == "noisy";
       auto &e = cfg.odom_error;
       e.linear_scale = get(o, "linear_scale", 1.0); e.angular_scale = get(o, "angular_scale", 1.0);
+      const double linear_error = get(o, "linear_scale_error", 0.0), angular_error = get(o, "angular_scale_error", 0.0);
+      require(std::isfinite(linear_error) && linear_error > -1 && std::isfinite(angular_error) && angular_error > -1,
+              "odom scale errors must be finite and greater than -1");
+      require((linear_error == 0 || e.linear_scale == 1) && (angular_error == 0 || e.angular_scale == 1),
+              "use odom scale_error or legacy scale, not both");
+      e.linear_scale *= 1 + linear_error; e.angular_scale *= 1 + angular_error;
       e.linear_bias = get(o, "linear_bias", 0.0); e.angular_bias = get(o, "angular_bias", 0.0);
       e.linear_sigma = get(o, "linear_sigma", 0.0); e.angular_sigma = get(o, "angular_sigma", 0.0);
       require(e.enabled || (e.linear_scale == 1 && e.angular_scale == 1 && e.linear_bias == 0 && e.angular_bias == 0 && e.linear_sigma == 0 && e.angular_sigma == 0), "ideal odom cannot specify errors");

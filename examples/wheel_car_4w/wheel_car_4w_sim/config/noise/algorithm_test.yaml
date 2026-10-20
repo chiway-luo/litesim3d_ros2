@@ -1,0 +1,22 @@
+# 算法扰动测试示例：以下数值是人为测试条件，不代表任何硬件标定或精度指标。
+# 建议复制后每次只改变一类误差；固定 runtime simulation.seed 便于复现。
+odometry:
+  linear_scale_error: [0.02, 0.0]  # 前向速度 +2%。
+  angular_scale_error: 0.01       # yaw 角速度 +1%。
+  linear_bias_mps: [0.005, 0.0]   # 静止时也会产生积分漂移。
+  angular_bias_radps: 0.002
+  linear_sigma_mps: [0.01, 0.0]   # 每次解算的高斯标准差。
+  angular_sigma_radps: 0.005
+sensors:
+  roof_lidar:
+    range_bias_m: 0.01
+    range_sigma_m: 0.02
+    dropout: 0.0                 # 需要随机丢点时再提高，范围 [0,1]。
+  body_imu:
+    accel_bias: [0.02, -0.01, 0.03]   # m/s²，传感器 xyz 轴。
+    gyro_bias: [0.001, 0.0, -0.001]  # rad/s，传感器 xyz 轴。
+    accel_sigma: [0.02, 0.02, 0.02]
+    gyro_sigma: [0.001, 0.001, 0.001]
+  front_camera:
+    color_bias_dn: [0.0, 0.0, 0.0]
+    color_sigma_dn: [2.0, 2.0, 2.0]  # RGB 像素 DN；仅启用相机时产生图像。

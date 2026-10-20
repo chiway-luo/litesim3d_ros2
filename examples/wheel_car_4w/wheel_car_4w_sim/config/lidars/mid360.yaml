@@ -14,11 +14,11 @@ lidar:
   vertical_max_deg: 52.0           # 标称最大俯仰角；裁剪后槽位仍存在，但不发射射线。
   min_range_m: 0.1                 # 规格盲区；0.1~0.2 m 厂家不保证精度。
   max_range_m: 40.0                # 100 klx、10%反射率下规格；80%目标规格为70 m。
-  publish_range_boundary: true     # 无命中时在40 m处显示辅助边界；独立 /points_raw/range_boundary，非实际回波。
-  range_sigma_m: 0.02              # 简化固定 2 cm 1σ；对应10 m条件，不是全量程标定模型。
+  publish_range_boundary: false    # 默认只显示命中回波；需要调试量程时才开启独立的 range_boundary 辅助层。
+  range_sigma_m: 0.0  # 默认理想测距；通过 noise_config 注入误差。
   range_bias_m: 0.0                # m；可注入固定偏差。
   dropout: 0.0                     # 人工额外丢点概率 [0,1]。
   ring_delays_s: []                # 非重复扫描模式不允许机械线束延时。
-  point_layout: xyzirt_v1          # PointCloud2；不输出 livox_ros_driver2/CustomMsg。
+  point_layout: xyzirt_v1          # 核心内部布局；ROS 输出由 lidar_interface / xfer_format 选择。
   self_filter: robot               # 排除本车外壳。
   excluded_links: []               # self_filter=links 时使用。

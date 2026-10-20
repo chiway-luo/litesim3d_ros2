@@ -1,0 +1,11 @@
+:root {
+  --docs-font-sans: "Microsoft YaHei", "PingFang SC", -apple-system,
+    BlinkMacSystemFont, "Hiragino Sans GB", "Noto Sans CJK SC",
+    "Helvetica Neue", Arial, sans-serif;
+}
+html, body, button, input, select, textarea,
+.wy-menu-vertical, .rst-content { font-family: var(--docs-font-sans); }
+.wy-nav-content { max-width: 1120px; }
+.rst-content table.docutils td { white-space: normal; vertical-align: top; }
+.rst-content img { height: auto; }
+.rst-content code { overflow-wrap: anywhere; }

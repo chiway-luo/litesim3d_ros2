@@ -145,6 +145,45 @@ TEST(SensorPlugins, CameraKindsBiasClippingNanEndianAndIndependentNoise) {
     auto bad = image(kind,1,big); bad.width = 17; EXPECT_THROW(plugin->processImage(bad),std::runtime_error);
   }
 }
+TEST(SensorPlugins, ZeroErrorsPreserveImuAndAllCameraMeasurements) {
+  lp::Loader loader; Scene scene; auto c = context(scene);
+  auto imu = loader.sensor(classes[1]); imu->initialize(init(), config(classes[1]));
+  lp::SensorOutput output; imu->step(c, output); ASSERT_EQ(output.imus.size(), 1u);
+  EXPECT_EQ(output.imus[0].acceleration, Vec3(0, 0, 9.80665));
+  EXPECT_EQ(output.imus[0].angular_velocity, Vec3::Zero());
+  for (size_t n = 2; n < classes.size(); ++n) {
+    auto camera = loader.sensor(classes[n]); auto p = config(classes[n]); p["width"] = p["height"] = 16;
+    camera->initialize(init(), p);
+    auto actual = image(n == 2 ? "rgb" : n == 3 ? "depth" : "rgbd"), expected = actual;
+    camera->processImage(actual);
+    EXPECT_EQ(actual.color, expected.color);
+    EXPECT_EQ(actual.depth, expected.depth);
+  }
+}
+
+TEST(SensorPlugins, SensorNoiseChangesMeasurementsButNotWorldOrOdometry) {
+  auto cfg = base();
+  cfg.plugins = {declaration(0, "lidar", {{"columns", 4}, {"horizontal_start_deg", 0}, {"horizontal_end_deg", .001}}),
+                 declaration(1, "imu")};
+  auto noisy_cfg = cfg;
+  noisy_cfg.plugins[0].parameters["range_sigma_m"] = .1;
+  noisy_cfg.plugins[1].parameters["accel_sigma"] = {.1, .1, .1};
+  noisy_cfg.plugins[1].parameters["gyro_sigma"] = {.01, .01, .01};
+  Scene scene; scene.sensor = {{"wall", "", Shape::box({.2, 20, 20}), pose({3, 0, 0})}}; scene.rebuild();
+  Simulator ideal(cfg, model(), scene), noisy(noisy_cfg, model(), scene);
+  ASSERT_TRUE(ideal.command({.2, .1})); ASSERT_TRUE(noisy.command({.2, .1}));
+  const auto a = advance(ideal, 100), b = advance(noisy, 100);
+  ASSERT_EQ(a.size(), b.size()); size_t changed_clouds = 0, changed_imus = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    EXPECT_EQ(a[i].snapshot.world_base.matrix(), b[i].snapshot.world_base.matrix());
+    EXPECT_EQ(a[i].snapshot.odom_base.matrix(), b[i].snapshot.odom_base.matrix());
+    ASSERT_EQ(a[i].clouds.size(), b[i].clouds.size());
+    ASSERT_EQ(a[i].imus.size(), b[i].imus.size());
+    for (size_t j = 0; j < a[i].clouds.size(); ++j) changed_clouds += a[i].clouds[j].data != b[i].clouds[j].data;
+    for (size_t j = 0; j < a[i].imus.size(); ++j) changed_imus += a[i].imus[j].acceleration != b[i].imus[j].acceleration;
+  }
+  EXPECT_GT(changed_clouds, 0u); EXPECT_GT(changed_imus, 0u);
+}
 TEST(SensorPlugins, MultiInstanceHostSchedulingTruthMountAndLegacyAdapter) {
   auto cfg = base(); cfg.plugins = {
     declaration(0,"front",{{"columns",4},{"rate_hz",10},{"horizontal_start_deg",0},{"horizontal_end_deg",.00001}}),

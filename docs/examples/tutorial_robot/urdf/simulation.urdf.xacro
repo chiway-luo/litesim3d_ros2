@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<robot name="wheel_car_4w" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- 复用已安装的机械模型、底盘、里程计和原传感器。 -->
+  <xacro:include filename="$(find wheel_car_4w_description)/urdf/simulation.urdf.xacro"/>
+  <link name="tutorial_imu_link"/>
+  <joint name="tutorial_imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="tutorial_imu_link"/>
+    <origin xyz="0.1 0 0.15" rpy="0 0 0"/>
+  </joint>
+  <litesim3d version="1">
+    <sensor name="tutorial_imu" class="litesim3d_imu/Imu">
+      <parameters file="package://litesim3d_imu/config/parameters.yaml"/>
+      <overrides>
+link: tutorial_imu_link
+topic: imu/tutorial
+rate_hz: 100.0
+accel_sigma: [0.0, 0.0, 0.0]
+gyro_sigma: [0.0, 0.0, 0.0]
+      </overrides>
+    </sensor>
+  </litesim3d>
+</robot>

@@ -1,0 +1,4 @@
+digraph G { rankdir=LR;graph [bgcolor="transparent",pad="0.2",nodesep="0.35",ranksep="0.5"]; node [shape=box,style="rounded,filled",fillcolor="#eef6fb",color="#457b9d",fontname="PingFang SC",fontsize=14,margin="0.16,0.12"]; edge [color="#52687a",fontname="PingFang SC",fontsize=12];
+a [label="请求 reset"]; p [label="预检请求 / 成员 / 初值"]; old [label="保留旧会话",fillcolor="#fff0d6"]; stop [label="停止旧进程组"]; n [label="创建新会话\n新的 run_id 与时钟"]; ready [label="内核 + 消费端就绪"]; ok [label="返回成功",fillcolor="#dcefe5"]; fail [label="会话失败\n不承诺回滚",fillcolor="#fce3e3"];
+a->p;p->old [label="失败"];p->stop [label="通过"];stop->n;n->ready;n->fail [label="失败"];ready->ok [label="全部就绪"];ready->fail [label="超时 / 失败"];
+}

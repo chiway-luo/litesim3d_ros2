@@ -989,6 +989,29 @@ TEST(URD03, MimicLimitsConstrainDriver) {
   EXPECT_NEAR(m.positions({})["mimic"], .2, 1e-12);
 }
 
+TEST(COR08, ZeroCenteredOdometryErrorsAndLegacyCompatibility) {
+  auto original = readText(resources / "config/demo.yaml");
+  original = replace(original, "../urdf/r01.urdf", (resources / "urdf/r01.urdf").string());
+  auto load = [&](const std::string &odom) {
+    auto file = temporary(original + "\nodom: {" + odom + "}\n", ".yaml");
+    try {
+      Scene scene; auto cfg = Config::load(file, scene);
+      std::filesystem::remove(file); return cfg;
+    } catch (...) { std::filesystem::remove(file); throw; }
+  };
+  auto ideal = load("mode: ideal, linear_scale_error: 0, angular_scale_error: 0");
+  EXPECT_FALSE(ideal.odom_error.enabled);
+  EXPECT_EQ(ideal.odom_error.linear_scale, 1);
+  auto noisy = load("mode: noisy, linear_scale_error: 0.02, angular_scale_error: -0.01");
+  EXPECT_NEAR(noisy.odom_error.linear_scale, 1.02, 1e-12);
+  EXPECT_NEAR(noisy.odom_error.angular_scale, .99, 1e-12);
+  EXPECT_EQ(load("mode: noisy, linear_scale: 1.1").odom_error.linear_scale, 1.1);
+  EXPECT_THROW(load("mode: ideal, linear_scale_error: 0.1"), std::runtime_error);
+  EXPECT_THROW(load("mode: noisy, linear_scale_error: -1"), std::runtime_error);
+  EXPECT_THROW(load("mode: noisy, angular_scale_error: .nan"), std::runtime_error);
+  EXPECT_THROW(load("mode: noisy, linear_scale: 1.1, linear_scale_error: 0.1"), std::runtime_error);
+}
+
 TEST(COR08, FullConfigAndInvalidBindings) {
   auto original = readText(resources / "config/demo.yaml");
   original = replace(original, "../urdf/r01.urdf", (resources / "urdf/r01.urdf").string());

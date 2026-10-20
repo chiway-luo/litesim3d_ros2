@@ -1,0 +1,4 @@
+digraph G { rankdir=LR;graph [bgcolor="transparent",pad="0.2",nodesep="0.35",ranksep="0.5"]; node [shape=box,style="rounded,filled",fillcolor="#eef6fb",color="#457b9d",fontname="PingFang SC",fontsize=14,margin="0.16,0.12"]; edge [color="#52687a",fontname="PingFang SC",fontsize=12];
+map [label="map（可选）",style="rounded,dashed"]; odom [label="odom"]; root [label="base_footprint\nURDF root"]; base [label="base_link"]; lidar [label="雷达安装 link"]; imu [label="IMU 安装 link"]; wheel [label="车轮 link"];
+map->odom [label="外部定位",style=dashed];odom->root [label="仿真桥接或外部估计器\n二选一"];root->base [label="RSP"];base->lidar [label="RSP"];base->imu [label="RSP"];base->wheel [label="RSP + joint_states"];
+}

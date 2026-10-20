@@ -34,13 +34,17 @@ wheels:
     radius_m: 0.1
 # 编码器解算后的速度误差；位姿按每个实际时间段积分，reset 重置随机序列。
 noise:
-  # 车体 [x,y] 两方向速度比例，无量纲，每项必须 > 0。
+  # [x,y] 速度相对比例误差，无量纲，每项 > -1；0 理想，0.02 表示 +2%。
+  linear_scale_error: [0.0, 0.0]
+  # yaw 角速度相对比例误差，无量纲，> -1；0 理想。
+  angular_scale_error: 0.0
+  # 兼容旧配置：速度倍率，理想为 1；不能和非零 linear_scale_error 同时使用。
   linear_scale: [1.0, 1.0]
   # 车体 [x,y] 两方向速度偏置，m/s，有限实数；非零可造成静止漂移。
   linear_bias_mps: [0.0, 0.0]
   # 车体 [x,y] 两方向独立高斯速度噪声标准差，m/s，每项 >= 0。
   linear_sigma_mps: [0.0, 0.0]
-  # yaw 速度比例，无量纲，必须 > 0。
+  # 兼容旧配置：yaw 速度倍率，理想为 1；不能和非零 angular_scale_error 同时使用。
   angular_scale: 1.0
   # yaw 速度偏置，rad/s，有限实数。
   angular_bias_radps: 0.0

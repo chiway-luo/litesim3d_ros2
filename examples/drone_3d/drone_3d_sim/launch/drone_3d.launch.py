@@ -15,7 +15,7 @@ def generate_launch_description():
         'world': 'drone_arena.sdf',
         'runtime': str(share / 'config/runtime.yaml'),
         'params': str(share / 'config/ros.yaml'),
-        'config': '', 'lidar_profile': 'config',
+        'config': '', 'lidar_profile': 'config', 'noise_config': '',
         'lidar_profiles_dir': '',
         'rviz_config': str(Path(get_package_share_directory('litesim3d_ros2')) / 'rviz/demo.rviz'),
         'gui': 'true', 'rviz': 'false', 'cameras': '', 'camera_view': 'false',

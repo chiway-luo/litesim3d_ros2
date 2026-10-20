@@ -146,7 +146,8 @@ Eigen::MatrixXd inverseWheelMatrix(const Eigen::MatrixXd &matrix) {
   return svd.solve(Eigen::MatrixXd::Identity(matrix.rows(), matrix.rows()));
 }
 Json EncoderIntegrator::defaults() {
-  return {{"linear_scale", {1.0, 1.0}}, {"linear_bias_mps", {0.0, 0.0}}, {"linear_sigma_mps", {0.0, 0.0}},
+  return {{"linear_scale_error", {0.0, 0.0}}, {"angular_scale_error", 0.0},
+          {"linear_scale", {1.0, 1.0}}, {"linear_bias_mps", {0.0, 0.0}}, {"linear_sigma_mps", {0.0, 0.0}},
           {"angular_scale", 1.0}, {"angular_bias_radps", 0.0}, {"angular_sigma_radps", 0.0}};
 }
 void EncoderIntegrator::initialize(const Initialization &init, const Json &noise) {
@@ -158,6 +159,14 @@ void EncoderIntegrator::initialize(const Initialization &init, const Json &noise
   };
   linear_scale_ = vector("linear_scale"); linear_bias_ = vector("linear_bias_mps"); linear_sigma_ = vector("linear_sigma_mps");
   angular_scale_ = positive(p, "angular_scale"); angular_bias_ = number(p, "angular_bias_radps"); angular_sigma_ = number(p, "angular_sigma_radps");
+  const auto linear_error = vector("linear_scale_error");
+  const auto angular_error = number(p, "angular_scale_error");
+  require((linear_error.array() > -1).all() && angular_error > -1, "odometry scale errors must be greater than -1");
+  require(linear_error.isZero(0) || (linear_scale_.array() == 1).all(),
+          "use linear_scale_error or legacy linear_scale, not both");
+  require(angular_error == 0 || angular_scale_ == 1, "use angular_scale_error or legacy angular_scale, not both");
+  linear_scale_ = linear_scale_.cwiseProduct(Eigen::Vector2d::Ones() + linear_error);
+  angular_scale_ *= 1 + angular_error;
   require((linear_scale_.array() > 0).all() && (linear_sigma_.array() >= 0).all() && angular_sigma_ >= 0, "invalid odometry noise scale/sigma");
   seed_ = init.seed;
   for (unsigned char c : init.instance) seed_ = (seed_ ^ c) * 1099511628211ULL;

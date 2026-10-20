@@ -48,21 +48,7 @@ SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光�
 
 `wheel_car_4w_sim/config/runtime.yaml` 现在指向组合 `simulation.urdf.xacro`，并保留碰撞、地形和 `entity_bindings`。组合模型提供完整机器人结构、材质及插件；同名 SDF model 只提供 root 出生位姿。没有 `robot.urdf` 时保留 SDF 定义机器人和旧 YAML 绑定的兼容入口。两种方式都不能在 runtime 重复场景几何、初始位姿、步长或目标速率。完整规则见 [模型组合与插件迁移](模型组合与插件迁移.md)。
 
-| launch 参数 | 默认和含义 |
-| --- | --- |
-| `assets_root` | `wheel_car_4w_models` 包 share 路径；覆盖时目录下仍需有 models/worlds |
-| `world` | `office.sdf`；单文件名相对 assets_root/worlds，也可指定显式文件路径 |
-| `runtime` | 安装的 config/runtime.yaml |
-| `model_arguments` | {}；传入 Xacro 的参数映射 |
-| `gui` | true；false 关闭三维观察窗口，相机渲染由 cameras 配置独立决定 |
-| `cameras` | 空表示沿用 runtime 中 enabled；true/false 只覆盖所有已定义相机的开关，不改变各自类型；示例类型默认 rgb |
-| `camera_view` | false；相机默认只发布 ROS 2 数据，不弹出预览；true 显式打开可选预览 |
-| `collision_budget_enabled` | false；唯一碰撞预算开关 |
-| `real_time_factor` | 空表示使用 SDF；0 表示不限速，正数表示目标倍率 |
-| `paused` | 沿用 ros.yaml；true/false 显式覆盖 |
-| `params`、`lidar_profile`、`manifest` | 保留原示例的 ROS 参数、雷达预设和运行清单接口 |
-| `rviz` | false；需要算法图层时显式开启 |
-| `config` | 空；显式传入旧 YAML 时选择旧 URDF/YAML 回归入口，此时不使用 SDF 查看器 |
+完整参数、默认值及通用入口与车型入口的区别见 [启动与节点参数](../api/启动与节点参数.md)。
 
 自定义世界示例：
 
@@ -74,49 +60,21 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 
 支持本地相对路径、`model://`、`file://`、`package://`；相对路径以声明资源的文件为基准。同名资源匹配多个不同目录时报错。Fuel 资产需预先下载到本地。导入记录源 SDF、网格、MTL、纹理等资源的 SHA-256；窗口核验资源未在导入后改变。
 
-## 当前兼容范围
+## 导入资源前检查
 
-三维查看器使用 [LiteSim SVG 图标](../../litesim3d_gui/resources/icons/litesim3d.svg)（蓝色圆角底、白色立方体与青色扫描环）。矢量资源随程序编译，Qt 启用高清图标渲染；安装包另包含由同一 SVG 导出的 PNG。
+当前入口使用固定环境和一个受控机器人。先核对机器人 ID、资源文件、碰撞几何和材质；资源缺失或不支持的特性会在导入时报告具体原因。平面用所需范围的薄 box，原生 SDF 传感器转换为 LiteSim 声明；不能直接执行 Gazebo 动力学插件。
 
-| 内容 | 当前行为 |
-| --- | --- |
-| SDF 1.9、include、嵌套静态模型 | 使用 libsdformat12，解析 relative_to、attached_to、expressed_in |
-| 单个受控机器人 + 固定场景 | robot.id 必须匹配受控模型；其余场景模型固定在初始位姿，忽略其 static=false 的运动含义；缺 collision 的 link 使用 visual 补齐 |
-| box、sphere、cylinder、STL、OBJ、DAE | 支持正缩放；DAE 必须明确 Z_UP，保留节点变换和单位 |
-| 多 visual/collision、多材质槽 | 显式 collision 独立保留；场景 link 完全缺少 collision 时由 visual 补齐，支撑角色同样生效；机器人仍按自身碰撞导入规则处理 |
-| OBJ/MTL、DAE 漫反射纹理 | 保留每个材质槽、UV、颜色和纹理；缺失法向量按三角面补齐 |
-| SDF 基础材质 | 颜色、透明度、自发光、双面、阴影；世界 ambient/background 和三种灯光 |
-| SDF PBR metal | albedo、normal、roughness、metalness、emissive、light map 映射到 Ogre2；逐项验证范围见测试报告 |
-| 不支持的视觉特性 | Classic material 脚本、任意 shader、specular 工作流、AO map、嵌入式图片明确拒绝；网格内非 diffuse 贴图需移到 SDF PBR 定义 |
-| 其他不支持输入 | plane、heightmap、polyline、submesh 选取、骨骼 actor、外部 plugin、嵌套关节机器人、原生 SDF sensor：报错，不悄悄忽略 |
+完整格式、材质、网格与拒绝项见 [SDF 兼容范围](../api/坐标与模型约定.md#sdf-资源兼容范围)。文件解析成功不等于完成视觉或动力学验收。
 
-平面请在资产中**显式**改用所需范围的薄 box；原生 SDF 传感器需转换为 runtime 中的 LiteSim 参数。这不是任意 Gazebo 世界或动力学插件的直接替代。旧多机世界仍走原 `world.launch.py`，本次未扩展为多种 SDF 机器人的混合世界。
+## 控制负载与观察速率
 
-支持格式不代表全部资产已做视觉验收；文件能解析、贴图能解码、图形属性校准是不同验证层次。材质不支持或缺文件会报出具体资源，不以灰模作为成功结果。当前使用 Qt 支持的纹理图片解码格式；建议 PNG/JPEG。
+需要在加载时限制碰撞复杂度可开启 collision_budget_enabled；关闭时仍执行碰撞检测。超预算会拒绝加载，实际修改应简化自己模型的 collision，保留必要通行空间。阈值见 [碰撞预算](../api/坐标与模型约定.md#碰撞预算与速率)。
 
-## 碰撞预算与速率
-
-预算关闭时，碰撞检测、防穿透和碰撞响应照常执行，仅不实施可选复杂度上限。开启时执行以下内部规则，超限在加载时拒绝，不删面、不丢弃碰撞体、不替换成包围盒：
-
-| 检查 | 内部阈值 |
-| --- | --- |
-| 单碰撞 mesh | 10,000 三角面 |
-| 世界碰撞 mesh（按实例） | 200,000 三角面 |
-| 动态碰撞 mesh（按实例） | 20,000 三角面 |
-| 单机器人碰撞体 | 64 个 |
-| 世界碰撞体 | 1,024 个 |
-| 固定拓扑潜在碰撞对 | 每次查询保守上界 20,000 对 |
-| 碰撞结构估算内存 | 256 MiB；不是进程 RSS 硬上限 |
-
-本版采用固定拓扑的加载预检，没有运行时添加模型，也没有实现通用的每步耗时/内存强制限额。预算不限制视觉网格，且不承诺总 CPU/GPU 占用上限。视觉和射线网格不会自动创建 FCL；同一资源确实被 collision 引用时才创建碰撞结构。
-
-实际 RTF 为 `Δ已提交仿真时间 / Δ单调墙钟时间`，约 1 秒滚动窗口，5 Hz 发布。目标 50% 就显示接近 50%，实际 63% 不会被改写为 100%；FPS 单独计算。重计算超过周期会自然减慢，固定积分步长不变，不靠跳过碰撞或传感器事件追赶。
-
-暂停显示 0%，统计仍按墙钟发布；run_id 或时间回跳重建基线。统计超过 2 秒没有更新显示连接中断。统计发布仍使用现有 ROS executor，极重单次计算可能延迟心跳；窗口会标识超时，并未另建可抢占物理步骤的线程。
+real_time_factor 只设目标节拍；实际速度由场景、传感器和渲染开销决定。查看器分别显示实际仿真倍率和显示 FPS，暂停显示 0%。出现超时或倍率下降时，按 [性能与排障](记录与排障.md) 检查。
 
 ## 构建与平台
 
-开发与运行环境为 Ubuntu 22.04 + ROS 2 Humble。SDF 与图形模块依赖 libsdformat12、Gazebo Rendering 6、Qt 5 Widgets 和 Qt 5 SVG；依赖安装命令见 [开发环境](../../README.zh-CN.md#开发环境)，构建方式见 [安装与构建](安装与构建.md)。
+开发与运行环境为 Ubuntu 22.04 + ROS 2 Humble。SDF 与图形模块依赖 libsdformat12、Gazebo Rendering 6、Qt 5 Widgets 和 Qt 5 SVG；依赖安装命令见[安装依赖](安装与构建.md#安装依赖)，构建方式见[安装与构建](安装与构建.md)。
 
 无需图形包时使用 `LWS_BUILD_GUI=0 bash scripts/build.sh`，运行时加 `gui:=false cameras:=false`。单独内核不启动 ROS 节点、不链接 Qt/Ogre；插件加载使用 pluginlib 及已安装插件。启用 RGB/深度相机需要图形包和可用的 Ogre2 图形环境，即使关闭所有窗口也需要渲染后端。图形功能的验证需对应具体平台和渲染环境，内核测试通过不代表图形功能已完成验证。
 
@@ -146,32 +104,15 @@ rate_hz: 30.0
 </sensor>
 ```
 
-以上声明放在 `<litesim3d version="1">` 块中；完整参数、RGB/深度噪声与多实例接口见 [插件开发](../development/插件开发.md)。
+以上声明放在 `<litesim3d version="1">` 块中；完整参数、RGB/深度噪声与多实例接口见 [插件接口](../api/插件接口.md)。
 
-| 参数 | 含义 |
-| --- | --- |
-| 插件 class | RgbCamera：仅彩色；DepthCamera：仅深度；RgbdCamera：同步、已对齐的彩色和深度；每类在独立包中 |
-| enabled | 是否产生采样事件、创建渲染目标和发布器；false 不输出该相机数据 |
-| width / height | 像素分辨率；每边 16–4096，单相机不超过 8,294,400 像素 |
-| rate_hz | 每仿真秒的帧数，(0,240]；支持非整数和多个相机独立频率 |
-| horizontal_fov_deg | 水平视场角，(0,180)°；方形像素、主点居中，自动生成内参 |
-| near_clip_m / far_clip_m | 近、远裁剪面，0 < near < far，单位米 |
-| topic | 相对话题前缀；下表以 camera/front 为例 |
+类型、分辨率、帧率、视场和噪声参数见 [相机配置参考](../api/配置文件.md#cameras)。
 
 所有启用相机合计不超过 16,588,800 像素，这是独立于碰撞预算的图像缓冲限制，不是 GPU 帧率承诺。分辨率、频率和模型复杂度增加会降低实际 RTF。参数在启动时读取；当前不支持 `ros2 param set` 在线更改采样率、分辨率或增删相机。编辑模型实例配置后启动新会话；用 `runtime:=/绝对路径/my_runtime.yaml` 指向自己的组合模型，`cameras` 留空则保留逐台 enabled 设置。
 
 需要彩色加深度时，把类与参数文件一起替换为 `litesim3d_rgbd_camera/RgbdCamera` 和对应包配置；只需要深度时使用 `litesim3d_depth_camera/DepthCamera`。`cameras:=true` 只开启已声明的标准相机，不切换类型。旧 YAML 的 cameras 列表和 type 字段继续用于没有 sensor 扩展的兼容模型；两处同时声明会报冲突。
 
-| 话题 | 启用类型 | 消息 / 数据 |
-| --- | --- | --- |
-| /camera/front/color/image_raw | rgb / rgbd | sensor_msgs/Image，rgb8，带实际材质和贴图的彩色图 |
-| /camera/front/color/camera_info | rgb / rgbd | sensor_msgs/CameraInfo，与彩色图同时间戳、同 optical frame |
-| /camera/front/depth/image_raw | depth / rgbd | sensor_msgs/Image，32FC1，光轴 z 方向的米制深度；无有效深度为 NaN |
-| /camera/front/depth/camera_info | depth / rgbd | sensor_msgs/CameraInfo，与深度图同时间戳、同 optical frame |
-
-RGB-D 使用理想的同位姿、同分辨率、同内参双通道；两张图逐像素注册。深度表示依据 [ROS REP-118](https://reps.openrobotics.org/rep-0118/)，不是到相机中心的欧氏射线长度。K/P 的 fx=fy=width/(2 tan(horizontal_fov/2))，cx=(width−1)/2、cy=(height−1)/2，D 为 5 个零，R 为单位阵。当前是无畸变针孔模型，不模拟真实双目基线、ToF 多径、曝光、滚动快门或深度噪声；没有输出额外的深度点云或压缩图像。RGB/深度都观察完整 visual 场景，不受简化 collision 外形影响。
-
-图像与 CameraInfo 默认 best effort、KEEP_LAST 5，可通过现有 `ros.yaml` 的 `sensor_reliable` 统一改为 reliable。仿真帧时刻由内核事件调度产生，机器人及关节使用该时刻的真值位姿；同一时刻的相机批次同步提交给独立渲染进程，完成后发布。最多一个批次在途，渲染慢会降低 RTF，不通过观察窗口的刷新频率补帧、偷跳帧或重复旧帧。暂停不再采样，单步和请求去重仍有效。渲染器意外退出或请求超时会使本次仿真失败，不把失联当作有效图像。
+彩色、深度和 CameraInfo 的话题、编码、光学坐标、内参、噪声和无效值统一见 [相机数据接口](../api/传感器数据.md#camera) 与 [ROS 2 话题表](../api/ROS2接口.md)。组合模型的标准相机插件支持可配置噪声，默认偏差与噪声为零。
 
 可以直接订阅 ROS 2 话题，在算法或自己的可视化程序中使用图像。检查默认普通相机的数据：
 
@@ -182,4 +123,4 @@ ros2 topic hz /camera/front/color/image_raw
 
 独立只读预览作为可选调试工具保留，默认不运行。只有显式传入 `camera_view:=true` 才随 launch 启动，并按相机类型显示彩色图、深度伪彩色或两者。也可以手动执行 `ros2 run litesim3d_gui camera_view` 订阅普通相机；RGB-D 用 `--ros-args -p type:=rgbd`。预览参数只选择订阅和显示方式，不会启用或改变传感器类型。预览显示分辨率、配置频率、收到的仿真频率／墙钟 FPS、时间戳及状态。普通 RGB 预览不等待深度；深度伪彩色仅用于观察，ROS 数据仍是 float32 米。关闭预览或三维窗口不会停掉相机。`topic hz` 和预览墙钟 FPS 随 RTF 下降；例如 10 Hz 相机在实际 RTF=0.5 时约为现实每秒 5 帧。
 
-当前相机接入限于单机 SDF launch。原生 SDF `<sensor>` / Gazebo 插件仍不执行；相机通过上述 runtime 字段声明。旧多机入口和独立 `sim_headless` 没有渲染后端，遇到启用相机会明确拒绝；关闭相机后仍可走原纯 CPU 路径。
+当前相机接入限于单机 SDF launch。原生 SDF `<sensor>` / Gazebo 插件仍不执行；相机通过组合模型声明或兼容 runtime 字段配置。旧多机入口和独立 `sim_headless` 没有渲染后端，遇到启用相机会明确拒绝；关闭相机后仍可走原纯 CPU 路径。

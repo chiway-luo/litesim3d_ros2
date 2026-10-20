@@ -168,20 +168,22 @@ def run_case(directory, gui):
             rviz = h.process("rviz", [str(exe), "-d", str(config), "--ros-args", "-p", "use_sim_time:=true"])
             h.until(lambda: "OpenGl version" in (directory / "rviz.log").read_text(), timeout=15)
             assert rviz.poll() is None
-            # A live renderer with a wrong scene topic can still look healthy.
-            # Require RViz itself to subscribe to the one-shot scene with durable QoS.
-            def scene_subscriptions():
-                return [s for s in h.node.get_subscriptions_info_by_topic("/scene")
+            # RViz still renders the robot and measurements, but the synthetic
+            # environment MarkerArray is deliberately absent from the template.
+            def robot_subscriptions():
+                return [s for s in h.node.get_subscriptions_info_by_topic("/robot_description")
                         if s.node_name == "rviz"]
-            h.until(lambda: bool(scene_subscriptions()))
+            h.until(lambda: bool(robot_subscriptions()))
             assert all(s.qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL and
                        s.qos_profile.reliability == ReliabilityPolicy.RELIABLE
-                       for s in scene_subscriptions())
-            (directory / "rviz-scene-subscription.json").write_text(json.dumps([
-                {"node": s.node_name, "topic": "/scene", "type": s.topic_type,
+                       for s in robot_subscriptions())
+            assert not any(s.node_name == "rviz"
+                           for s in h.node.get_subscriptions_info_by_topic("/scene"))
+            (directory / "rviz-robot-subscription.json").write_text(json.dumps([
+                {"node": s.node_name, "topic": "/robot_description", "type": s.topic_type,
                  "durability": s.qos_profile.durability.name,
                  "reliability": s.qos_profile.reliability.name}
-                for s in scene_subscriptions()], indent=2) + "\n")
+                for s in robot_subscriptions()], indent=2) + "\n")
         publisher = h.node.create_publisher(Twist, "/cmd_vel", 1)
         h.until(lambda: publisher.get_subscription_count() == 1)
         # Node/RViz readiness does not guarantee DDS reader/writer matching.

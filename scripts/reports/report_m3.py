@@ -101,7 +101,7 @@ def main():
                if p.is_file() and '__pycache__' not in p.parts and p.suffix not in ('.pyc','.profraw')}
     (OUT/'source-sha256.json').write_text(json.dumps(artifacts,ensure_ascii=False,indent=2))
     lines=['# M3 测试报告','',f'本轮状态：**{status}**。验收平台为本机 macOS / Humble；Linux 和 8 小时长稳按用户要求延期。',
-           '','范围及 B3 门槛在正式测试前冻结，见 [M3 基线](M3基线.md)；启动和接口见 [M3 使用说明](M3使用说明.md)。',
+           '','范围及 B3 门槛在正式测试前冻结，见 [M3 基线](M3基线.md)；启动和接口见 [多机器人](../usage/多机器人.md) 与 [接口文档](../api/README.md)。',
            '','## 结果','', '| 用例 | 状态 | 可复查入口与证据 |','| --- | --- | --- |']
     for case in cases:
         evidence='；'.join(f'[{Path(r["evidence"]).name}](../{r["evidence"]})' for r in case['runs'])

@@ -25,7 +25,7 @@ export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 launch drone_3d_sim drone_3d.launch.py
 ```
 
-默认打开只读三维窗口，只允许旋转、平移、缩放。碰撞预算和相机默认关闭，RViz 默认关闭。同一 ROS domain 每次只启动一个仿真世界。关闭观察窗口不会停止仿真；Ctrl+C 退出整个 launch。
+默认打开只读三维窗口，只允许旋转、平移、缩放。碰撞预算和相机默认关闭，传感器偏置和噪声默认均为 0。需要观察点云和 TF 时追加 `rviz:=true`；内置 RViz 视图不显示 `/scene` 场景层。同一 ROS domain 每次只启动一个仿真世界。关闭观察窗口不会停止仿真；Ctrl+C 退出整个 launch。
 
 复杂飞行场地为 24 × 24 米，包含不同高度的门框、立柱、桥梁、悬空梁、阶梯平台、货架和起降区。门框开口、桥下和桌下按实际几何保留通路；所有碰撞检测都启用。地图、机器人、贴图均由独立的 [`drone_3d_models`](drone_3d_models/README.md) 资源包安装，通过 ament share 和本次 launch 的 `GZ_SIM_RESOURCE_PATH` 定位，不读取小车资源目录。
 
@@ -61,7 +61,7 @@ ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
 | 时钟与只读统计 | `/clock`、`/sim/status`、`/sim/stats` |
 | TF | `odom -> base_link -> lidar_link / imu_link / camera_optical_frame` |
 
-图形窗口根据世界真值显示模型。`odom` 从初始位姿开始为零，所以初始的世界高度 1.2 m 对应 odom.z=0。雷达运动畸变使用完整三维轨迹；相机和 IMU 使用采样时刻的三维位姿。暂停和单步沿用 [ROS 服务接口](../../docs/usage/接入与使用手册.md)。
+图形窗口根据世界真值显示模型。`odom` 从初始位姿开始为零，所以初始的世界高度 1.2 m 对应 odom.z=0。雷达运动畸变使用完整三维轨迹；相机和 IMU 使用采样时刻的三维位姿。暂停和单步沿用 [ROS 服务接口](../../docs/api/消息与服务.md)。
 
 ## 参数、普通相机与深度相机
 

@@ -1,6 +1,7 @@
 #include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
 #include "service_responses.hpp"
+#include "livox_outputs.hpp"
 #include <chrono>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <fstream>
@@ -109,7 +110,11 @@ public:
     rclcpp::PublisherOptions options;
     options.event_callbacks.incompatible_qos_callback =
         [this](rclcpp::QOSOfferedIncompatibleQoSInfo &) { ++qos_conflicts_; };
+    livox_ = std::make_unique<litesim3d_ros::LivoxOutputs>(*this, cfg, "", prefix_,
+        declare_parameter<std::string>("lidar_interface", "native"),
+        declare_parameter<int>("xfer_format", 1), declare_parameter<int>("livox_lidar_id", 0), options);
     for (auto &lidar : cfg.lidars) {
+      if (livox_->handles(lidar.topic)) continue;
       clouds_[lidar.topic] =
           create_publisher<sensor_msgs::msg::PointCloud2>(lidar.topic, sensor_qos, options);
       if (lidar.publish_range_boundary)
@@ -429,31 +434,33 @@ private:
           ++dropped_frames_;
           continue;
         }
-        sensor_msgs::msg::PointCloud2 m;
-        m.header.stamp = stamp(cloud.stamp);
-        m.header.frame_id = prefix_ + cloud.frame;
-        m.height = cloud.height;
-        m.width = cloud.width;
-        m.point_step = 24;
-        m.row_step = cloud.row_step;
-        m.is_bigendian = false;
-        m.is_dense = cloud.dense;
-        m.data = cloud.data;
-        const char *names[] = {"x", "y", "z", "intensity", "ring", "time"};
-        const uint32_t offsets[] = {0, 4, 8, 12, 16, 20};
-        for (size_t i = 0; i < 6; ++i) {
-          sensor_msgs::msg::PointField f;
-          f.name = names[i];
-          f.offset = offsets[i];
-          f.count = 1;
-          f.datatype = i == 4 ? 4 : 7;
-          m.fields.push_back(f);
-        }
-        clouds_.at(cloud.topic)->publish(m);
-        if (!cloud.range_boundary.empty()) {
-          m.data = cloud.range_boundary;
-          m.is_dense = false;
-          clouds_.at(cloud.topic + "/range_boundary")->publish(m);
+        if (!livox_->publish(cloud)) {
+          sensor_msgs::msg::PointCloud2 m;
+          m.header.stamp = stamp(cloud.stamp);
+          m.header.frame_id = prefix_ + cloud.frame;
+          m.height = cloud.height;
+          m.width = cloud.width;
+          m.point_step = 24;
+          m.row_step = cloud.row_step;
+          m.is_bigendian = false;
+          m.is_dense = cloud.dense;
+          m.data = cloud.data;
+          const char *names[] = {"x", "y", "z", "intensity", "ring", "time"};
+          const uint32_t offsets[] = {0, 4, 8, 12, 16, 20};
+          for (size_t i = 0; i < 6; ++i) {
+            sensor_msgs::msg::PointField f;
+            f.name = names[i];
+            f.offset = offsets[i];
+            f.count = 1;
+            f.datatype = i == 4 ? 4 : 7;
+            m.fields.push_back(f);
+          }
+          clouds_.at(cloud.topic)->publish(m);
+          if (!cloud.range_boundary.empty()) {
+            m.data = cloud.range_boundary;
+            m.is_dense = false;
+            clouds_.at(cloud.topic + "/range_boundary")->publish(m);
+          }
         }
         ++published_clouds_;
         const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -579,6 +586,8 @@ private:
     count_matches(clock_);
     count_matches(odom_);
     count_matches(joints_);
+    livox_->matches(matches);
+    data["livox_output"] = livox_->description();
     for (const auto &[topic, publisher] : clouds_) count_matches(publisher);
     for (const auto &[topic, publisher] : imus_) count_matches(publisher);
     for (const auto &[topic, publisher] : images_) count_matches(publisher);
@@ -681,6 +690,7 @@ private:
     data["rmw"] = rmw_get_implementation_identifier();
     data["bridge_source_sha256"] = LWS_BRIDGE_SHA256;
     data["frame_prefix"] = prefix_;
+    data["livox_output"] = livox_->description();
     std::ofstream out(manifest_path_);
     litesim3d::require(bool(out), "cannot write manifest: " + manifest_path_);
     out << data.dump(2) << '\n';
@@ -690,6 +700,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stats_, scene_description_pub_, scene_state_;
   rclcpp::TimerBase::SharedPtr scene_timer_;
   std::unique_ptr<litesim3d::Simulator> sim_;
+  std::unique_ptr<litesim3d_ros::LivoxOutputs> livox_;
   litesim3d::Pose scene_inverse_ = litesim3d::Pose::Identity();
   std::unique_ptr<tf2_ros::TransformBroadcaster> broadcaster_;
   bool publish_tf_ = true, wait_rsp_ = true, paused_ = false, ready_ = false,

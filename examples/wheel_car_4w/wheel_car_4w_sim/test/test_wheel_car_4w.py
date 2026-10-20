@@ -150,7 +150,7 @@ def test_required_rsp_exit_propagates_failure(car):
 def test_invalid_launch_boolean_is_rejected(tmp_path):
     environment = {**os.environ, "ROS_LOG_DIR": str(tmp_path / "ros-logs")}
     result = subprocess.run(["ros2", "launch", "wheel_car_4w_sim", "wheel_car_4w.launch.py",
-                             "rviz:=false", "paused:=yes"], cwd=tmp_path, env=environment,
+                              "paused:=yes"], cwd=tmp_path, env=environment,
                             capture_output=True, text=True, timeout=15)
     assert result.returncode != 0
     assert "paused must be true or false" in result.stdout + result.stderr
@@ -161,8 +161,12 @@ def test_invalid_launch_boolean_is_rejected(tmp_path):
     ("mid360", 1, 20000, .1, 40.0),
     ("mid40", 1, 10000, 1.0, 90.0),
 ])
-def test_lidar_profiles_have_changing_returns_and_correct_fov(car, profile, rows, columns, min_range, max_range):
-    car.start(lidar_profile=profile, paused="true", reliable_sensors=True)
+def test_lidar_profiles_have_ideal_returns_and_correct_fov(car, profile, rows, columns, min_range, max_range):
+    settings = yaml.safe_load((car.share / f"config/lidars/{profile}.yaml").read_text())
+    settings["lidar"]["publish_range_boundary"] = True
+    path = car.directory / "with-boundary.yaml"
+    path.write_text(yaml.safe_dump(settings))
+    car.start(lidar_interface="native", lidar_profile=str(path), paused="true", reliable_sensors=True)
     car.step(20, "profile-first")
     car.until(lambda: len(car.messages["cloud"]) >= 1)
     first = car.messages["cloud"][-1]
@@ -172,7 +176,10 @@ def test_lidar_profiles_have_changing_returns_and_correct_fov(car, profile, rows
     assert (second.height, second.width, second.point_step) == (rows, columns, 24)
     assert second.header.frame_id == "lidar_link"
     assert stamp(second.header.stamp) - stamp(first.header.stamp) == 100_000_000
-    assert first.data != second.data  # Stationary robot; real frame content changes.
+    assert settings["lidar"]["range_sigma_m"] == 0
+    # A stationary mechanical scan repeats exactly at zero error; the two
+    # non-repeating patterns still change their directions without added noise.
+    assert (first.data != second.data) == (profile != "vlp16")
     car.until(lambda: any(m.header.stamp == second.header.stamp for m in car.messages["boundary"]))
     boundary = next(m for m in car.messages["boundary"] if m.header.stamp == second.header.stamp)
     assert (boundary.height, boundary.width, boundary.point_step, boundary.header.frame_id) == (rows, columns, 24, "lidar_link")
@@ -209,15 +216,49 @@ def test_lidar_profiles_have_changing_returns_and_correct_fov(car, profile, rows
     (car.directory / "profile-check.json").write_text(json.dumps({
         "profile":profile, "valid_points":len(valid), "slots":rows*columns,
         "boundary_points":boundary_count, "boundary_range_passed":True,
-        "frames_different":True, "stationary":True, "fov_and_range_passed":True}, indent=2))
+        "frames_different":first.data != second.data, "stationary":True, "fov_and_range_passed":True}, indent=2))
 
 
-def test_range_boundary_can_be_disabled(car):
+@pytest.mark.parametrize("profile", ["ideal", "algorithm_test"])
+def test_measurement_error_profiles_reach_ros_outputs(car, profile):
+    filename = f"package://wheel_car_4w_sim/config/noise/{profile}.yaml"
+    car.start(paused="true", noise_config=filename, reliable_sensors=True)
+    stepped = car.step(40, "measurement-errors")
+    car.until(lambda: car.messages["imu"] and car.messages["odom"]
+              and stamp(car.messages["odom"][-1].header.stamp) == stepped.time_ns)
+    imu = car.messages["imu"][-1]; odom = car.messages["odom"][-1]
+    if profile == "ideal":
+        assert imu.linear_acceleration.x == 0
+        assert imu.linear_acceleration.z == pytest.approx(9.80665, abs=1e-9)
+        assert imu.angular_velocity.z == 0
+        assert imu.linear_acceleration_covariance[0] == 0
+        assert odom.twist.twist.linear.x == 0 and odom.twist.twist.angular.z == 0
+    else:
+        assert imu.linear_acceleration_covariance[0] == pytest.approx(0.02 ** 2)
+        assert imu.angular_velocity_covariance[0] == pytest.approx(0.001 ** 2)
+        assert abs(odom.twist.twist.linear.x) > 1e-8
+        assert imu.linear_acceleration.z != pytest.approx(9.80665, abs=1e-8)
+    assert not any("rviz" in name.lower() for name in car.node.get_node_names())
+
+
+@pytest.mark.parametrize("package,filename", [
+    ("litesim3d_ros2", "demo.rviz"),
+    ("wheel_car_4w_sim", "wheel_car_4w.rviz"),
+    ("wheel_car_4w_sim", "mid360.rviz"),
+])
+def test_installed_rviz_views_keep_robot_and_lidar_without_scene_map(package, filename):
+    path = Path(get_package_share_directory(package)) / "rviz" / filename
+    displays = yaml.safe_load(path.read_text())["Visualization Manager"]["Displays"]
+    assert any(d["Class"] == "rviz_default_plugins/RobotModel" and d["Enabled"] for d in displays)
+    assert any(d["Class"] == "rviz_default_plugins/PointCloud2" and d["Enabled"] for d in displays)
+    assert not any(d["Class"] == "rviz_default_plugins/MarkerArray" for d in displays)
+    assert all(d.get("Topic", {}).get("Value") != "/scene" for d in displays)
+
+
+def test_mid360_range_boundary_is_disabled_by_default(car):
     profile = yaml.safe_load((car.share / "config/lidars/mid360.yaml").read_text())
-    profile["lidar"]["publish_range_boundary"] = False
-    path = car.directory / "without-boundary.yaml"
-    path.write_text(yaml.safe_dump(profile))
-    car.start(lidar_profile=str(path), paused="true", reliable_sensors=True)
+    assert profile["lidar"]["publish_range_boundary"] is False
+    car.start(lidar_interface="native", lidar_profile="mid360", paused="true", reliable_sensors=True)
     car.step(20, "without-boundary")
     car.until(lambda: bool(car.messages["cloud"]))
     assert car.node.count_publishers("/points_raw/range_boundary") == 0
@@ -228,7 +269,7 @@ def test_range_boundary_can_be_disabled(car):
 def test_mid360_directions_match_official_asset_at_both_frame_rates(car, rate, columns):
     profile = yaml.safe_load((car.share / "config/lidars/mid360.yaml").read_text())
     assert profile["lidar"]["scan_pattern"] == "livox_mid360"
-    profile["lidar"].update(rate_hz=float(rate), columns=columns)
+    profile["lidar"].update(rate_hz=float(rate), columns=columns, publish_range_boundary=True)
     path = car.directory / "reference-profile.yaml"
     path.write_text(yaml.safe_dump(profile))
     reference = Path(get_package_share_directory("litesim3d_core")) / "lidar_patterns/mid360.csv"
@@ -236,7 +277,7 @@ def test_mid360_directions_match_official_asset_at_both_frame_rates(car, rate, c
         reader = csv.reader(stream)
         assert next(reader) == ["Time/s", "Azimuth/deg", "Zenith/deg"]
         expected = [next(reader) for _ in range(columns * 2)]
-    car.start(lidar_profile=str(path), paused="true", reliable_sensors=True)
+    car.start(lidar_interface="native", lidar_profile=str(path), paused="true", reliable_sensors=True)
     captured = []
     checked = cropped = 0
     for frame in range(2):
@@ -293,7 +334,7 @@ def test_custom_profile_crops_fov_and_resolves_relative_config_paths(car):
                             pattern_file="scan.csv", range_sigma_m=0.0)
     profile_file = car.directory / "custom-lidar.yaml"
     profile_file.write_text(yaml.safe_dump(profile))
-    car.start(config=str(config_file), lidar_profile=str(profile_file), paused="true", reliable_sensors=True)
+    car.start(config=str(config_file), lidar_interface="native", lidar_profile=str(profile_file), paused="true", reliable_sensors=True)
     car.step(20, "custom-fov")
     car.until(lambda: bool(car.messages["cloud"]))
     cloud=car.messages["cloud"][-1]
@@ -326,21 +367,73 @@ def test_custom_profile_crops_fov_and_resolves_relative_config_paths(car):
 def test_unknown_profile_fails_without_starting_nodes(tmp_path):
     environment={**os.environ,"ROS_LOG_DIR":str(tmp_path/"ros-logs")}
     result=subprocess.run(["ros2","launch","wheel_car_4w_sim","wheel_car_4w.launch.py",
-                           "rviz:=false","lidar_profile:=missing-model"],
+                           "lidar_profile:=missing-model"],
                           cwd=tmp_path,env=environment,capture_output=True,text=True,timeout=15)
     assert result.returncode != 0
     assert "lidar_profile must be" in result.stdout+result.stderr
     assert "process started with pid" not in result.stdout+result.stderr
 
 
+
+def test_mid360_launch_defaults_to_official_messages_and_keeps_other_sensors(tmp_path):
+    from livox_ros_driver2.msg import CustomMsg
+    from sensor_msgs.msg import PointCloud2, Imu, JointState
+    from nav_msgs.msg import Odometry
+    car = Example(tmp_path, monitor_only=True)
+    try:
+        car.subscribe('livox', CustomMsg, '/livox/lidar', 10)
+        car.subscribe('preview', PointCloud2, '/livox/lidar/pointcloud', 10)
+        car.subscribe('boundary', PointCloud2, '/livox/lidar/range_boundary', 10)
+        car.subscribe('imu', Imu, '/imu/data_raw')
+        car.subscribe('odom', Odometry, '/odom', 10)
+        car.subscribe('joints', JointState, '/joint_states', 10)
+        car.start(lidar_profile='mid360', paused='true')
+        car.until(lambda: all(json.loads(car.status().get('subscription_matches','{}')).get(t,0) >= 1
+                  for t in ['/livox/lidar','/livox/lidar/pointcloud']))
+        step = car.step(20, 'official-launch')
+        car.until(lambda: all(car.messages[k] for k in ['livox','preview','imu','odom','joints']))
+        msg = car.messages['livox'][-1]
+        assert msg.header.frame_id == 'lidar_link' and msg.point_num > 100
+        assert car.messages['preview'][-1].width == msg.point_num
+        assert car.node.count_publishers('/livox/lidar/range_boundary') == 0
+        assert not car.messages['boundary']
+        imu = car.messages['imu'][-1]
+        assert imu.header.frame_id == 'imu_link'
+        assert imu.linear_acceleration.z == pytest.approx(9.80665)
+        assert car.messages['odom'][-1].child_frame_id == 'base_link'
+        assert len(car.messages['joints'][-1].name) == 4
+        assert car.node.count_publishers('/points_raw') == car.node.count_publishers('/livox/imu') == 0
+        assert car.node.count_publishers('/clock') == 1
+        manifest = json.loads((tmp_path/'manifest.json').read_text())
+        assert manifest['livox_output']['lidars'][0]['message_type'] == 'livox_ros_driver2/msg/CustomMsg'
+    finally:
+        car.close()
+
+
 @pytest.mark.skipif(os.environ.get("LWS_4W_GUI") != "1", reason="Set LWS_4W_GUI=1 in an accessible desktop session")
-def test_rviz_starts_and_consumes_installed_model(car):
-    car.start(rviz="true", paused="true", lidar_profile="mid360")
+@pytest.mark.parametrize("profile,interface,cloud_topic", [
+    ("vlp16", "native", "/points_raw"),
+    ("mid360", "native", "/points_raw"),
+    ("mid360", "auto", "/livox/lidar/pointcloud"),
+])
+def test_rviz_starts_and_consumes_installed_model(car, profile, interface, cloud_topic):
+    if interface == "auto":
+        # Official Livox output replaces the native cloud topics.
+        for subscription in list(car.subscriptions):
+            if subscription.topic_name in ("/points_raw", "/points_raw/range_boundary"):
+                car.node.destroy_subscription(subscription)
+                car.subscriptions.remove(subscription)
+    car.start(rviz="true", paused="true", lidar_interface=interface, lidar_profile=profile)
     car.until(lambda: "OpenGl version" in (car.directory / "launch.log").read_text(), timeout=15)
     car.step(40, "rviz-sensors")
-    for topic in ("/robot_description", "/points_raw", "/points_raw/range_boundary", "/scene"):
+    for topic in ("/robot_description", cloud_topic):
         car.until(lambda topic=topic: any(item.node_name == "rviz2"
                   for item in car.node.get_subscriptions_info_by_topic(topic)))
+    hidden_topics = ["/scene"]
+    if profile == "mid360":
+        hidden_topics += ["/points_raw/range_boundary", "/livox/lidar/range_boundary"]
+    for topic in hidden_topics:
+        assert not any(item.node_name == "rviz2" for item in car.node.get_subscriptions_info_by_topic(topic))
     car.spin(1)
     assert car.process.poll() is None
     log = (car.directory / "launch.log").read_text()

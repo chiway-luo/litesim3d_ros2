@@ -12,7 +12,7 @@ lidar:
   pattern_hz: 100.0                # 仿真双频参数，不是厂家镜片转速。
   min_range_m: 1.0                 # 近距限制 m，近处遮挡不会被穿透。
   max_range_m: 90.0                # 100 klx、10%反射率；20%为130 m，80%为260 m。
-  range_sigma_m: 0.02              # 简化固定2 cm 1σ，对应厂家20 m测试条件。
+  range_sigma_m: 0.0  # 默认理想测距；通过 noise_config 注入误差。
   range_bias_m: 0.0                # m，固定距离偏差。
   dropout: 0.0                     # 额外独立丢点概率 [0,1]。
   ring_delays_s: []                # 非重复扫描不使用机械线束延时。

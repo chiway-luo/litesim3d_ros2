@@ -297,6 +297,43 @@ TEST(OdometryContract, SplitTimeStepsAndNoiseResetAreDeterministic) {
   EXPECT_EQ(first.pose.matrix(), again.pose.matrix());
 }
 
+TEST(OdometryContract, ZeroCenteredErrorsBiasAndLegacyScaleCompatibility) {
+  lp::EncoderIntegrator integrator;
+  auto init = differential();
+  auto p = lp::EncoderIntegrator::defaults();
+  const lp::Twist velocity{.4, .2, 0, .5};
+  integrator.initialize(init, p);
+  auto ideal = integrator.update(velocity, velocity, 1000000000);
+  EXPECT_TRUE(ideal.pose.matrix().isApprox(lp::integrate(lp::Pose::Identity(), velocity, 1).matrix(), 1e-12));
+  EXPECT_EQ(ideal.velocity.vx, velocity.vx);
+  EXPECT_EQ(ideal.velocity.vy, velocity.vy);
+  EXPECT_EQ(ideal.velocity.wz, velocity.wz);
+
+  p["linear_scale_error"] = {.1, -.2}; p["angular_scale_error"] = -.1;
+  p["linear_bias_mps"] = {.01, -.02}; p["angular_bias_radps"] = .03;
+  integrator.initialize(init, p);
+  auto measured = integrator.update(velocity, velocity, 1000000000);
+  const lp::Twist expected{.45, .14, 0, .48};
+  EXPECT_NEAR(measured.velocity.vx, expected.vx, 1e-12);
+  EXPECT_NEAR(measured.velocity.vy, expected.vy, 1e-12);
+  EXPECT_NEAR(measured.velocity.wz, expected.wz, 1e-12);
+  EXPECT_TRUE(measured.pose.matrix().isApprox(lp::integrate(lp::Pose::Identity(), expected, 1).matrix(), 1e-12));
+  integrator.reset();
+  const auto stationary = integrator.update({}, {}, 1000000000);
+  EXPECT_EQ(stationary.velocity.vx, .01);
+  EXPECT_EQ(stationary.velocity.wz, .03);
+
+  p["linear_scale"] = {1.1, 1.0};
+  EXPECT_THROW(integrator.initialize(init, p), std::runtime_error);
+  p = lp::EncoderIntegrator::defaults(); p["angular_scale_error"] = -1;
+  EXPECT_THROW(integrator.initialize(init, p), std::runtime_error);
+  p["angular_scale_error"] = 0; p["linear_scale_error"] = {0, -1};
+  EXPECT_THROW(integrator.initialize(init, p), std::runtime_error);
+  p = lp::EncoderIntegrator::defaults(); p["linear_scale"] = {1.1, 1.0};
+  integrator.initialize(init, p);
+  EXPECT_NEAR(integrator.update(velocity, velocity, 1000000000).velocity.vx, .44, 1e-12);
+}
+
 namespace {
 struct ParameterDirectory {
   std::filesystem::path path;

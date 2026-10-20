@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/Livox-SDK/livox_ros_driver2",
+  "commit": "21445540f0d100dc86a7e6df312dd70bbdb4afdf",
+  "distribution": "Unmodified official message definitions; interface-only build, no hardware driver or SDK.",
+  "sha256": {
+    "msg/CustomMsg.msg": "f42d6709db951b1fa307e929e742c0593cbf0d1b0ff977d2ed63ad8d7cee0a96",
+    "msg/CustomPoint.msg": "b64b31a8edc8c8b3765d82b5d3ccd2d2e1f217b9525ef7007ab918674c619c59",
+    "LICENSE.txt": "5d965fd1439196751d5ccad8064a51dafdb2d88548174bb5516d393c7a4c0717"
+  }
+}

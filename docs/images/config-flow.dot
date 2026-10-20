@@ -1,0 +1,4 @@
+digraph G { rankdir=LR;graph [bgcolor="transparent",pad="0.2",nodesep="0.35",ranksep="0.5"]; node [shape=box,style="rounded,filled",fillcolor="#eef6fb",color="#457b9d",fontname="PingFang SC",fontsize=14,margin="0.16,0.12"]; edge [color="#52687a",fontname="PingFang SC",fontsize=12];
+x [label="组合 Xacro\n机械 / 挂载 / 插件"]; s [label="SDF 世界\n场景 / 时钟 / 出生位姿"]; r [label="runtime.yaml\n模型路径 / 运行绑定"]; p [label="模型准备器 + SDF 导入",fillcolor="#dcefe5"]; u [label="同一份展开 URDF"]; c [label="仿真内核\n真实状态 → 传感器 / ROS"]; rsp [label="robot_state_publisher\n内部关节 TF"]; g [label="可选查看器 / 相机\n几何与真实状态"];
+x->p; s->p; r->p; p->u; p->c; u->c;u->rsp;u->g;c->g [label="真实位姿"];
+}
