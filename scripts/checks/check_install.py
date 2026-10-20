@@ -38,8 +38,13 @@ command=['bash','-c','source "$1/setup.bash"; exec launch_test "$2" --junit-xml 
 env.update(ROS_DOMAIN_ID="7",ROS_LOCALHOST_ONLY="1",ROS_LOG_DIR=str(out/"install-ros-logs"))
 with (out/"install-launch.log").open("w") as log:
     launch=subprocess.run(command,cwd=stage,env=env,stdout=log,stderr=subprocess.STDOUT,timeout=30)
-headless=subprocess.run([str(prefix/"bin/sim_headless"),str(prefix/"share/litesim3d_core/config/demo.yaml"),
-                         "200",str(out/"install-manifest.json"),".4","0"],cwd=stage,env=env,capture_output=True,text=True,timeout=30)
+# The shared core and runtime plugins need the same installed environment as
+# launch/ROS entry points, including library paths and the ament package index.
+headless_command=['bash','-c','set -e; source "$1/setup.bash"; shift; exec "$@"',
+                  'install-headless',str(prefix),str(prefix/"bin/sim_headless"),
+                  str(prefix/"share/litesim3d_core/config/demo.yaml"),
+                  "200",str(out/"install-manifest.json"),".4","0"]
+headless=subprocess.run(headless_command,cwd=stage,env=env,capture_output=True,text=True,timeout=30)
 (out/"install-headless.log").write_text(headless.stdout+headless.stderr)
 mesh_command=['bash','-c','source "$1/setup.bash"; export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1; exec "$2" -m pytest -q "$3" --basetemp "$4" --junitxml "$5" -o "cache_dir=$6"',
               'install-mesh',str(prefix),sys.executable,
