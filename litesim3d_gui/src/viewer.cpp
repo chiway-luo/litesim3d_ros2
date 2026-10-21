@@ -111,8 +111,9 @@ protected:
   void mousePressEvent(QMouseEvent *e) override{lastMouse_=e->pos();}
   void mouseMoveEvent(QMouseEvent *e) override{
     const auto delta=e->pos()-lastMouse_;lastMouse_=e->pos();
-    if(e->buttons()&Qt::LeftButton)orbit_->Orbit({double(delta.x()),double(delta.y())});
-    else if(e->buttons()&(Qt::MiddleButton|Qt::RightButton))orbit_->Pan({double(delta.x()),double(delta.y())});
+    if((e->modifiers()&Qt::ShiftModifier)&&(e->buttons()&(Qt::LeftButton|Qt::MiddleButton|Qt::RightButton)))
+      orbit_->Pan({double(delta.x()),double(delta.y())});
+    else if(e->buttons()&Qt::LeftButton)orbit_->Orbit({double(delta.x()),double(delta.y())});
   }
   void wheelEvent(QWheelEvent *e) override{
     const double distance=(camera_->WorldPosition()-orbit_->Target()).Length();

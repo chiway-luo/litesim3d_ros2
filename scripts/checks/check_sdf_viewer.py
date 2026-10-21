@@ -10,6 +10,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
+from litesim3d_bringup.model import prepare_config
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from paths import EVIDENCE_DIR
@@ -25,7 +26,8 @@ def main():
         parser.error("output must be a new or empty directory")
     args.output.mkdir(parents=True,exist_ok=True)
     importer=Path(get_package_prefix("litesim3d_assets")) / "lib/litesim3d_assets/sdf_import"
-    runtime=Path(get_package_share_directory("wheel_car_4w_sim")) / "config/runtime.yaml"
+    runtime=prepare_config(Path(get_package_share_directory("wheel_car_4w_sim")) / "config/runtime.yaml",
+                           args.output / "prepared")
     result={}
     for variant in ("obj","dae","pbr"):
         folder=args.output / variant
@@ -51,7 +53,8 @@ def main():
             subprocess.run([str(importer),str(assets / "worlds/warehouse.sdf"),str(runtime),str(folder / "scene"),"false"],
                            env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=60)
         with (folder / "camera.log").open("w") as log:
-            test=subprocess.run([str(args.binary),str(folder / "scene/scene.json"),str(folder / "images")],
+            test=subprocess.run([str(args.binary),str(folder / "scene/scene.json"),str(folder / "images"),
+                                 "pbr" if variant=="pbr" else "embedded"],
                                 env=env,stdout=log,stderr=subprocess.STDOUT,timeout=60)
         result[variant]="PASS" if test.returncode==0 else "FAIL"
     (args.output / "result.json").write_text(json.dumps(result,indent=2))
