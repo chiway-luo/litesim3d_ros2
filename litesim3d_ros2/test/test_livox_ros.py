@@ -47,7 +47,9 @@ def test_livox_matches_native_geometry_and_leaves_imu_unchanged(h, format, rate,
     topic = '/' + prefix
     h.subscribe('native', PointCloud2, topic + 'points_raw')
     h.subscribe('native_boundary', PointCloud2, topic + 'points_raw/range_boundary')
-    h.subscribe('imu', Imu, topic + 'imu/data_raw', reliable=False)
+    # Exact single-step comparisons need reliable delivery at both ends.
+    # A matched best-effort reader can still lose the final IMU sample.
+    h.subscribe('imu', Imu, topic + 'imu/data_raw')
     h.rsp(namespace=namespace, frame_prefix=prefix)
     process = h.sim(namespace=namespace, frame_prefix=prefix, start_paused=True, sensor_reliable=True)
     h.ready()
@@ -69,7 +71,7 @@ def test_livox_matches_native_geometry_and_leaves_imu_unchanged(h, format, rate,
     h.subscribe('boundary', PointCloud2, main+'/range_boundary')
     if format:
         h.subscribe('custom', CustomMsg, main)
-    h.sim(namespace=namespace, frame_prefix=prefix, start_paused=True,
+    h.sim(namespace=namespace, frame_prefix=prefix, start_paused=True, sensor_reliable=True,
           lidar_interface='auto', xfer_format=format, livox_lidar_id=7)
     h.ready()
     matched(h, [main, pc_topic, main+'/range_boundary', topic+'imu/data_raw'])
@@ -106,7 +108,24 @@ def test_livox_matches_native_geometry_and_leaves_imu_unchanged(h, format, rate,
     assert h.node.count_publishers(topic+'livox/imu') == 0
     assert h.node.count_publishers(topic+'points_raw') == 0
     assert h.node.get_publishers_info_by_topic(main)[0].qos_profile.reliability == ReliabilityPolicy.RELIABLE
-    assert h.node.get_publishers_info_by_topic(topic+'imu/data_raw')[0].qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
+    assert h.node.get_publishers_info_by_topic(topic+'imu/data_raw')[0].qos_profile.reliability == ReliabilityPolicy.RELIABLE
+
+
+@pytest.mark.parametrize('format', [0, 1])
+def test_livox_defaults_keep_best_effort_imu(h, format):
+    mid360(h)
+    h.subscribe('imu', Imu, '/imu/data_raw', reliable=False)
+    # Exercise the default QoS while streaming: best effort does not promise
+    # delivery of a particular sample from a single paused step.
+    h.sim(wait_for_robot_state_publisher=False, lidar_interface='auto', xfer_format=format)
+    h.ready()
+    h.until(lambda: h.messages['imu'] and h.node.get_publishers_info_by_topic('/livox/lidar')
+            and h.node.get_publishers_info_by_topic('/imu/data_raw'))
+    assert h.node.get_publishers_info_by_topic('/livox/lidar')[0].qos_profile.reliability == ReliabilityPolicy.RELIABLE
+    assert h.node.get_publishers_info_by_topic('/imu/data_raw')[0].qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
+    assert h.messages['imu'][-1].linear_acceleration.z == pytest.approx(9.80665)
+    assert h.node.count_publishers('/livox/imu') == 0
+    assert h.node.count_publishers('/points_raw') == 0
 
 
 def test_mid360_can_coexist_with_unchanged_spinning_lidar(h):
