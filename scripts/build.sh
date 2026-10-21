@@ -22,7 +22,9 @@ touch "$artifact_dir/COLCON_IGNORE"
 platform_args=()
 optional_packages=()
 if [[ "${LWS_BUILD_GUI:-1}" == 0 ]]; then
-  optional_packages=(--packages-skip litesim3d_gui)
+  # Remove the optional viewer from colcon's dependency graph as well: skip
+  # leaves bringup waiting for the absent GUI package.sh in a clean headless build.
+  optional_packages=(--packages-ignore litesim3d_gui)
 fi
 if [[ "$(uname -s)" == Darwin ]]; then
   # The bundled conda linker can be too old for the installed Xcode SDK format.
