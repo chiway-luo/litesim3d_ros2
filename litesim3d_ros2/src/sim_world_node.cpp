@@ -1,7 +1,7 @@
 #include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
 #include "service_responses.hpp"
-#include "livox_outputs.hpp"
+#include "lidar_outputs.hpp"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -52,7 +52,7 @@ geometry_msgs::msg::Pose pose(const litesim3d::Pose &p) {
 class WorldNode : public rclcpp::Node {
   struct Channels {
     std::string prefix;
-    std::unique_ptr<litesim3d_ros::LivoxOutputs> livox;
+    std::unique_ptr<litesim3d_ros::LidarOutputs> livox;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom, truth;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joints;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr description;
@@ -137,7 +137,7 @@ public:
           [this, i](rclcpp::QOSOfferedIncompatibleQoSInfo &) {
             ++channels_[i].qos_conflicts;
           };
-      c.livox = std::make_unique<litesim3d_ros::LivoxOutputs>(*this, r.config(), "/" + c.prefix,
+      c.livox = std::make_unique<litesim3d_ros::LidarOutputs>(*this, r.config(), "/" + c.prefix,
           c.prefix, lidar_interface, xfer_format, lidar_id, options);
       for (const auto &l : r.config().lidars) {
         if (c.livox->handles(l.topic)) continue;

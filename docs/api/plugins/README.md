@@ -13,6 +13,7 @@
 | `litesim3d_diff_odometry` | `OdometryPlugin` | [字段表](litesim3d_diff_odometry.md) |
 | `litesim3d_imu` | `SensorPlugin` | [字段表](litesim3d_imu.md) |
 | `litesim3d_lidar` | `SensorPlugin` | [字段表](litesim3d_lidar.md) |
+| `litesim3d_mid360` | `SensorPlugin` | [字段表](litesim3d_mid360.md) |
 | `litesim3d_omni3_drive` | `ChassisPlugin` | [字段表](litesim3d_omni3_drive.md) |
 | `litesim3d_omni4_drive` | `ChassisPlugin` | [字段表](litesim3d_omni4_drive.md) |
 | `litesim3d_omni_odometry` | `OdometryPlugin` | [字段表](litesim3d_omni_odometry.md) |

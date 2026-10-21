@@ -163,4 +163,4 @@ ros2 topic echo /sim/status --once
 
 这些通道服务于展示与诊断，scene_state 含世界真值，不接入估计算法。场景 JSON 与生产它的导入器版本一致，不承诺独立于版本的资源格式兼容。
 
-来源：[单机桥接](../../litesim3d_ros2/src/sim_node.cpp)、[多机桥接](../../litesim3d_ros2/src/sim_world_node.cpp)、[Livox 发布层](../../litesim3d_ros2/src/livox_outputs.cpp)。
+来源：[单机桥接](../../litesim3d_ros2/src/sim_node.cpp)、[多机桥接](../../litesim3d_ros2/src/sim_world_node.cpp)、[Livox 发布层](../../plugins/litesim3d_mid360/litesim3d_mid360/src/livox_outputs.cpp)。

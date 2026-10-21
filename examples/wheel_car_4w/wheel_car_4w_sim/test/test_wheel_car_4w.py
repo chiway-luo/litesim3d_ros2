@@ -406,6 +406,8 @@ def test_mid360_launch_defaults_to_official_messages_and_keeps_other_sensors(tmp
         assert car.node.count_publishers('/clock') == 1
         manifest = json.loads((tmp_path/'manifest.json').read_text())
         assert manifest['livox_output']['lidars'][0]['message_type'] == 'livox_ros_driver2/msg/CustomMsg'
+        assert any(plugin['class'] == 'litesim3d_mid360/Mid360'
+                   for plugin in manifest['config']['plugins'])
     finally:
         car.close()
 

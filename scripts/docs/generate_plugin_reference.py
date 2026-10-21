@@ -73,7 +73,8 @@ def generated(root=ROOT):
         "覆盖顺序、类生命周期和异常语义见[插件接口](../插件接口.md)。", "",
         "| 实现包 | 类别 | 参数参考 |", "| --- | --- | --- |",
     ]
-    for package in sorted((root / "plugins").glob("litesim3d_*")):
+    for manifest in sorted((root / "plugins").rglob("package.xml")):
+        package = manifest.parent
         source = package / "config/parameters.yaml"
         if not source.is_file():
             continue
@@ -105,8 +106,8 @@ def generated(root=ROOT):
             f"# {package.name}", "", f"插件类：`{cls.attrib['name']}`；类别：`{category}`。", "",
             "本表所有参数在启动时读取。`number` 接受有限实数；数组长度、单位、范围和关联条件见说明列。",
             "必填项没有默认值；请在机器人配置中提供实际值。可选项为实现缺省值，车型配置可以覆盖。", "",
-            f"来源：[parameters.yaml](../../../plugins/{package.name}/config/parameters.yaml)、"
-            f"[实现](../../../plugins/{package.name}/src/plugin.cpp)。", "",
+            f"来源：[parameters.yaml](../../../{package.relative_to(root)}/config/parameters.yaml)、"
+            f"[实现](../../../{package.relative_to(root)}/src/plugin.cpp)。", "",
             "| 字段 | 类型 | 默认值 | 单位、范围与含义 |",
             "| --- | --- | --- | --- |",
         ]

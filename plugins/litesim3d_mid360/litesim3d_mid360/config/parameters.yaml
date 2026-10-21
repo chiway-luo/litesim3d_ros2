@@ -1,0 +1,50 @@
+# 必填示例：URDF 中存在的安装 link；+x 为扫描正前方，+y 左，+z 上。
+link: lidar_link
+# 必填示例：PointCloud2 话题；多机器人使用相对话题，每个实例不能重名。
+topic: points_raw
+# 是否启用采样；false 保留声明与参数校验，不产生数据。
+enabled: true
+# 每秒帧数，Hz，(0,1000]；滚动扫描一帧覆盖 1/rate_hz 秒。
+rate_hz: 10.0
+# 每圈/帧的列数，整数 [1,65536]；列数×线数 ≤ 4194304。
+columns: 20000
+# 各线仰角，度，[-90,90]；非 spinning 模式必须为 [0]。
+vertical_angles_deg: [0.0]
+# 最小返回距离，m，≥0。
+min_range_m: 0.1
+# 最大返回距离，m，必须大于最小距离。
+max_range_m: 40.0
+# 水平扫描起点，度；spinning/spherical/Mid-360 使用，rosette 保持默认。
+horizontal_start_deg: -180.0
+# 水平扫描终点，度；大于起点且跨度 ≤360。
+horizontal_end_deg: 180.0
+# snapshot：同一真实位姿；rolling：按点时间从真实轨迹取样。
+scan_mode: rolling
+# 固定为 livox_mid360；保留单条内部槽位，ROS 输出按 Livox 消息组织。
+scan_pattern: livox_mid360
+# 垂直视场下界，度，[-90,90)；默认按 Mid-360 标称视场裁剪。
+vertical_min_deg: -7.0
+# 垂直视场上界，度，大于下界且 ≤90；裁剪不会补点或重排扫描序列。
+vertical_max_deg: 52.0
+# rosette 圆锥半角，度，(0,90]；其它模式不使用。
+cone_half_angle_deg: 19.2
+# spherical/rosette 图案基频，Hz，(0,10000]；点率至少为 4*sqrt(2)*此值。
+pattern_hz: 100.0
+# 官方扫描表路径，支持 package://；相对路径相对组合 URDF 目录。
+# columns*rate_hz 必须等于 200000；该表与旧配置共用核心资源。
+pattern_file: package://litesim3d_core/lidar_patterns/mid360.csv
+# 每线相对列起点的延迟，s；空表示零，每项 [0,1/(rate_hz*columns))。
+# 非空时长度等于线数；非 spinning 模式必须为空。
+ring_delays_s: []
+# 自身过滤模式：sensor_link / robot / links。
+self_filter: sensor_link
+# 额外排除的 URDF link；links 模式只排除此列表，robot 模式排除整个机器人。
+excluded_links: []
+# 量程固定偏差，m，有限数。
+range_bias_m: 0.0
+# 独立高斯距离噪声标准差，m，≥0；按实例和帧/点确定性生成。
+range_sigma_m: 0.0
+# 丢点概率，[0,1]；丢点为 NaN，不移动其它点的随机序列。
+dropout: 0.0
+# 发布 topic/range_boundary 人工量程边界；它不是实际激光回波。
+publish_range_boundary: false

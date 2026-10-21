@@ -13,8 +13,11 @@ if [[ "$(uname -s)" == Darwin && -n "${CONDA_PREFIX:-}" ]]; then
 fi
 colcon --log-base "$plugin_workspace/log" build \
   --base-paths "$plugin_root/litesim3d_plugin_api" "$plugin_root/litesim3d_core" "$plugin_root/plugins" "$plugin_root/litesim3d_plugin_tests" \
+    "$plugin_root/litesim3d_ros2" "$plugin_root/litesim3d_interfaces" \
   --merge-install --build-base "$plugin_workspace/build" --install-base "$plugin_workspace/install" \
   --executor parallel --parallel-workers 2 --cmake-args "${plugin_cmake[@]}"
 source "$plugin_workspace/install/setup.bash"
 ctest --test-dir "$plugin_workspace/build/litesim3d_plugin_tests" --output-on-failure \
   --output-junit "$plugin_workspace/plugin-contracts.xml"
+ctest --test-dir "$plugin_workspace/build/litesim3d_mid360" --output-on-failure \
+  --output-junit "$plugin_workspace/mid360-contracts.xml"

@@ -48,6 +48,27 @@ def test_profile_replaces_scan_fields_and_keeps_bindings(tmp_path):
     assert values["vertical_angles_deg"] == [0] and values["ring_delays_s"] == []
     assert "rings" not in values and "point_layout" not in values
     assert robot.find("./litesim3d/sensor").get("name") == "lidar"
+    assert robot.find("./litesim3d/sensor").get("class") == "litesim3d_mid360/Mid360"
+
+
+def test_mid360_class_supports_noise_preview_and_switching_back(tmp_path):
+    from litesim3d_bringup.model import lidar_preview_topics
+    source, config = fixture(tmp_path)
+    model = source / "simulation.urdf.xacro"
+    model.write_text(model.read_text().replace("litesim3d_lidar/Lidar", "litesim3d_mid360/Mid360"))
+    noise = tmp_path / "noise.yaml"
+    noise.write_text("sensors: {lidar: {range_sigma_m: 0.03}}\n")
+    prepared = prepare_config(config, tmp_path / "mid360", noise_config=str(noise))
+    robot = ET.parse(yaml.safe_load(prepared.read_text())["robot"]["urdf"]).getroot()
+    sensor = robot.find("./litesim3d/sensor")
+    assert yaml.safe_load(sensor.find("overrides").text)["range_sigma_m"] == .03
+    assert lidar_preview_topics(prepared, "auto", 1)["/scan"] == "/livox/lidar/pointcloud"
+    profile = tmp_path / "spinning.yaml"
+    profile.write_text("lidar: {scan_pattern: spinning, columns: 16, rings: 1, pattern_file: ''}\n")
+    restored = prepare_config(prepared, tmp_path / "spinning", lidar_profile=str(profile))
+    sensor = ET.parse(yaml.safe_load(restored.read_text())["robot"]["urdf"]).find("./litesim3d/sensor")
+    assert sensor.get("class") == "litesim3d_lidar/Lidar"
+    assert lidar_preview_topics(restored, "auto", 1) == {}
 
 
 def test_duplicates_and_invalid_override_are_not_silently_normalized(tmp_path):

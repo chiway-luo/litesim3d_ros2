@@ -8,7 +8,11 @@ import signal
 import struct
 
 import pytest
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
+try:
+    get_package_share_directory('litesim3d_mid360')
+except PackageNotFoundError:
+    pytest.skip("optional litesim3d_mid360 plugin is not installed", allow_module_level=True)
 from livox_ros_driver2.msg import CustomMsg
 from rclpy.qos import ReliabilityPolicy
 from sensor_msgs.msg import Imu, PointCloud2

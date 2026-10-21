@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_mid360</name><version>0.4.0</version>
+  <description>Mid-360 simulation sensor and optional Livox ROS output plugins.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer><license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>litesim3d_plugin_api</depend><depend>litesim3d_core</depend>
+  <depend>litesim3d_ros2</depend><depend>pluginlib</depend>
+  <depend>rclcpp</depend><depend>sensor_msgs</depend><depend>livox_ros_driver2</depend>
+  <test_depend>gtest</test_depend><test_depend>ament_index_cpp</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

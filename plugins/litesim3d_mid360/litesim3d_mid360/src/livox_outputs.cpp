@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <pluginlib/class_list_macros.hpp>
 #include <set>
 #include <type_traits>
 
@@ -50,10 +51,13 @@ sensor_msgs::msg::PointCloud2 cloudMessage(const litesim3d::Cloud &c,
 }
 } // namespace
 
-LivoxOutputs::LivoxOutputs(rclcpp::Node &node, const litesim3d::Config &config,
-    std::string topic_prefix, std::string frame_prefix, const std::string &interface,
-    int xfer_format, int lidar_id,
-    const rclcpp::PublisherOptions &options) : frame_prefix_(std::move(frame_prefix)) {
+void LivoxOutputs::initialize(rclcpp::Node &node, const litesim3d::Config &config,
+    const std::string &topic_prefix, const std::string &frame_prefix,
+    const litesim3d::Json &settings, const rclcpp::PublisherOptions &options) {
+  lidars_.clear();
+  frame_prefix_ = frame_prefix;
+  const auto interface = settings.at("lidar_interface").get<std::string>();
+  const int xfer_format = settings.at("xfer_format"), lidar_id = settings.at("livox_lidar_id");
   using litesim3d::require;
   require(interface == "native" || interface == "auto" || interface == "livox",
           "lidar_interface must be native, auto or livox");
@@ -152,3 +156,4 @@ void LivoxOutputs::matches(litesim3d::Json &result) const {
   for (const auto &[topic,l] : lidars_) { count(l.cloud); count(l.custom); count(l.boundary); }
 }
 } // namespace litesim3d_ros
+PLUGINLIB_EXPORT_CLASS(litesim3d_ros::LivoxOutputs, litesim3d_ros::LidarOutputPlugin)

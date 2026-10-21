@@ -1,0 +1,5 @@
+<library path="litesim3d_mid360_output">
+  <class name="litesim3d_mid360/LivoxOutput" type="litesim3d_ros::LivoxOutputs" base_class_type="litesim3d_ros::LidarOutputPlugin">
+    <description>Livox CustomMsg and PointCloud2 serialization for simulated Mid-360 returns.</description>
+  </class>
+</library>

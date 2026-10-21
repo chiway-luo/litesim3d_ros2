@@ -10,6 +10,7 @@
   <exec_depend>wheel_car_4w_models</exec_depend>
   <exec_depend>litesim3d_bringup</exec_depend>
   <exec_depend>litesim3d_core</exec_depend>
+  <exec_depend>litesim3d_mid360</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-yaml</exec_depend>

@@ -102,9 +102,11 @@ SENSOR_NOISE_FIELDS = {
 SENSOR_NOISE_FIELDS["rgbd"] = SENSOR_NOISE_FIELDS["rgb"] | SENSOR_NOISE_FIELDS["depth"]
 SENSOR_KINDS = {
     "litesim3d_lidar/Lidar": "lidar", "litesim3d_imu/Imu": "imu",
+    "litesim3d_mid360/Mid360": "lidar",
     "litesim3d_rgb_camera/RgbCamera": "rgb", "litesim3d_depth_camera/DepthCamera": "depth",
     "litesim3d_rgbd_camera/RgbdCamera": "rgbd",
 }
+LIDAR_CLASSES = {name for name, kind in SENSOR_KINDS.items() if kind == "lidar"}
 ODOMETRY_NOISE_FIELDS = {
     "linear_scale_error", "angular_scale_error", "linear_bias_mps", "linear_sigma_mps",
     "angular_bias_radps", "angular_sigma_radps",
@@ -197,7 +199,7 @@ def prepare_config(source, directory, *, mappings=None, cameras="", lidar_profil
                 element.set(key, str(resolve(element.get(key), model.parent)))
         sensors = root.findall("./litesim3d/sensor")
         for index, sensor in enumerate(sensors):
-            if sensor.get("class") != "litesim3d_lidar/Lidar":
+            if sensor.get("class") not in LIDAR_CLASSES:
                 continue
             for file_index, element in enumerate(sensor.findall("parameters")):
                 document = load_yaml(Path(element.get("file")).read_text())
@@ -228,7 +230,7 @@ def prepare_config(source, directory, *, mappings=None, cameras="", lidar_profil
             sensor["enabled"] = enabled
     if lidar_profile != "config":
         settings = profile(lidar_profile, profiles_dir)
-        plugin_lidars = [s for s in sensors if s.get("class") == "litesim3d_lidar/Lidar"]
+        plugin_lidars = [s for s in sensors if s.get("class") in LIDAR_CLASSES]
         if len(plugin_lidars) == 1 and not data.get("lidars"):
             # Plugin point layout is fixed, not a configurable parameter.
             if settings.pop("point_layout", "xyzirt_v1") != "xyzirt_v1":
@@ -239,6 +241,10 @@ def prepare_config(source, directory, *, mappings=None, cameras="", lidar_profil
             if rings is not None and rings != len(settings["vertical_angles_deg"]):
                 raise ValueError("profile rings must match vertical_angles_deg")
             settings.setdefault("ring_delays_s", [])
+            if "scan_pattern" in settings:
+                plugin_lidars[0].set("class", "litesim3d_mid360/Mid360"
+                                    if settings["scan_pattern"] == "livox_mid360"
+                                    else "litesim3d_lidar/Lidar")
             override(plugin_lidars[0], settings)
         elif not plugin_lidars and len(data.get("lidars", [])) == 1:
             binding = data["lidars"][0]
@@ -275,9 +281,9 @@ def lidar_preview_topics(config, interface, xfer_format):
     lidars = list(data.get("lidars", []))
     model = resolve(data["robot"]["urdf"], config.parent)
     for sensor in ET.parse(model).getroot().findall("./litesim3d/sensor"):
-        if sensor.get("class") != "litesim3d_lidar/Lidar":
+        if sensor.get("class") not in LIDAR_CLASSES:
             continue
-        values = {}
+        values = {"scan_pattern": "livox_mid360"} if sensor.get("class") == "litesim3d_mid360/Mid360" else {}
         for parameters in sensor.findall("parameters"):
             settings = load_yaml(resolve(parameters.get("file"), model.parent).read_text())
             for key in filter(None, parameters.get("section", "").split(".")):

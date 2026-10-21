@@ -1,7 +1,7 @@
 #include <litesim3d/rate.hpp>
 #include "litesim3d/sim.hpp"
 #include "service_responses.hpp"
-#include "livox_outputs.hpp"
+#include "lidar_outputs.hpp"
 #include <chrono>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <fstream>
@@ -110,7 +110,7 @@ public:
     rclcpp::PublisherOptions options;
     options.event_callbacks.incompatible_qos_callback =
         [this](rclcpp::QOSOfferedIncompatibleQoSInfo &) { ++qos_conflicts_; };
-    livox_ = std::make_unique<litesim3d_ros::LivoxOutputs>(*this, cfg, "", prefix_,
+    livox_ = std::make_unique<litesim3d_ros::LidarOutputs>(*this, cfg, "", prefix_,
         declare_parameter<std::string>("lidar_interface", "native"),
         declare_parameter<int>("xfer_format", 1), declare_parameter<int>("livox_lidar_id", 0), options);
     for (auto &lidar : cfg.lidars) {
@@ -700,7 +700,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stats_, scene_description_pub_, scene_state_;
   rclcpp::TimerBase::SharedPtr scene_timer_;
   std::unique_ptr<litesim3d::Simulator> sim_;
-  std::unique_ptr<litesim3d_ros::LivoxOutputs> livox_;
+  std::unique_ptr<litesim3d_ros::LidarOutputs> livox_;
   litesim3d::Pose scene_inverse_ = litesim3d::Pose::Identity();
   std::unique_ptr<tf2_ros::TransformBroadcaster> broadcaster_;
   bool publish_tf_ = true, wait_rsp_ = true, paused_ = false, ready_ = false,

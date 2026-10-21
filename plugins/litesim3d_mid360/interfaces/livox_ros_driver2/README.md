@@ -1,5 +1,7 @@
 # Livox 官方消息的纯接口构建
 
+此接口包归属 [Mid-360 插件](../../README.md)，位于其 `interfaces/` 目录，独立生成官方 ROS 类型。
+
 此目录只编译上游原样的 `CustomMsg.msg`、`CustomPoint.msg`，保留官方包名，生成真正的
 `livox_ros_driver2/msg/CustomMsg` 类型，供仿真与使用官方驱动消息的算法互通。
 不含设备驱动、SDK、联网发现或硬件控制功能；0.4.0 是本仓库分发版本，不是上游驱动版本。

@@ -1,0 +1,5 @@
+<library path="litesim3d_mid360">
+  <class name="litesim3d_mid360/Mid360" type="litesim3d::plugins::Mid360" base_class_type="litesim3d::plugins::SensorPlugin">
+    <description>Mid-360 sensor, API version 1.</description>
+  </class>
+</library>
