@@ -26,6 +26,9 @@ Pose pose(const Vec3 &xyz = Vec3::Zero(), const Vec3 &rpy = Vec3::Zero());
 Pose quaternionPose(const Vec3 &xyz, Eigen::Quaterniond q);
 double yaw(const Pose &p);
 void require(bool condition, const std::string &message);
+// Keep the std::string overload for existing consumers; literal diagnostics
+// must not allocate on successful checks in parsing and sensor hot paths.
+void require(bool condition, const char *message);
 std::string sha256(const std::filesystem::path &path);
 std::string sha256Text(const std::string &text);
 std::string readText(const std::filesystem::path &path);

@@ -18,6 +18,10 @@ void require(bool ok, const std::string &message) {
   if (!ok)
     throw std::runtime_error(message);
 }
+void require(bool ok, const char *message) {
+  if (!ok)
+    throw std::runtime_error(message);
+}
 Pose pose(const Vec3 &xyz, const Vec3 &rpy) {
   require(xyz.allFinite() && rpy.allFinite(), "pose: non-finite xyz/rpy");
   Pose p = Pose::Identity();

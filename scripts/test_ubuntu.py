@@ -67,9 +67,9 @@ class Profile:
         if name == "asan":
             self.env["LWS_TEST_CORE_TIMEOUT"] = "1200"
             self.env["LWS_TEST_ROS_TIMEOUT"] = "2400"
-            self.env["LWS_TEST_WAIT_TIMEOUT"] = "60"
+            self.env["LWS_TEST_WAIT_TIMEOUT"] = "120"
             self.env["LWS_TEST_SUITE_TIMEOUT"] = "900"
-            self.env["LWS_TEST_RENDER_TIMEOUT"] = "300"
+            self.env["LWS_TEST_RENDER_TIMEOUT"] = "900"
         self.record = {"profile": name, "status": "RUNNING", "source": str(ROOT),
                        "source_snapshot": source_snapshot(ROOT), "stages": [],
                        "platform": platform.platform(), "architecture": platform.machine(),
@@ -101,8 +101,8 @@ class Profile:
                 # LLVM's complete allocation stacks make Mesa initialization
                 # much slower. Scope these budgets to graphical tests; fault
                 # tests and normal simulator defaults retain their deadlines.
-                env.update(LWS_TEST_STARTUP_TIMEOUT="300", LWS_TEST_WAIT_TIMEOUT="300",
-                           LWS_TEST_SHUTDOWN_TIMEOUT="120", LWS_TEST_SUITE_TIMEOUT="3600")
+                env.update(LWS_TEST_STARTUP_TIMEOUT="600", LWS_TEST_WAIT_TIMEOUT="600",
+                           LWS_TEST_SHUTDOWN_TIMEOUT="120", LWS_TEST_SUITE_TIMEOUT="6000")
             command = ["xvfb-run", "-a", "env", "LIBGL_ALWAYS_SOFTWARE=1", "QT_X11_NO_MITSHM=1",
                        "LWS_PRIVATE_TEST_DISPLAY=1", *map(str, command)]
         setup = self.prefix / "setup.bash" if installed else Path(self.args.ros_prefix) / "setup.bash"
@@ -243,7 +243,7 @@ class Profile:
             self.stage("tutorials", [sys.executable, ROOT / "scripts/checks/check_documented_tutorials.py",
                        "--output", self.evidence / "tutorials"], 300)
         self.stage("desktop", ["bash", ROOT / "scripts/test_desktop.sh"],
-                   5400 if self.name == "asan" else 900, graphical=True)
+                   9000 if self.name == "asan" else 900, graphical=True)
 
     def execute(self):
         try:

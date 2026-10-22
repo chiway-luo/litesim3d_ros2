@@ -1,11 +1,29 @@
 #include "litesim3d/sim.hpp"
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
 #include <thread>
 using namespace litesim3d;
+#if defined(__clang__)
+#if __has_feature(address_sanitizer)
+#define LITESIM_TEST_ALLOCATION_HOOK 1
+#endif
+#endif
+#ifdef LITESIM_TEST_ALLOCATION_HOOK
+namespace {
+std::atomic<bool> track_validation_allocations{false};
+std::atomic<size_t> validation_allocations{0};
+}
+extern "C" __attribute__((no_sanitize("address", "undefined")))
+void __sanitizer_malloc_hook(const volatile void *, size_t) {
+  if (track_validation_allocations.load(std::memory_order_relaxed))
+    validation_allocations.fetch_add(1, std::memory_order_relaxed);
+}
+#endif
 namespace {
 const std::filesystem::path resources = SIM_RESOURCES;
 std::filesystem::path temporary(const std::string &body, const std::string &extension = ".urdf") {
@@ -83,6 +101,42 @@ void advance(Simulator &s, size_t n, double v = 0, double w = 0) {
   }
 }
 } // namespace
+
+TEST(Validation, SuccessfulLiteralChecksDoNotAllocate) {
+  const char *message = "Validation failed with a diagnostic longer than the small string buffer";
+  const std::string owned(message);
+#ifdef LITESIM_TEST_ALLOCATION_HOOK
+  // A real allocation is the positive control for the runtime hook.
+  validation_allocations = 0;
+  track_validation_allocations = true;
+  void *volatile allocation = std::malloc(4096);
+  track_validation_allocations = false;
+  const auto positive_count = validation_allocations.load();
+  std::free(allocation);
+  ASSERT_GT(positive_count, 0u);
+  validation_allocations = 0;
+  track_validation_allocations = true;
+#endif
+  for (int i = 0; i < 1000; ++i) {
+    require(true, message);
+    require(true, owned);
+  }
+#ifdef LITESIM_TEST_ALLOCATION_HOOK
+  track_validation_allocations = false;
+  EXPECT_EQ(validation_allocations.load(), 0u);
+#endif
+  // The original exported overload and the literal overload retain the same
+  // exception type and diagnostic text when a condition really fails.
+  for (bool use_owned : {false, true}) {
+    try {
+      if (use_owned) require(false, owned);
+      else require(false, message);
+      FAIL() << "invalid condition was accepted";
+    } catch (const std::runtime_error &error) {
+      EXPECT_STREQ(error.what(), message);
+    }
+  }
+}
 
 TEST(COR01, HeadlessDeterministic) {
   auto a = simulator(), b = simulator();

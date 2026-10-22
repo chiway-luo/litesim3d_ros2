@@ -140,6 +140,10 @@ def viewer_exit(event, context, ready_file):
 
 def setup(context):
     argument = lambda name: LaunchConfiguration(name).perform(context)
+    # Reject invalid launch input before preparing models or starting the SDF
+    # importer. Importing an instrumented scene can be expensive.
+    if argument("paused"):
+        boolean(argument("paused"), "paused")
     if argument("config"):
         if argument("cameras"):
             raise ValueError("camera overrides require SDF mode (leave config empty)")
