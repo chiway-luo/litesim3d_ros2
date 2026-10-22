@@ -6,6 +6,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <test_depend>litesim3d_plugin_api</test_depend><test_depend>ament_index_cpp</test_depend>
   <test_depend>litesim3d_core</test_depend>
+  <test_depend>pluginlib</test_depend>
   <test_depend>gtest</test_depend><test_depend>yaml-cpp</test_depend>
   <test_depend>litesim3d_diff_drive</test_depend><test_depend>litesim3d_ackermann_drive</test_depend>
   <test_depend>litesim3d_omni3_drive</test_depend><test_depend>litesim3d_omni4_drive</test_depend>

@@ -5,7 +5,7 @@ import time
 import unittest
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, SetLaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 import launch_testing
 import launch_testing.actions
@@ -22,7 +22,12 @@ def generate_test_description():
     os.environ['ROS_LOCALHOST_ONLY']='1'
     path=Path(get_package_share_directory('litesim3d_ros2'))/'launch/world.launch.py'
     demo=IncludeLaunchDescription(PythonLaunchDescriptionSource(str(path)))
-    return LaunchDescription([demo,launch_testing.actions.ReadyToTest()])
+    # Instrumentation slows this four-lidar workload, including the in-flight
+    # tick at shutdown. Keep production's 15 s startup / 5 s SIGINT budgets.
+    timing=[]
+    if 'LWS_TEST_LAUNCH_TIMEOUT' in os.environ:
+        timing=[SetLaunchConfiguration('sigterm_timeout',os.environ['LWS_TEST_LAUNCH_TIMEOUT'])]
+    return LaunchDescription([*timing,demo,launch_testing.actions.ReadyToTest()])
 
 
 class TestWorldLaunch(unittest.TestCase):
@@ -33,7 +38,7 @@ class TestWorldLaunch(unittest.TestCase):
         messages=[[] for _ in range(4)]
         subscriptions=[node.create_subscription(PointCloud2,f'/r{i}/points_raw',messages[i].append,
                                                qos_profile_sensor_data) for i in range(4)]
-        end=time.monotonic()+15
+        end=time.monotonic()+float(os.environ.get('LWS_TEST_LAUNCH_TIMEOUT','15'))
         try:
             while time.monotonic()<end and not all(len(m)>=3 for m in messages):
                 executor.spin_once(timeout_sec=.05)

@@ -24,6 +24,42 @@
 
 ## 当前源码的检查与回归
 
+本地 Ubuntu 和 [GitHub Actions](../../.github/workflows/m1.yml) 使用同一入口。完整提交前检查从仓库根目录运行：
+
+```bash
+source /opt/ros/humble/setup.bash
+python3 scripts/test_ubuntu.py --profile all --output "$HOME/litesim-quality" --jobs 2
+```
+
+运行平台是 Ubuntu 22.04 / ROS 2 Humble。先按[安装与构建](../usage/安装与构建.md)安装 rosdep 声明依赖；测试工具还需要 `clang-14`、`llvm-14`、`python3-coverage`、`python3-pytest`、`xvfb`、`xauth` 和 `libgl1-mesa-dri`。输出目录必须在源码目录外，不同 profile 使用独立构建树。入口不会安装依赖或修改系统设置。
+
+| Profile | 内容 |
+| --- | --- |
+| `functional` | 全包构建、内核与插件单元测试、同进程生命周期、ROS 回归、示例、教程、桌面渲染、RViz 独立性、隐藏源码安装及无可选插件补测 |
+| `coverage` | 全包 Clang 插桩、Python 子进程采集、原生/ROS/示例/桌面回归，生成当前源码覆盖率和独立单元测试覆盖率 |
+| `asan` | ASan + LSan + UBSan 全包插桩、泄漏/未定义行为阳性对照及原生/ROS/示例/桌面回归，检查子进程日志 |
+| `tsan` | 独立 TSan 构建、数据竞争阳性对照、内核/插件单元测试与生命周期检查；不将未插桩 ROS/图形依赖当作全栈线程安全证明 |
+| `release` | 每包独立构建、安装及其测试，验证 SDK 使用方 |
+
+可用 `--profile coverage` 等单独诊断失败。每次都重新执行测试，日志和 JUnit 放在 `PROFILE/runs/时间-进程号/`，`latest.json` 指向本轮结果。结果包含源码逐文件哈希、架构、RMW 和命令；测试期间源码变化会使本轮失败。旧构建缓存只在构建身份一致时复用，旧通过结果不会复用。完整检查的五项必须全部通过，短测不替代 8 小时长稳。
+
+覆盖率清单从所有当前包自动生成，纳入运行时 C++、有可执行映射的头文件、Python、插件、GUI 和示例启动代码；生成消息、上游消息定义、测试支撑、测试程序和开发报告工具单独记录排除原因。漏掉新文件或未插桩编译会失败。LLVM 分母从所有编译对象的零命中映射固定提取，避免多个程序的同名函数或缺失执行数据缩小分母；命中按源码位置合并，安装副本与多个插件内的同一头文件不会重复计数。Python 未执行代码仍进入分母。未实例化的 C++ 模板/内联体没有 LLVM 映射，报告会明确这个工具边界。
+
+`coverage/combined-coverage.json` 保存每文件与每包结果，`unit-coverage.json` 单列单元测试命中，`coverage-gate.json` 执行门槛：全部测试合计行覆盖率 ≥ 80%、分支 ≥ 70%；几何、模型、仿真器、传感器、地形、世界六个核心源文件必须仅凭单元测试逐文件达到 ≥ 90% / 80%。总结果按命中数与分母计算，不能把旧报告或端到端命中率当作当前单元测试覆盖率。
+
+生命周期检查在同一仿真器进程完成 140 轮构建、运行、位姿重置、故障、销毁及失败初始化。40 轮预热后记录 RSS、句柄和线程；普通构建限制 RSS 增量 32 MiB，Sanitizer 构建记录 RSS 并由 LSan 检测泄漏，避免把隔离区误当泄漏。检测器必须先检出已知的故意错误，真实测试中任一子进程的检测报告均使 profile 失败。
+
+ASan 始终开启 `detect_leaks=1`，UBSan 与 TSan 遇错返回非零。Humble 二进制依赖有已复现的退出残留，[LSan 例外清单](../../scripts/quality/lsan.supp)只匹配指定的上游分配调用栈，实际使用的规则、分配数和字节数保存在 `sanitizers.json`。**通过含例外的门禁不等于整个依赖栈零泄漏**：
+
+| 依赖路径 | 已知问题与检测边界 |
+| --- | --- |
+| pluginlib 加载注册 | [class_loader 元对象未释放](https://github.com/ros/class_loader/issues/131)。只匹配加载库期间的注册；另一个实际加载的测试插件在构造函数故意泄漏 64 字节，必须仍被检出。该插件仅在 ASan 测试构建生成 |
+| ROS 消息类型支持 | [Humble 的 SharedLibrary 原始指针缓存](https://github.com/ros2/rosidl_typesupport/blob/humble/rosidl_typesupport_cpp/src/type_support_dispatch.hpp)在插件卸载后失去可达引用；二进制已剥离内部模板符号，因此限定 `librosidl_typesupport_cpp.so`，不匹配整个 rclcpp/rmw |
+| Ignition Rendering 6 / Ogre2 | 6.6.4 的空场景创建、销毁、卸载独立程序仍保留场景/根节点/mesh factory 引用环；mesh factory 还缓存原始材质。例外覆盖引擎初始化、场景创建与网格导入的上游分配，这些路径的第三方泄漏不由本门禁证明已消除 |
+| Mesa EGL / Fontconfig | 软件渲染的 EGL 初始化与 Qt 首次字体初始化有退出缓存；限定引擎加载和 `FcInit`，没有对整个 Qt/Ogre 库关闭检测 |
+
+桌面用例实际渲染 OBJ、DAE、PBR、RGB/Depth/RGB-D，检查连续三次无效几何构造后引擎已卸载并能正常重建。慢消费者测试也保存 RSS 前后值：普通构建执行 32 MiB 上限，Sanitizer 构建记录隔离区影响并执行独立泄漏门禁，其他 DDS 队列和时序断言照常执行。8 小时长稳和第三方库源码插桩仍是独立待验项目。
+
 组合模型的运行和测试需要 Xacro；Ubuntu 的 rosdep 会安装 `ros-humble-xacro`。底盘、里程计与传感器插件的契约测试见 `scripts/test_plugins.sh`，外部独立安装证明见 `scripts/test_external_plugin.sh`。
 
 先构建并加载安装环境：
@@ -62,6 +98,8 @@ LWS_M3_PERFORMANCE=1 bash scripts/test_m3.sh
 Linux 独立验收脚本为 `python3 scripts/checks/check_linux.py`，图形一致性检查需 Xvfb 或桌面会话；依赖和命令见 [CI](../../.github/workflows/m1.yml)。检测器构建可用 `SIM_SANITIZE=ON`（ASan/UBSan）或 `SIM_TSAN=ON`（独立 TSan），不可混用；`SIM_COVERAGE=ON` 用于 Clang 覆盖率构建。它们均需单独的构建目录与实际结果。
 
 ## 结果与能力边界
+
+插桩构建的同步大步进允许 60 秒墙钟等待，普通 `functional` 仍使用原有 6 秒；四机器人 launch 的收帧和 SIGINT 退出等待在插桩构建中为 60 秒，普通构建仍为 15 秒 / 5 秒。四台雷达的 16×512 点、至少三帧、帧坐标及唯一时钟断言不变，不缩小负载或重试失败。固定墙钟运动窗口的教程在 `functional` 验证，插桩 profile 不用于性能判定。缺少 Mid360/Livox 的兼容性负例由 `functional` 在独立安装前缀执行，两项必须实际执行，不能以跳过代替通过；ROS underlay 若已安装这两个可选包，该检查会明确失败，需使用不含它们的干净 Humble 环境。
 
 初始历史验收平台为 macOS arm64 / RoboStack Humble。历史报告按当时的源码指纹、版本和运行条件读取；同日后续改名、目录调整、雷达及重置修复不能自动继承全部历史结论。
 

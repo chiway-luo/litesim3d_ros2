@@ -11,6 +11,18 @@ int main(int argc,char **argv) {
     const std::string materialMode=argc==4?argv[3]:"embedded";
     require(materialMode=="embedded"||materialMode=="pbr","unknown material expectation");
     std::filesystem::create_directories(argv[2]);
+    J broken;
+    std::ifstream(argv[1])>>broken;
+    broken.at("visuals").at(0).at("geometry")["type"]="unsupported_test_geometry";
+    for(int attempt=0;attempt<3;++attempt) {
+      bool rejected=false;
+      try { litesim3d_render::RenderScene invalid(broken); }
+      catch(const std::exception &error) {
+        rejected=std::string(error.what()).find("rendering geometry failed")!=std::string::npos;
+      }
+      require(rejected,"invalid geometry did not fail at scene import");
+      require(!render::isEngineLoaded("ogre2"),"failed scene construction retained the rendering engine");
+    }
     rclcpp::NodeOptions options;options.parameter_overrides({rclcpp::Parameter("scene_description",argv[1])});
     auto node=std::make_shared<rclcpp::Node>("litesim_viewer_camera_test",options);
     Viewer viewer(node);viewer.show();app.processEvents();
@@ -71,6 +83,7 @@ int main(int argc,char **argv) {
     require(models==viewer.modelPoses(),"camera input changed scene models");
     std::cout<<J({{"status","PASS"},{"gold_pixels",gold},{"blue_pixels",blue},{"material_mode",materialMode},
       {"camera_operations",{"orbit","pan","zoom","resize"}},{"pan_requires_shift",true},
+      {"failed_scene_cleanup_attempts",3},
       {"pan_gesture","Shift + left drag"},
       {"model_poses_unchanged",true}}).dump(2)<<'\n';
   }catch(const std::exception &e){std::cerr<<e.what()<<'\n';result=1;}

@@ -348,7 +348,15 @@ def test_ROS07_slow_consumer_queue_and_thirty_second_pause(h):
     time.sleep(30)
     middle=proc.memory_info().rss
     h.spin(.3)
-    assert middle-before<32*1024**2
+    instrumented=os.environ.get('LWS_INSTRUMENTED_MEMORY') in ('asan','tsan')
+    (h.directory/'slow-consumer-memory.json').write_text(json.dumps({
+        'rss_before':before,'rss_after':middle,'delta_bytes':middle-before,
+        'rss_budget_enforced':not instrumented,'budget_bytes':32*1024**2,
+        'allocator':os.environ.get('LWS_INSTRUMENTED_MEMORY','normal')},indent=2))
+    # Sanitizer quarantine/shadow memory is not the production allocator's RSS.
+    # Its separate leak/race gate remains mandatory; normal builds keep the cap.
+    if not instrumented:
+        assert middle-before<32*1024**2
     h.until(lambda:len(h.messages['points'])>=6)
     status=h.status();assert status['sensor_queue_depth']=='5'
     assert 'keep_last' in status['sensor_queue_policy']

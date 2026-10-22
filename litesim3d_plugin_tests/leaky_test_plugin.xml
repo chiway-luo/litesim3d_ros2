@@ -1,0 +1,5 @@
+<library path="leaky_test_plugin">
+  <class name="litesim3d_test/LeakyChassis" type="litesim3d_test::LeakyChassis" base_class_type="litesim3d::plugins::ChassisPlugin">
+    <description>ASan-only deliberate leak positive control.</description>
+  </class>
+</library>

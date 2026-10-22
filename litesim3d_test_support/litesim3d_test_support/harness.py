@@ -131,7 +131,10 @@ class SimulationHarness:
         assert client.wait_for_service(timeout_sec=5)
         request = Step.Request(request_id=identity, steps=steps)
         future = client.call_async(request)
-        self.until(future.done)
+        # Instrumented builds can spend longer computing a large synchronous
+        # step. Keep the normal six-second contract; only the quality runner
+        # opts into a larger wall budget, with identical simulated-time checks.
+        self.until(future.done, timeout=float(os.environ.get("LWS_TEST_STEP_TIMEOUT", "6")))
         result = future.result()
         self.node.destroy_client(client)
         assert result.success, result

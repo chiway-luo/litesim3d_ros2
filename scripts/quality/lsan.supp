@@ -1,0 +1,28 @@
+# ROS Humble class_loader retains registration MetaObjects in its graveyard.
+# https://github.com/ros/class_loader/issues/131
+# Match only registration during library loading, never plugin construction,
+# initialize(), step(), or destruction. The plugin-leak positive control must
+# still detect an intentionally leaked plugin-instance allocation.
+leak:pluginlib::ClassLoader<litesim3d::plugins::SensorPlugin>::loadLibraryForClass
+leak:pluginlib::ClassLoader<litesim3d::plugins::ChassisPlugin>::loadLibraryForClass
+leak:pluginlib::ClassLoader<litesim3d::plugins::OdometryPlugin>::loadLibraryForClass
+leak:pluginlib::ClassLoader<litesim3d_ros::LidarOutputPlugin>::loadLibraryForClass
+
+# Humble rosidl_typesupport_cpp caches heap SharedLibrary objects in a raw
+# type_support_map. The cache becomes unreachable on plugin dlclose.
+# https://github.com/ros2/rosidl_typesupport/blob/humble/rosidl_typesupport_cpp/src/type_support_dispatch.hpp
+# The Humble binary strips the private dispatch template symbol. This small
+# dispatch library is the narrowest available stack match (not rclcpp/rmw).
+leak:librosidl_typesupport_cpp.so
+
+# Ignition Rendering 6.6.4: an empty create/destroy/unload reproducer (no
+# simulator code) retains the Ogre2Scene/root visual/mesh factory cycle.
+# Mesa EGL initialization also retains a display allocation after unload.
+# These rules cover backend initialization, not application callbacks.
+leak:ignition::rendering::v6::BaseRenderEngine::Load(
+leak:ignition::rendering::v6::BaseRenderEngine::CreateScene(
+# Ogre2MeshFactory::LoadImpl retains original mesh material cache entries.
+# No blanket suppression of the simulator, Qt, Ogre or rendering library.
+leak:ignition::rendering::v6::BaseScene::CreateMesh(
+# Qt's Fontconfig initialization cache, reproduced by painting text once.
+leak:FcInit

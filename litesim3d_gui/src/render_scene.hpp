@@ -98,6 +98,16 @@ public:
     engine_=render::engine("ogre2");
 #endif
     require(engine_,"Ogre2 rendering backend is unavailable");
+    try { initializeScene(); }
+    catch (...) {
+      // A throwing constructor never runs ~RenderScene. Release partially
+      // imported visuals and the engine before the caller retries a scene.
+      release();
+      throw;
+    }
+  }
+private:
+  void initializeScene() {
     scene_=engine_->CreateScene("litesim_viewer");require(bool(scene_),"cannot create rendering scene");
     scene_->SetAmbientLight(color(description_.value("ambient",J::array({.35,.35,.35,1}))));
     scene_->SetBackgroundColor(color(description_.value("background",J::array({.075,.09,.12,1}))));
@@ -168,10 +178,10 @@ public:
     }
     applyPoses(description_.at("initial_link_poses"));
   }
-  ~RenderScene() {
-    items_.clear();
-    if(engine_&&scene_){engine_->DestroyScene(scene_);scene_.reset();render::unloadEngine("ogre2");}
-  }
+public:
+  ~RenderScene() { release(); }
+  RenderScene(const RenderScene &)=delete;
+  RenderScene &operator=(const RenderScene &)=delete;
   render::ScenePtr scene() const { return scene_; }
   std::vector<math::Pose3d> modelPoses() const {
     std::vector<math::Pose3d> result;for(const auto &i:items_)result.push_back(i.visual->WorldPose());return result;
@@ -215,6 +225,11 @@ public:
   }
   void applyPoses(const J &poses){for(auto &i:items_)if(!i.binding.empty()&&poses.contains(i.binding))i.visual->SetLocalPose(pose(poses.at(i.binding))*i.local);}
 private:
+  void release() {
+    items_.clear();
+    if(engine_&&scene_){engine_->DestroyScene(scene_);scene_.reset();}
+    if(engine_){render::unloadEngine("ogre2");engine_=nullptr;}
+  }
   J description_;
   render::RenderEngine *engine_=nullptr;render::ScenePtr scene_;
   std::vector<Item> items_;
