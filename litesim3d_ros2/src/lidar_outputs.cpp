@@ -26,7 +26,12 @@ LidarOutputs::LidarOutputs(rclcpp::Node &node, const litesim3d::Config &config,
     throw std::runtime_error(std::string("Mid-360 Livox output requires the litesim3d_mid360 plugin; "
         "build/source plugins/litesim3d_mid360, or select lidar_interface:=native: ") + error.what());
   }
+  // The node's default callback group outlives this member. It must not retain
+  // weak_ptr control blocks whose deleters live in an already unloaded plugin.
+  callback_group_ = node.create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  auto plugin_options = options;
+  plugin_options.callback_group = callback_group_;
   plugin_->initialize(node, config, topic_prefix, frame_prefix,
-      {{"lidar_interface", interface}, {"xfer_format", xfer_format}, {"livox_lidar_id", lidar_id}}, options);
+      {{"lidar_interface", interface}, {"xfer_format", xfer_format}, {"livox_lidar_id", lidar_id}}, plugin_options);
 }
 } // namespace litesim3d_ros

@@ -31,7 +31,25 @@ source /opt/ros/humble/setup.bash
 python3 scripts/test_ubuntu.py --profile all --output "$HOME/litesim-quality" --jobs 2
 ```
 
-运行平台是 Ubuntu 22.04 / ROS 2 Humble。先按[安装与构建](../usage/安装与构建.md)安装 rosdep 声明依赖；测试工具还需要 `clang-14`、`llvm-14`、`python3-coverage`、`python3-pytest`、`xvfb`、`xauth` 和 `libgl1-mesa-dri`。输出目录必须在源码目录外，不同 profile 使用独立构建树。入口不会安装依赖或修改系统设置。
+运行平台是 Ubuntu 22.04 / ROS 2 Humble。先按[安装与构建](../usage/安装与构建.md)安装 rosdep 声明依赖；测试工具还需要 `clang-14`、`llvm-14`、`libunwind-14-dev`、`python3-coverage`、`python3-pytest`、`xvfb`、`xauth` 和 `libgl1-mesa-dri`。输出目录必须在源码目录外，不同 profile 使用独立构建树。入口不会安装依赖或修改系统设置。
+
+CI 在独立容器中安装测试工具。已有 Nav2、SLAM 或其他版本 LLVM 的 Ubuntu 开发环境，应把 LLVM 14 回溯库解压到独立目录：Ubuntu 的 `libunwind-14-dev` 与部分现有开发包冲突，直接安装可能连带移除导航依赖。以下方式只下载和解压，不修改系统包：
+
+```bash
+tools_dir="$HOME/litesim-quality-tools"
+mkdir -p "$tools_dir/downloads" "$tools_dir/root"
+(
+  cd "$tools_dir/downloads"
+  apt download libunwind-14 libunwind-14-dev
+  for package in libunwind-14_*.deb libunwind-14-dev_*.deb; do
+    dpkg-deb -x "$package" "$tools_dir/root"
+  done
+)
+export LITESIM_LLVM_UNWIND_DIR="$tools_dir/root/usr/lib/llvm-14/lib"
+export LD_LIBRARY_PATH="$LITESIM_LLVM_UNWIND_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+```
+
+设置上述环境后，在同一终端运行统一入口。CMake、检测器阳性对照和工具回归都使用该目录；普通仿真运行不需要这些环境变量。
 
 | Profile | 内容 |
 | --- | --- |
@@ -43,13 +61,21 @@ python3 scripts/test_ubuntu.py --profile all --output "$HOME/litesim-quality" --
 
 可用 `--profile coverage` 等单独诊断失败。每次都重新执行测试，日志和 JUnit 放在 `PROFILE/runs/时间-进程号/`，`latest.json` 指向本轮结果。结果包含源码逐文件哈希、架构、RMW 和命令；测试期间源码变化会使本轮失败。旧构建缓存只在构建身份一致时复用，旧通过结果不会复用。完整检查的五项必须全部通过，短测不替代 8 小时长稳。
 
+ASan 的完整调用栈展开会显著增加高频分配用例的耗时，内核/插件测试墙钟预算为 1200 秒，ROS 套件为 2400 秒，整体回归预算为 3600 秒。两个 ROS 测试 Harness 的条件、服务与退出等待至少为 60 秒，以覆盖大型雷达模式的初始化与清理；示例套件为 900 秒，单个渲染程序为 300 秒。桌面测试单独将相机启动、单批渲染请求和条件等待设为 300 秒、ROS launch 的正常退出宽限设为 120 秒，桌面 pytest 套件为 3600 秒，整个桌面阶段为 5400 秒，CI 的 ASan 作业上限为 180 分钟。这些设置只由测试入口传入，普通运行的启动保护和故障测试保留原值；其他 profile 保持原预算。RTF 用例在所有 profile 中检查实际时钟、统计准确性与持续推进；目标速度精度由普通和覆盖率构建检查，避免把 Sanitizer 分配回溯的性能开销误判为调速错误。
+
+ASan 的独立 GUI/相机渲染进程使用 LLVM 14 的 `libunwind` 展开分配调用栈。Mesa 软件渲染的 JIT 注册异常栈时，GCC 回溯库可能在 `malloc` 中递归获取同一把锁，导致启动死锁；测试工具会实际运行一个程序，确认渲染构建的 `_Unwind_Backtrace` 来自 LLVM。无图形进程保留平台回溯库，避免额外开销；两种回溯器分别执行泄漏与未定义行为阳性对照。发布构建不依赖 LLVM 回溯库。
+
+Linux x86_64 的 ASan 测试可执行文件使用 `-no-pie` 链接，避免 Clang 14 在较新内核的地址随机化下于 `main` 前发生分配器映射冲突。动态插件保留共享库形式，普通与发布构建保持原设置。入口不修改系统 ASLR，也不通过重试掩盖启动失败；工具回归会编译并运行真实的可执行文件与共享插件，检查 ELF 类型。
+
+ASan 要求 `rclcpp >= 16.0.19`。该 Humble 版本包含[默认分配器修复](https://github.com/ros2/rclcpp/pull/3072)，旧版可在空节点启动时触发 `new-delete-type-mismatch`。入口在编译前记录实际版本并拒绝旧版，应更新测试用 ROS underlay，不能关闭该检测绕过问题。CI 显式安装更新后的 `ros-humble-rclcpp`，避免基础镜像保留旧版。
+
 覆盖率清单从所有当前包自动生成，纳入运行时 C++、有可执行映射的头文件、Python、插件、GUI 和示例启动代码；生成消息、上游消息定义、测试支撑、测试程序和开发报告工具单独记录排除原因。漏掉新文件或未插桩编译会失败。LLVM 分母从所有编译对象的零命中映射固定提取，避免多个程序的同名函数或缺失执行数据缩小分母；命中按源码位置合并，安装副本与多个插件内的同一头文件不会重复计数。Python 未执行代码仍进入分母。未实例化的 C++ 模板/内联体没有 LLVM 映射，报告会明确这个工具边界。
 
 `coverage/combined-coverage.json` 保存每文件与每包结果，`unit-coverage.json` 单列单元测试命中，`coverage-gate.json` 执行门槛：全部测试合计行覆盖率 ≥ 80%、分支 ≥ 70%；几何、模型、仿真器、传感器、地形、世界六个核心源文件必须仅凭单元测试逐文件达到 ≥ 90% / 80%。总结果按命中数与分母计算，不能把旧报告或端到端命中率当作当前单元测试覆盖率。
 
 生命周期检查在同一仿真器进程完成 140 轮构建、运行、位姿重置、故障、销毁及失败初始化。40 轮预热后记录 RSS、句柄和线程；普通构建限制 RSS 增量 32 MiB，Sanitizer 构建记录 RSS 并由 LSan 检测泄漏，避免把隔离区误当泄漏。检测器必须先检出已知的故意错误，真实测试中任一子进程的检测报告均使 profile 失败。
 
-ASan 始终开启 `detect_leaks=1`，UBSan 与 TSan 遇错返回非零。Humble 二进制依赖有已复现的退出残留，[LSan 例外清单](../../scripts/quality/lsan.supp)只匹配指定的上游分配调用栈，实际使用的规则、分配数和字节数保存在 `sanitizers.json`。**通过含例外的门禁不等于整个依赖栈零泄漏**：
+ASan 始终开启 `detect_leaks=1`，阳性对照和真实测试统一使用 `fast_unwind_on_malloc=0:malloc_context_size=64`：Ubuntu x86_64 的部分依赖二进制省略帧指针，快速展开可能丢失库加载调用栈；Mesa 的深层分配路径还可能超出默认 30 帧，丢失限定例外所需的调用方。完整展开的额外开销只用于 ASan 检查。UBSan 与 TSan 遇错返回非零。Humble 二进制依赖有已复现的退出残留，[LSan 例外清单](../../scripts/quality/lsan.supp)只匹配指定的上游分配调用栈，实际使用的规则、分配数和字节数保存在 `sanitizers.json`。**通过含例外的门禁不等于整个依赖栈零泄漏**：
 
 | 依赖路径 | 已知问题与检测边界 |
 | --- | --- |

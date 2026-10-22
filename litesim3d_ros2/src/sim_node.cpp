@@ -70,6 +70,9 @@ public:
     startup_timeout_ = declare_parameter<double>("startup_timeout", 10.0);
     litesim3d::require(std::isfinite(startup_timeout_) && startup_timeout_ > 0,
                  "invalid startup_timeout");
+    camera_render_timeout_ = declare_parameter<double>("camera_render_timeout", 30.0);
+    litesim3d::require(std::isfinite(camera_render_timeout_) && camera_render_timeout_ > 0 &&
+                     camera_render_timeout_ <= 3600, "invalid camera_render_timeout: expected (0,3600] seconds");
     paused_ = declare_parameter<bool>("start_paused", false);
     manifest_path_ = declare_parameter<std::string>("manifest_path", "");
     litesim3d::Scene scene;
@@ -293,7 +296,8 @@ private:
     auto future = camera_client_->async_send_request(request);
     // A separate executor receives the reply without reentering physics callbacks.
     // There is exactly one in-flight frame batch: slow rendering slows simulation.
-    const auto status = camera_executor_.spin_until_future_complete(future, std::chrono::seconds(30));
+    const auto status = camera_executor_.spin_until_future_complete(
+        future, std::chrono::duration<double>(camera_render_timeout_));
     if (status != rclcpp::FutureReturnCode::SUCCESS) {
       camera_client_->remove_pending_request(future);
       throw std::runtime_error("camera render timeout or shutdown");
@@ -706,6 +710,7 @@ private:
   bool publish_tf_ = true, wait_rsp_ = true, paused_ = false, ready_ = false,
        sensor_reliable_ = false;
   double startup_timeout_ = 10;
+  double camera_render_timeout_ = 30;
   std::string prefix_, manifest_path_, rsp_name_, viewer_ready_file_;
   uint64_t qos_conflicts_ = 0, dropped_frames_ = 0;
   uint64_t published_clouds_ = 0, published_imus_ = 0;

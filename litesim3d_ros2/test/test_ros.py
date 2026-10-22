@@ -107,8 +107,15 @@ class Harness:
             # can starve later subscriptions behind high-rate clock/TF data.
             self.executor.spin_once(timeout_sec=.02)
 
+    @staticmethod
+    def wall_timeout(seconds):
+        return max(seconds, float(os.environ.get("LWS_TEST_WAIT_TIMEOUT", "0")))
+
+    def wait(self, process, timeout=5):
+        return process.wait(timeout=self.wall_timeout(timeout))
+
     def until(self, predicate, timeout=6):
-        end = time.monotonic() + timeout
+        end = time.monotonic() + self.wall_timeout(timeout)
         while time.monotonic() < end:
             if predicate():
                 return
@@ -150,7 +157,7 @@ class Harness:
 
     def call(self, kind, service, request, timeout=6):
         client = self.node.create_client(kind, service)
-        assert client.wait_for_service(timeout_sec=4), service
+        assert client.wait_for_service(timeout_sec=self.wall_timeout(4)), service
         future = client.call_async(request)
         self.until(future.done, timeout=timeout)
         result = future.result()
@@ -171,7 +178,7 @@ class Harness:
             if p.poll() is None:
                 p.send_signal(signal.SIGINT)
                 try:
-                    p.wait(timeout=5)
+                    self.wait(p)
                 except subprocess.TimeoutExpired:
                     p.kill(); p.wait(); records[name+"_forced_kill"] = True
             records[name] = p.returncode
@@ -365,6 +372,23 @@ def test_T_ROS_10_timeout(h):
     final=json.loads((h.directory/"manifest.json").read_text())
     assert final["status"]["state"] == "fault"
     assert final["status"]["step"] == 0 and final["status"]["time_ns"] == 1
+
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, 3600.1])
+def test_camera_render_timeout_rejects_invalid_values(h, value):
+    process = h.sim(camera_render_timeout=value)
+    h.wait(process)
+    assert process.returncode != 0
+    assert "invalid camera_render_timeout" in (h.directory / "sim.log").read_text()
+
+
+def test_camera_render_timeout_default(h):
+    from rcl_interfaces.srv import GetParameters
+    h.rsp(); h.sim(start_paused=True); h.ready()
+    response = h.call(GetParameters, "/litesim3d/get_parameters",
+                      GetParameters.Request(names=["camera_render_timeout"]))
+    assert response.values[0].double_value == 30.0
 
 
 def test_T_ROS_11_diagnostics(h):

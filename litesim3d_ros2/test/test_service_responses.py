@@ -139,7 +139,7 @@ def test_response_pending_does_not_delay_shutdown(h, response_fault_library):
         future = client.call_async(request('shutdown'))
         h.until(lambda: len(sends(h)) >= 2)
         process.send_signal(signal.SIGINT)
-        assert process.wait(timeout=2) == 0
+        assert h.wait(process, timeout=2) == 0
         assert not future.done()
     finally:
         h.node.destroy_client(client)

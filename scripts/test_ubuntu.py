@@ -11,9 +11,11 @@ import platform
 import shutil
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 from checks.run_checked import run
 from quality.inventory import inventory, coverage_config
+from quality.sanitizer_control import asan_options
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ("functional", "coverage", "asan", "tsan", "release")
@@ -46,7 +48,9 @@ class Profile:
         for key in ("LWS_INSTALL_PREFIX", "LWS_BUILD_ROOT", "LWS_BUILD_GUI", "LLVM_PROFILE_FILE",
                     "COVERAGE_PROCESS_START", "COVERAGE_FILE", "ASAN_OPTIONS", "UBSAN_OPTIONS", "TSAN_OPTIONS",
                     "LSAN_OPTIONS", "LWS_TEST_STEP_TIMEOUT", "LWS_INSTRUMENTED_MEMORY",
-                    "LWS_TEST_LAUNCH_TIMEOUT"):
+                    "LWS_TEST_LAUNCH_TIMEOUT", "LWS_TEST_CORE_TIMEOUT", "LWS_TEST_ROS_TIMEOUT",
+                    "LWS_TEST_WAIT_TIMEOUT", "LWS_TEST_SUITE_TIMEOUT", "LWS_TEST_RENDER_TIMEOUT",
+                    "LWS_TEST_STARTUP_TIMEOUT", "LWS_TEST_SHUTDOWN_TIMEOUT"):
             self.env.pop(key, None)
         self.env.update(LITESIM3D_ARTIFACTS_DIR=str(self.evidence / "artifacts"),
                         LWS_BUILD_ROOT=str(self.runtime), LWS_BUILD_GUI="1",
@@ -60,12 +64,22 @@ class Profile:
             self.env["LWS_TEST_LAUNCH_TIMEOUT"] = "60"
         if name in ("asan", "tsan"):
             self.env["LWS_INSTRUMENTED_MEMORY"] = name
+        if name == "asan":
+            self.env["LWS_TEST_CORE_TIMEOUT"] = "1200"
+            self.env["LWS_TEST_ROS_TIMEOUT"] = "2400"
+            self.env["LWS_TEST_WAIT_TIMEOUT"] = "60"
+            self.env["LWS_TEST_SUITE_TIMEOUT"] = "900"
+            self.env["LWS_TEST_RENDER_TIMEOUT"] = "300"
         self.record = {"profile": name, "status": "RUNNING", "source": str(ROOT),
                        "source_snapshot": source_snapshot(ROOT), "stages": [],
                        "platform": platform.platform(), "architecture": platform.machine(),
                        "ros_distro": os.environ.get("ROS_DISTRO"), "rmw": args.rmw,
                        "evidence": str(self.evidence),
                        "step_wall_timeout_seconds": int(self.env.get("LWS_TEST_STEP_TIMEOUT", "6")),
+                       "core_wall_timeout_seconds": int(self.env.get("LWS_TEST_CORE_TIMEOUT", "600")),
+                       "ros_wall_timeout_seconds": int(self.env.get("LWS_TEST_ROS_TIMEOUT", "1200")),
+                       "minimum_wait_timeout_seconds": int(self.env.get("LWS_TEST_WAIT_TIMEOUT", "0")),
+                       "render_wall_timeout_seconds": int(self.env.get("LWS_TEST_RENDER_TIMEOUT", "60")),
                        "world_launch_wall_timeout_seconds": int(self.env.get("LWS_TEST_LAUNCH_TIMEOUT", "15"))}
         self.save()
 
@@ -83,6 +97,12 @@ class Profile:
             env["LLVM_PROFILE_FILE"] = str(profiles / "%m-%p.profraw")
             env["COVERAGE_FILE"] = str(profiles / "python/.coverage")
         if graphical:
+            if self.name == "asan":
+                # LLVM's complete allocation stacks make Mesa initialization
+                # much slower. Scope these budgets to graphical tests; fault
+                # tests and normal simulator defaults retain their deadlines.
+                env.update(LWS_TEST_STARTUP_TIMEOUT="300", LWS_TEST_WAIT_TIMEOUT="300",
+                           LWS_TEST_SHUTDOWN_TIMEOUT="120", LWS_TEST_SUITE_TIMEOUT="3600")
             command = ["xvfb-run", "-a", "env", "LIBGL_ALWAYS_SOFTWARE=1", "QT_X11_NO_MITSHM=1",
                        "LWS_PRIVATE_TEST_DISPLAY=1", *map(str, command)]
         setup = self.prefix / "setup.bash" if installed else Path(self.args.ros_prefix) / "setup.bash"
@@ -92,6 +112,10 @@ class Profile:
                    "quality-stage", str(setup), *map(str, command)]
         entry = {"name": name, "status": "RUNNING", "command": command,
                  "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        if graphical:
+            entry["graphical_test_budgets"] = {key: int(env[key]) for key in (
+                "LWS_TEST_STARTUP_TIMEOUT", "LWS_TEST_WAIT_TIMEOUT",
+                "LWS_TEST_SHUTDOWN_TIMEOUT", "LWS_TEST_SUITE_TIMEOUT") if key in env}
         self.record["stages"].append(entry)
         self.save()
         print(f"[{self.name}] START {name} ({self.evidence / (name + '.log')})", flush=True)
@@ -122,6 +146,17 @@ class Profile:
 
     def build(self):
         cmake = ["-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"]
+        if self.name == "asan":
+            from ament_index_python.packages import get_package_share_directory
+            share = Path(get_package_share_directory("rclcpp"))
+            version = ET.parse(share / "package.xml").getroot().findtext("version")
+            self.record["rclcpp"] = {"version": version, "share": str(share)}
+            self.save()
+            if tuple(map(int, version.split("."))) < (16, 0, 19):
+                raise RuntimeError(f"ASan requires rclcpp >= 16.0.19; found {version}. "
+                                   "Older Humble allocators trigger new-delete-type-mismatch. "
+                                   "Use an updated ROS underlay; do not disable this detector. "
+                                   "Upstream fix: https://github.com/ros2/rclcpp/pull/3072")
         if self.name != "tsan" and not tool("xvfb-run"):
             raise RuntimeError("Install xvfb and xauth before profiles that run desktop tests")
         if self.name == "coverage" and (not importlib.util.find_spec("coverage") or
@@ -147,7 +182,7 @@ class Profile:
             self.env["LLVM_PROFILE_FILE"] = str(profiles / "%m-%p.profraw")
         if self.name == "asan":
             suppression = ROOT / "scripts/quality/lsan.supp"
-            self.env.update(ASAN_OPTIONS=f"detect_leaks=1:halt_on_error=1:external_symbolizer_path={symbolizer}:log_path={self.evidence}/asan",
+            self.env.update(ASAN_OPTIONS=asan_options(symbolizer, self.evidence / "asan"),
                             UBSAN_OPTIONS=f"halt_on_error=1:print_stacktrace=1:external_symbolizer_path={symbolizer}:log_path={self.evidence}/ubsan",
                             LSAN_OPTIONS=f"suppressions={suppression}:print_suppressions=1")
         if self.name == "tsan":
@@ -156,6 +191,11 @@ class Profile:
                 "sanitizer-control", [sys.executable, ROOT / "scripts/quality/sanitizer_control.py",
                 "--compiler", clangxx, "--mode", self.name,
                 "--output", self.evidence / "positive-control"], installed=False):
+            return False
+        if self.name == "asan" and not self.stage(
+                "sanitizer-render-control", [sys.executable, ROOT / "scripts/quality/sanitizer_control.py",
+                "--compiler", clangxx, "--mode", "asan", "--llvm-unwind",
+                "--output", self.evidence / "positive-control/render"], installed=False):
             return False
         identity = {"source": str(ROOT), "profile": self.name, "cmake": cmake,
                     "ros_prefix": str(self.args.ros_prefix)}
@@ -180,7 +220,8 @@ class Profile:
                                 ("litesim3d_plugin_tests", "core_plugin_contract_tests"),
                                 ("litesim3d_mid360", "mid360_plugin_tests")):
             self.stage(binary, [self.runtime / "build" / package / binary,
-                       f"--gtest_output=xml:{self.evidence / (binary + '-cases.xml')}"], 600, unit=True)
+                       f"--gtest_output=xml:{self.evidence / (binary + '-cases.xml')}"],
+                       int(self.env.get("LWS_TEST_CORE_TIMEOUT", "600")), unit=True)
         self.stage("lifecycle", [sys.executable, ROOT / "scripts/quality/check_lifecycle.py",
                    "--binary", self.runtime / "build/litesim3d_core/lifecycle_probe",
                    "--config", self.prefix / "share/litesim3d_core/config/demo.yaml",
@@ -188,7 +229,7 @@ class Profile:
                    *(["--instrumented"] if self.name in ("asan", "tsan") else [])], 600, unit=True)
 
     def regression(self):
-        self.stage("regression", ["bash", ROOT / "scripts/test_m3.sh"], 1800)
+        self.stage("regression", ["bash", ROOT / "scripts/test_m3.sh"], 3600 if self.name == "asan" else 1800)
         self.stage("bringup-unit", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                    ROOT / "litesim3d_bringup/test",
                    f"--junitxml={self.evidence / 'bringup-cases.xml'}"], 300, unit=True)
@@ -201,7 +242,8 @@ class Profile:
             # Tutorials assert real-time motion over a fixed wall interval.
             self.stage("tutorials", [sys.executable, ROOT / "scripts/checks/check_documented_tutorials.py",
                        "--output", self.evidence / "tutorials"], 300)
-        self.stage("desktop", ["bash", ROOT / "scripts/test_desktop.sh"], 900, graphical=True)
+        self.stage("desktop", ["bash", ROOT / "scripts/test_desktop.sh"],
+                   5400 if self.name == "asan" else 900, graphical=True)
 
     def execute(self):
         try:

@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--binary", type=Path,
                         default=Path(get_package_prefix("litesim3d_gui")).parent / "build/litesim3d_gui/viewer_camera_test")
     args=parser.parse_args()
+    render_timeout=float(os.environ.get("LWS_TEST_RENDER_TIMEOUT", "60"))
     if args.output.exists() and any(args.output.iterdir()):
         parser.error("output must be a new or empty directory")
     args.output.mkdir(parents=True,exist_ok=True)
@@ -55,7 +56,7 @@ def main():
         with (folder / "camera.log").open("w") as log:
             test=subprocess.run([str(args.binary),str(folder / "scene/scene.json"),str(folder / "images"),
                                  "pbr" if variant=="pbr" else "embedded"],
-                                env=env,stdout=log,stderr=subprocess.STDOUT,timeout=60)
+                                env=env,stdout=log,stderr=subprocess.STDOUT,timeout=render_timeout)
         result[variant]="PASS" if test.returncode==0 else "FAIL"
     (args.output / "result.json").write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2))

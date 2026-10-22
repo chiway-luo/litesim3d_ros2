@@ -34,7 +34,7 @@ def move(h, x, y, w, steps, identity):
     publisher = h.node.create_publisher(Twist, "/cmd_vel", 1)
     h.until(lambda: publisher.get_subscription_count() == 1)
     command = Twist(); command.linear.x = float(x); command.linear.y = float(y); command.angular.z = float(w)
-    publisher.publish(command); h.spin(.1)
+    h.publish_paused_command(publisher, command)
     result = h.step(steps, identity)
     h.until(lambda: all(h.messages[key] and stamp(h.messages[key][-1].header.stamp) == result.time_ns
                         for key in ("odom", "truth", "joints")))

@@ -62,7 +62,11 @@ def test_actual_rtf_matches_committed_clock_and_target(example, target):
     measured = (end["stamp_ns"] - start["stamp_ns"]) * 1e-9 / (end_wall - start_wall)
     assert end["target_real_time_factor"] == target
     assert end["actual_real_time_factor"] == pytest.approx(measured, rel=.2, abs=.04)
-    if target:
+    # Full allocation-stack unwinding can make the instrumented simulator
+    # compute-bound. Keep statistics/progress assertions in every profile;
+    # target-speed precision is measured by ordinary and coverage builds.
+    rate_precision_required = not os.environ.get("LWS_INSTRUMENTED_MEMORY")
+    if target and rate_precision_required:
         assert end["actual_real_time_factor"] == pytest.approx(target, rel=.25, abs=.04)
         if target in {.25, .5, 1}:
             first_wall, first=samples[0]
@@ -76,6 +80,7 @@ def test_actual_rtf_matches_committed_clock_and_target(example, target):
     assert state["run_id"] == end["run_id"]
     assert "front_left_wheel_link" in state["link_poses"]
     (car.directory / "rtf-evidence.json").write_text(json.dumps({"target": target,
+        "rate_precision_required": rate_precision_required,
         "measured": measured, "reported": end["actual_real_time_factor"], "samples": samples}, indent=2))
 
 

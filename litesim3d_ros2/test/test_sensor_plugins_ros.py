@@ -109,8 +109,10 @@ def test_explicit_camera_plugins_real_render_noise_and_collision_truth(h):
             if (channel=='color' and c['type']!='depth') or (channel=='depth' and c['type']!='rgb'):
                 h.subscribe(c['name']+'_'+channel,Image,f"/{c['topic']}/{channel}/image_raw")
                 h.subscribe(c['name']+'_'+channel+'_info',CameraInfo,f"/{c['topic']}/{channel}/camera_info")
-    h.rsp(); h.sim(start_paused=True,sensor_reliable=True,scene_description=str(scene_file),startup_timeout=30.)
-    h.until(lambda: h.status().get('ready')=='true',timeout=35)
+    startup_timeout = max(30., float(os.environ.get('LWS_TEST_STARTUP_TIMEOUT', '0')))
+    h.rsp(); h.sim(start_paused=True,sensor_reliable=True,scene_description=str(scene_file),startup_timeout=startup_timeout,
+                   camera_render_timeout=float(os.environ.get('LWS_TEST_RENDER_TIMEOUT', '30')))
+    h.until(lambda: h.status().get('ready')=='true',timeout=startup_timeout + 5)
     move_and_drain(h)
     h.until(lambda: len(h.messages['rgb_color'])==10 and len(h.messages['rgb_bias_color'])==14
         and len(h.messages['depth_depth'])==10 and len(h.messages['rgbd_depth'])==10)
@@ -140,3 +142,27 @@ def test_explicit_camera_plugins_real_render_noise_and_collision_truth(h):
         'biased_depth_m':struct.unpack_from('<f',bytes(biased.data),center)[0],
         'truth_x_m':h.messages['truth'][-1].pose.pose.position.x,
         'encoder_odom_x_m':h.messages['odom'][-1].pose.pose.position.x,'renderer':'real Ogre'},indent=2))
+
+
+def test_camera_render_timeout_faults_on_unresponsive_renderer(h):
+    from litesim3d_interfaces.srv import RenderCameras
+    import time
+    prepare(h, True)
+    scene_file = h.directory / 'scene.json'
+    scene_file.write_text(json.dumps({'scene_id': 'delayed-test-renderer'}))
+    received = []
+    def delayed(request, response):
+        received.append(request)
+        time.sleep(.4)
+        return response
+    service = h.node.create_service(RenderCameras, '/sim/render_cameras', delayed)
+    try:
+        h.rsp(); h.sim(start_paused=True, scene_description=str(scene_file), camera_render_timeout=.1)
+        h.ready()
+        result = h.step(40, 'render-deadline')
+        assert not result.success
+        h.until(lambda: bool(received) and h.status().get('state') == 'fault')
+        assert 'camera render timeout' in h.status()['last_error']
+        assert h.status()['published_camera_frames'] == '0'
+    finally:
+        h.node.destroy_service(service)

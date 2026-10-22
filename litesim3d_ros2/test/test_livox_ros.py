@@ -66,7 +66,7 @@ def test_livox_matches_native_geometry_and_leaves_imu_unchanged(h, format, rate,
     valid = [(slot, p) for slot,p in enumerate(rows) if math.isfinite(p[0])]
     assert 100 < len(valid) < len(rows)
     native_imu = h.messages['imu'][-1]
-    process.send_signal(signal.SIGINT); process.wait(timeout=5)
+    process.send_signal(signal.SIGINT); h.wait(process)
     h.until(lambda: h.node.count_publishers(topic+'points_raw') == 0)
     h.spin(.2); h.messages['status'].clear(); h.messages['imu'].clear()
     main = topic+'livox/lidar'
@@ -175,3 +175,14 @@ def test_invalid_livox_options_fail_before_publishing(h, parameters, error):
     h.until(lambda: process.poll() is not None)
     assert process.returncode != 0
     assert error in (h.directory/'sim.log').read_text()
+
+
+@pytest.mark.parametrize('format', [0, 1])
+def test_livox_shutdown_releases_callback_groups_before_plugin_unload(h, format):
+    mid360(h)
+    process = h.sim(start_paused=True, wait_for_robot_state_publisher=False,
+                    lidar_interface='auto', xfer_format=format)
+    h.ready()
+    assert h.step(20, 'shutdown-frame').success
+    process.send_signal(signal.SIGINT)
+    assert h.wait(process) == 0, (h.directory / 'sim.log').read_text()

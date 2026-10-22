@@ -1,5 +1,9 @@
 import json
+import os
 from pathlib import Path
+import platform
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +16,7 @@ from check_lifecycle import evaluate
 from check_sanitizers import findings, suppression_usage
 from collect_coverage import counts, gate, native_metrics, python_report, fixed_denominators
 from inventory import inventory, python_aliases, coverage_config
+from sanitizer_control import asan_options, asan_link_options
 
 
 class QualityTests(unittest.TestCase):
@@ -159,6 +164,49 @@ class QualityTests(unittest.TestCase):
         self.assertIn("profile: [functional, coverage, asan, tsan, release]", workflow)
         self.assertIn("python3 scripts/test_ubuntu.py --profile", workflow)
         self.assertNotIn("bash scripts/test_m3.sh", workflow)
+
+    def test_asan_executable_mapping_keeps_plugins_shared(self):
+        compiler = shutil.which("clang++-14")
+        if platform.system() != "Linux" or not compiler or not shutil.which("cmake"):
+            self.skipTest("Linux with Clang 14 and CMake is required for the ELF regression")
+        self.write("CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\n"
+                   "project(litesim3d_gui LANGUAGES CXX)\n"
+                   "add_library(plugin SHARED plugin.cpp)\n"
+                   "add_executable(probe main.cpp)\n"
+                   "target_link_libraries(probe PRIVATE plugin ${CMAKE_DL_LIBS})\n")
+        self.write("plugin.cpp", "extern \"C\" int answer(){return 42;}\n")
+        self.write("main.cpp", "#include <dlfcn.h>\n#include <unwind.h>\n#include <cstdio>\n"
+                   "extern \"C\" int answer(); int main(){\n"
+                   "Dl_info info{}; if(!dladdr(reinterpret_cast<void*>(&_Unwind_Backtrace), &info)) return 2;\n"
+                   "std::puts(info.dli_fname); return answer()!=42;}\n")
+        # Exercise an unpacked tool prefix, without replacing the machine's
+        # libunwind packages (which may be required by Nav2/SLAM dependencies).
+        library = Path(next(flag[2:] for flag in asan_link_options(True) if flag.startswith("-L")))
+        isolated = self.root / "unwind"
+        isolated.mkdir()
+        for name in ("libunwind.so", "libunwind.so.1"):
+            (isolated / name).symlink_to((library / name).resolve())
+        env = dict(os.environ, LITESIM_LLVM_UNWIND_DIR=str(isolated),
+                   LD_LIBRARY_PATH=str(isolated) + os.pathsep + os.environ.get("LD_LIBRARY_PATH", ""))
+        build = self.root.parent / "build"
+        for command in (["cmake", "-S", str(self.root), "-B", str(build),
+                         f"-DCMAKE_CXX_COMPILER={compiler}", "-DLITESIM_QUALITY_MODE=asan",
+                         f"-DCMAKE_PROJECT_INCLUDE={QUALITY / 'instrument.cmake'}"],
+                        ["cmake", "--build", str(build), "--parallel", "1"]):
+            result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"-L{isolated}", (build / "CMakeFiles/probe.dir/link.txt").read_text())
+        def elf_type(path):
+            header = path.read_bytes()[:20]
+            self.assertEqual(header[:4], b"\x7fELF")
+            return int.from_bytes(header[16:18], "little" if header[5] == 1 else "big")
+        self.assertEqual(elf_type(build / "libplugin.so"), 3)  # ET_DYN: still a shared plugin.
+        if platform.machine().lower() in ("x86_64", "amd64"):
+            self.assertEqual(elf_type(build / "probe"), 2)  # ET_EXEC: cannot overlap ASan's allocator.
+        env["ASAN_OPTIONS"] = asan_options(shutil.which("llvm-symbolizer-14") or "llvm-symbolizer")
+        result = subprocess.run([str(build / "probe")], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("libunwind.so.1", result.stdout)  # LLVM unwinds malloc stacks, not libgcc_s.
 
     def test_python_subprocess_files_merge_and_unexecuted_file_is_counted(self):
         try:

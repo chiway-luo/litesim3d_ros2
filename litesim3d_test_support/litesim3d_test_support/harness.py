@@ -78,18 +78,28 @@ class SimulationHarness:
                     self.node.destroy_subscription(subscription)
             for topic, (key, kind) in sensors.items():
                 self.subscribe(key, kind, topic, 100)
+        startup_timeout = self.environment.get("LWS_TEST_STARTUP_TIMEOUT")
+        if reliable_sensors or startup_timeout:
             params = yaml.safe_load(Path(arguments.get("params", self.share / "config/ros.yaml")).read_text())
-            params["/litesim3d"]["ros__parameters"]["sensor_reliable"] = True
-            path = self.directory / "reliable-ros.yaml"
+            settings = params["/litesim3d"]["ros__parameters"]
+            if reliable_sensors:
+                settings["sensor_reliable"] = True
+            if startup_timeout:
+                settings["startup_timeout"] = max(float(settings.get("startup_timeout", 0)), float(startup_timeout))
+                settings["camera_render_timeout"] = float(self.environment.get("LWS_TEST_RENDER_TIMEOUT", "30"))
+            path = self.directory / "test-ros.yaml"
             path.write_text(yaml.safe_dump(params))
             arguments["params"] = str(path)
+        shutdown_timeout = self.environment.get("LWS_TEST_SHUTDOWN_TIMEOUT")
+        if shutdown_timeout:
+            arguments.update(sigterm_timeout=shutdown_timeout, sigkill_timeout=shutdown_timeout)
         self.log = (self.directory / "launch.log").open("w")
         command = ["ros2", "launch", self.package, self.launch_file,
                    "manifest:=" + str(self.directory / "manifest.json")]
         command.extend(f"{name}:={value}" for name, value in {"rviz": "false", "gui": "false", **arguments}.items())
         self.process = subprocess.Popen(command, env=self.environment, cwd=self.directory,
                                         stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
-        self.until(lambda: self.status().get("ready") == "true", timeout=15)
+        self.until(lambda: self.status().get("ready") == "true", timeout=max(15, float(startup_timeout or 0) + 5))
         # Kernel/RSP readiness does not imply this test's sensor readers have
         # discovered the writers. Humble rclpy has no subscription match-count
         # API: check the reader's graph and the simulator's actual DDS matches.
@@ -117,8 +127,12 @@ class SimulationHarness:
             # later status/scene callbacks. Wall waits may overrun by <=20 ms.
             self.executor.spin_once(timeout_sec=.02)
 
+    @staticmethod
+    def wall_timeout(seconds):
+        return max(seconds, float(os.environ.get("LWS_TEST_WAIT_TIMEOUT", "0")))
+
     def until(self, predicate, timeout=6):
-        end = time.monotonic() + timeout
+        end = time.monotonic() + self.wall_timeout(timeout)
         while time.monotonic() < end:
             if predicate():
                 return
@@ -128,7 +142,7 @@ class SimulationHarness:
 
     def step(self, steps, identity):
         client = self.node.create_client(Step, "/sim/step")
-        assert client.wait_for_service(timeout_sec=5)
+        assert client.wait_for_service(timeout_sec=self.wall_timeout(5))
         request = Step.Request(request_id=identity, steps=steps)
         future = client.call_async(request)
         # Instrumented builds can spend longer computing a large synchronous
@@ -141,13 +155,23 @@ class SimulationHarness:
         self.until(lambda: self.messages["clock"] and stamp(self.messages["clock"][-1].clock) >= result.time_ns)
         return result
 
+    def publish_paused_command(self, publisher, message):
+        self.until(lambda: self.status().get("state") == "paused"
+                   and self.status().get("pending_command") == "false")
+        run_id = self.status()["run_id"]
+        publisher.publish(message)
+        # Topic delivery and the step service are independently scheduled.
+        # Wait for actual acceptance before advancing the simulation.
+        self.until(lambda: self.status().get("run_id") == run_id
+                   and self.status().get("pending_command") == "true")
+
     def close(self):
         try:
             if self.process:
                 if self.process.poll() is None:
                     os.killpg(self.process.pid, signal.SIGINT)
                     try:
-                        self.process.wait(timeout=10)
+                        self.process.wait(timeout=self.wall_timeout(10))
                     except subprocess.TimeoutExpired:
                         os.killpg(self.process.pid, signal.SIGKILL)
                         self.process.wait(timeout=3)

@@ -19,8 +19,10 @@ public:
     return plugin_ ? plugin_->description() : description_;
   }
 private:
-  // Declaration order keeps the loader alive until its plugin is destroyed.
+  // Destroy plugin publishers, then their QoS callback weak control blocks,
+  // before unloading the library that instantiated their deleters.
   std::unique_ptr<pluginlib::ClassLoader<LidarOutputPlugin>> loader_;
+  rclcpp::CallbackGroup::SharedPtr callback_group_;
   std::shared_ptr<LidarOutputPlugin> plugin_;
   litesim3d::Json description_;
 };
