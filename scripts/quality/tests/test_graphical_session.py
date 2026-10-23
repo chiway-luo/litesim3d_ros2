@@ -30,7 +30,7 @@ class GraphicalSessionTests(unittest.TestCase):
             (setup / "setup.bash").write_text("")
             binary = root / "qt-session"
             qt_flags = shlex.split(subprocess.check_output(
-                [tools["pkg-config"], "--cflags", "--libs", "Qt5Widgets", "Qt5DBus"], text=True))
+                [tools["pkg-config"], "--cflags", "--libs", "Qt5Core", "Qt5DBus"], text=True))
             build = subprocess.run([
                 tools["clang++-14"], "-g", "-fPIC", "-fsanitize=address", "-fno-omit-frame-pointer",
                 *asan_link_options(True), str(SCRIPTS / "fixtures/qt_session/main.cpp"),
