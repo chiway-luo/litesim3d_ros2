@@ -190,7 +190,7 @@ def test_livox_custom_gravity_and_clean_shutdown(h, format, gravity):
                for msg in h.messages['gravity_imu'])
     # QoS event weak control blocks must die before the vendor DSO is unloaded.
     process.send_signal(signal.SIGINT)
-    assert process.wait(timeout=5) == 0
+    assert h.wait(process) == 0, (h.directory / 'sim.log').read_text()
 
 
 @pytest.mark.parametrize('format,namespace', [(0, ''), (1, 'dual')])
@@ -218,7 +218,8 @@ def test_two_mid360_streams_and_clean_shutdown(h, format, namespace):
     else:
         assert a.width>100 and b.width>100
     assert h.node.count_publishers(prefix+'livox/lidar')==0
-    process.send_signal(signal.SIGINT);assert process.wait(timeout=5)==0
+    process.send_signal(signal.SIGINT)
+    assert h.wait(process) == 0, (h.directory / 'sim.log').read_text()
 
 
 @pytest.mark.parametrize('format', [0, 1])
