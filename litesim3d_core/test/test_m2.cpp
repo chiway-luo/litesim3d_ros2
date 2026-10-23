@@ -198,15 +198,15 @@ TEST(ODO03M2, ErrorModelDoesNotModifyTruth) {
 }
 TEST(IMU01M2, StaticGravityRotationAndRawCovariance) {
   ImuConfig c;Kinematics k;auto a=sampleImu(c,k,Pose::Identity(),1);
-  EXPECT_LT((a.acceleration-Vec3(0,0,9.80665)).norm(),1e-10);EXPECT_EQ(a.angular_velocity.norm(),0);
+  EXPECT_LT((a.acceleration-Vec3(0,0,9.81)).norm(),1e-10);EXPECT_EQ(a.angular_velocity.norm(),0);
   EXPECT_EQ(a.orientation_covariance[0],-1);EXPECT_EQ(a.acceleration_covariance[0],0);
   auto b=sampleImu(c,k,pose(Vec3::Zero(), {pi/2,0,0}),1);
-  EXPECT_LT((b.acceleration-Vec3(0,9.80665,0)).norm(),1e-10);
+  EXPECT_LT((b.acceleration-Vec3(0,9.81,0)).norm(),1e-10);
 }
 TEST(IMU03M2, LeverArmCentripetalTangentialAndGyroMount) {
   ImuConfig c;Kinematics k;k.omega={0,0,1};k.alpha={0,0,2};
   auto a=sampleImu(c,k,pose({1,0,0}),1);
-  EXPECT_LT((a.acceleration-Vec3(-1,2,9.80665)).norm(),1e-10);
+  EXPECT_LT((a.acceleration-Vec3(-1,2,9.81)).norm(),1e-10);
   auto b=sampleImu(c,k,pose({1,0,0},{pi/2,0,0}),1);
   EXPECT_LT((b.angular_velocity-Vec3(0,1,0)).norm(),1e-10);
 }
@@ -219,7 +219,7 @@ TEST(IMU04M2, AnalyticSmoothTrajectory) {
     k.acceleration={-std::sin(t),-4*std::cos(2*t),-1.8*std::sin(3*t)};
     k.omega={0,0,.4*std::cos(t)};k.alpha={0,0,-.4*std::sin(t)};
     auto a=sampleImu(c,k,Pose::Identity(),1+n*5000000);
-    Vec3 expected=k.world_body.linear().transpose()*(k.acceleration+Vec3(0,0,9.80665));
+    Vec3 expected=k.world_body.linear().transpose()*(k.acceleration+Vec3(0,0,9.81));
     EXPECT_LT((a.acceleration-expected).norm(),1e-3);EXPECT_NEAR(a.angular_velocity.z(),.4*std::cos(t),1e-4);
   }
 }
@@ -230,7 +230,7 @@ TEST(IMU06M2, BiasNoiseStatisticsAndDeterminism) {
   for(uint64_t i=0;i<100000;++i) {
     auto a=sampleImu(c,k,Pose::Identity(),i+1,42,i),b=sampleImu(c,k,Pose::Identity(),i+1,42,i);
     EXPECT_EQ(a.acceleration,b.acceleration);
-    auto e=(a.acceleration-Vec3(0,0,9.80665)-c.accel_bias).eval();sum+=e;square+=e.cwiseProduct(e);
+    auto e=(a.acceleration-Vec3(0,0,9.81)-c.accel_bias).eval();sum+=e;square+=e.cwiseProduct(e);
   }
   for(int j=0;j<3;++j) {
     double mean=sum[j]/100000,sd=std::sqrt(square[j]/100000-mean*mean);
@@ -426,4 +426,25 @@ TEST(MOT08M2, TerrainAttitudeSweepCannotTunnelLidarThroughThinWall) {
   EXPECT_LT(s.snapshot().world_base.translation().x(),0);
   EXPECT_EQ(s.snapshot().v,0);
   EXPECT_FALSE(s.diagnostics()["last_error"].get<std::string>().empty());
+}
+
+
+#include "litesim3d/sensor_plugin.hpp"
+TEST(ImuGravityParameter, CustomMagnitudeRotationAndAcceleration) {
+  ImuConfig c; c.gravity=9.7; Kinematics k; k.acceleration.z()=1.;
+  EXPECT_NEAR(sampleImu(c,k,Pose::Identity(),1).acceleration.z(),10.7,1e-12);
+  const auto tilted=sampleImu(c,k,pose(Vec3::Zero(),{pi/2,0,0}),1);
+  EXPECT_LT((tilted.acceleration-Vec3(0,10.7,0)).norm(),1e-12);
+}
+TEST(ImuGravityParameter, DefaultsSerializationAndValidation) {
+  using namespace litesim3d::plugins;
+  EXPECT_DOUBLE_EQ(sensorDefaults("imu").at("gravity_mps2").get<double>(),9.81);
+  auto c=imuSettings("test",{{"link","imu_link"},{"topic","imu"},{"gravity_mps2",1.62}});
+  EXPECT_DOUBLE_EQ(c.gravity,1.62);
+  EXPECT_DOUBLE_EQ(sensorParameters(c).at("gravity_mps2").get<double>(),1.62);
+  EXPECT_DOUBLE_EQ(sampleImu(c,Kinematics{},Pose::Identity(),1).acceleration.z(),1.62);
+  for(double bad:{0.,-1.,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+    c.gravity=bad; EXPECT_THROW(c.validate(),std::runtime_error);
+  }
+  EXPECT_THROW(imuSettings("bad",{{"link","imu_link"},{"topic","imu"},{"gravity_mps2",-1.}}),std::runtime_error);
 }

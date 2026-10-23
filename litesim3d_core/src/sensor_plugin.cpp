@@ -42,7 +42,7 @@ Json sensorDefaults(const std::string &kind) {
     {"self_filter","sensor_link"},{"excluded_links",Json::array()},
     {"range_bias_m",0.0},{"range_sigma_m",0.0},{"dropout",0.0},{"publish_range_boundary",false}});
   if (kind == "imu") return merge(p, {
-    {"rate_hz",200.0},{"accel_bias",{0.,0.,0.}},{"gyro_bias",{0.,0.,0.}},
+    {"rate_hz",200.0},{"gravity_mps2",ImuConfig{}.gravity},{"accel_bias",{0.,0.,0.}},{"gyro_bias",{0.,0.,0.}},
     {"accel_sigma",{0.,0.,0.}},{"gyro_sigma",{0.,0.,0.}},
     {"accel_range_mps2",0.0},{"gyro_range_radps",0.0}});
   require(kind == "rgb" || kind == "depth" || kind == "rgbd", "unknown sensor output kind: " + kind);
@@ -75,6 +75,7 @@ LidarConfig lidarSettings(const std::string &name, const Json &input, const std:
 ImuConfig imuSettings(const std::string &name, const Json &input) {
   const auto p = parameters(sensorDefaults("imu"), input);
   ImuConfig c; c.name = name; c.link = p.at("link"); c.topic = p.at("topic"); c.rate = p.at("rate_hz");
+  c.gravity = p.at("gravity_mps2");
   c.accel_bias = vector(p,"accel_bias"); c.gyro_bias = vector(p,"gyro_bias");
   c.accel_sigma = vector(p,"accel_sigma"); c.gyro_sigma = vector(p,"gyro_sigma");
   c.accel_range = p.at("accel_range_mps2"); c.gyro_range = p.at("gyro_range_radps");
@@ -104,7 +105,7 @@ Json sensorParameters(const LidarConfig &c) {
 }
 Json sensorParameters(const ImuConfig &c) {
   return {{"link",c.link},{"topic",c.topic},{"enabled",true},{"rate_hz",c.rate},
-    {"accel_bias",array(c.accel_bias)},{"gyro_bias",array(c.gyro_bias)},
+    {"gravity_mps2",c.gravity},{"accel_bias",array(c.accel_bias)},{"gyro_bias",array(c.gyro_bias)},
     {"accel_sigma",array(c.accel_sigma)},{"gyro_sigma",array(c.gyro_sigma)},
     {"accel_range_mps2",c.accel_range},{"gyro_range_radps",c.gyro_range}};
 }

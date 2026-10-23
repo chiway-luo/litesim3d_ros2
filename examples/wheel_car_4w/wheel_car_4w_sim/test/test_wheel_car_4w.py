@@ -79,7 +79,7 @@ def test_launch_sensors_four_wheels_step_and_watchdog(car):
     car.until(lambda: car.messages["cloud"] and car.messages["imu"])
     imu = car.messages["imu"][-1]
     assert imu.header.frame_id == "imu_link" and imu.orientation_covariance[0] == -1
-    assert imu.linear_acceleration.z == pytest.approx(9.80665, abs=1e-8)
+    assert imu.linear_acceleration.z == pytest.approx(9.81, abs=1e-8)
     cloud = car.messages["cloud"][-1]
     assert (cloud.height, cloud.width, cloud.point_step, cloud.header.frame_id) == (16, 512, 24, "lidar_link")
     assert sum(math.isfinite(values[0]) for values in struct.iter_unpack("<ffffH2xf", bytes(cloud.data))) > 100
@@ -229,7 +229,7 @@ def test_measurement_error_profiles_reach_ros_outputs(car, profile):
     imu = car.messages["imu"][-1]; odom = car.messages["odom"][-1]
     if profile == "ideal":
         assert imu.linear_acceleration.x == 0
-        assert imu.linear_acceleration.z == pytest.approx(9.80665, abs=1e-9)
+        assert imu.linear_acceleration.z == pytest.approx(9.81, abs=1e-9)
         assert imu.angular_velocity.z == 0
         assert imu.linear_acceleration_covariance[0] == 0
         assert odom.twist.twist.linear.x == 0 and odom.twist.twist.angular.z == 0
@@ -237,7 +237,7 @@ def test_measurement_error_profiles_reach_ros_outputs(car, profile):
         assert imu.linear_acceleration_covariance[0] == pytest.approx(0.02 ** 2)
         assert imu.angular_velocity_covariance[0] == pytest.approx(0.001 ** 2)
         assert abs(odom.twist.twist.linear.x) > 1e-8
-        assert imu.linear_acceleration.z != pytest.approx(9.80665, abs=1e-8)
+        assert imu.linear_acceleration.z != pytest.approx(9.81, abs=1e-8)
     assert not any("rviz" in name.lower() for name in car.node.get_node_names())
 
 
@@ -399,7 +399,7 @@ def test_mid360_launch_defaults_to_official_messages_and_keeps_other_sensors(tmp
         assert not car.messages['boundary']
         imu = car.messages['imu'][-1]
         assert imu.header.frame_id == 'imu_link'
-        assert imu.linear_acceleration.z == pytest.approx(9.80665)
+        assert imu.linear_acceleration.z == pytest.approx(9.81)
         assert car.messages['odom'][-1].child_frame_id == 'base_link'
         assert len(car.messages['joints'][-1].name) == 4
         assert car.node.count_publishers('/points_raw') == car.node.count_publishers('/livox/imu') == 0

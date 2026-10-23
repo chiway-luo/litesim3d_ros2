@@ -847,7 +847,7 @@ Json Simulator::manifest(const std::string &reason) const {
   resolved["obstacles_fixed"] = moving.empty();
   for (const auto &c : config_.imus)
     resolved["imus"].push_back({{"name", c.name}, {"link", c.link}, {"topic", c.topic}, {"rate_hz", c.rate},
-      {"accel_bias", vectorJson(c.accel_bias)}, {"gyro_bias", vectorJson(c.gyro_bias)},
+      {"gravity_mps2", c.gravity}, {"accel_bias", vectorJson(c.accel_bias)}, {"gyro_bias", vectorJson(c.gyro_bias)},
       {"accel_sigma", vectorJson(c.accel_sigma)}, {"gyro_sigma", vectorJson(c.gyro_sigma)}});
   return {{"run_id", run_id},
           {"version", LWS_VERSION},

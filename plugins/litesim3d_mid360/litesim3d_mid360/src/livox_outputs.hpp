@@ -20,12 +20,12 @@ public:
 private:
   struct Lidar {
     litesim3d::LidarConfig config;
+    uint8_t lidar_id = 0;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud, boundary;
     rclcpp::Publisher<livox_ros_driver2::msg::CustomMsg>::SharedPtr custom;
   };
   std::map<std::string, Lidar> lidars_;
   std::string frame_prefix_;
-  uint8_t lidar_id_ = 0;
   litesim3d::Json description_;
 };
 } // namespace litesim3d_ros

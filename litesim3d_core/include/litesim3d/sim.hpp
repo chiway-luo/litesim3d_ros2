@@ -222,6 +222,7 @@ struct ImuConfig {
   double rate = 200;
   Vec3 accel_bias = Vec3::Zero(), gyro_bias = Vec3::Zero();
   Vec3 accel_sigma = Vec3::Zero(), gyro_sigma = Vec3::Zero();
+  double gravity = 9.81; // world -Z magnitude, m/s^2; configurable per IMU
   double accel_range = 0, gyro_range = 0; // zero disables clipping; SI units
   void validate() const;
 };

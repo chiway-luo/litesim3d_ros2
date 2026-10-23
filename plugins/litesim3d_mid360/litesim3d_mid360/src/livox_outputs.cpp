@@ -63,13 +63,12 @@ void LivoxOutputs::initialize(rclcpp::Node &node, const litesim3d::Config &confi
           "lidar_interface must be native, auto or livox");
   require(xfer_format == 0 || xfer_format == 1, "xfer_format must be 0 (PointCloud2) or 1 (CustomMsg)");
   require(lidar_id >= 0 && lidar_id <= 255, "livox_lidar_id must be in [0,255]");
-  lidar_id_ = static_cast<uint8_t>(lidar_id);
   const auto selected = [&](const auto &l) {
     return interface != "native" && l.scan_pattern == "livox_mid360";
   };
   const auto count = std::count_if(config.lidars.begin(), config.lidars.end(), selected);
   require(interface != "livox" || count > 0, "livox output requires a Mid-360 lidar");
-  require(count <= 1, "one Livox lidar per robot is supported; use separate robot namespaces");
+  require(count <= 256 - lidar_id, "Livox lidar IDs exceed uint8 range");
   // Official ROS 2 driver uses reliable/volatile KeepLast publishers.
   const auto livox_qos = rclcpp::QoS(256).reliable();
   description_ = {{"lidar_interface", interface}, {"xfer_format", xfer_format},
@@ -80,25 +79,29 @@ void LivoxOutputs::initialize(rclcpp::Node &node, const litesim3d::Config &confi
     require(topics.insert(result).second, "sensor output topic collision: " + result);
     return result;
   };
+  unsigned sensor_index = 0;
   for (const auto &cfg : config.lidars) {
     if (!selected(cfg)) continue;
     Lidar l; l.config = cfg;
-    const auto main = topic("livox/lidar");
+    l.lidar_id = static_cast<uint8_t>(lidar_id + sensor_index++);
+    // Keep the single-sensor driver contract; separate multi-sensor streams.
+    const std::string stem = count == 1 ? "livox/lidar" : "livox/" + cfg.name + "/lidar";
+    const auto main = topic(stem);
     {
       require(cfg.offsetNs(0, cfg.columns - 1) <= std::numeric_limits<uint32_t>::max(),
               "Livox frame point offset exceeds uint32 nanoseconds");
       if (xfer_format == 1) {
         l.custom = node.create_publisher<livox_ros_driver2::msg::CustomMsg>(main, livox_qos, options);
         l.cloud = node.create_publisher<sensor_msgs::msg::PointCloud2>(
-            topic("livox/lidar/pointcloud"), livox_qos, options);
+            topic(stem + "/pointcloud"), livox_qos, options);
       } else {
         l.cloud = node.create_publisher<sensor_msgs::msg::PointCloud2>(main, livox_qos, options);
       }
     }
     if (cfg.publish_range_boundary)
       l.boundary = node.create_publisher<sensor_msgs::msg::PointCloud2>(
-          topic("livox/lidar/range_boundary"), livox_qos, options);
-    description_["lidars"].push_back({{"name",cfg.name}, {"topic",main},
+          topic(stem + "/range_boundary"), livox_qos, options);
+    description_["lidars"].push_back({{"name",cfg.name}, {"topic",main}, {"lidar_id",l.lidar_id},
         {"message_type",l.custom ? "livox_ros_driver2/msg/CustomMsg" : "sensor_msgs/msg/PointCloud2"},
         {"pointcloud_topic",l.cloud->get_topic_name()},
         {"frame_id",frame_prefix_ + cfg.link}, {"qos","reliable/256"}});
@@ -111,7 +114,8 @@ bool LivoxOutputs::publish(const litesim3d::Cloud &c) {
   auto &l = lidars_.at(c.topic);
   auto m = cloudMessage(c, frame_prefix_);
   livox_ros_driver2::msg::CustomMsg custom;
-  custom.header = m.header; custom.timebase = c.stamp; custom.lidar_id = lidar_id_;
+  custom.header = m.header; custom.timebase = c.stamp; custom.lidar_id = l.lidar_id;
+  if (l.custom) custom.points.reserve(size_t(c.width) * c.height);
   auto boundary = cloudMessage(c, frame_prefix_);
   const auto convert = [&](const std::vector<uint8_t> &data, bool helper,
                            sensor_msgs::msg::PointCloud2 &dest) {

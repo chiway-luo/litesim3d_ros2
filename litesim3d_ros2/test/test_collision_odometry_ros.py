@@ -54,7 +54,7 @@ def test_collision_encoder_truth_imu_tf_and_reverse(h, enabled):
         assert joints.velocity[i] == pytest.approx(8 if enabled else 0)
     assert imu.angular_velocity.z == 0
     assert imu.linear_acceleration.x == 0
-    assert imu.linear_acceleration.z == pytest.approx(9.80665)
+    assert imu.linear_acceleration.z == pytest.approx(9.81)
     stamp = Time.from_msg(odom.header.stamp)
     h.until(lambda: h.buffer.can_transform('odom', 'base_link', stamp))
     transform = h.buffer.lookup_transform('odom', 'base_link', stamp)

@@ -158,7 +158,7 @@ odom -> base_footprint -> base_link -> 四个 wheel_link
                                  └-> camera_link -> camera_optical_frame
 ```
 
-`odom -> base_footprint` 由仿真发布；其余边由 RSP 发布。不能同时再发 `odom -> base_link`，否则会让 base_link 出现两个父节点。IMU 静止、水平时 z 比力约为 +9.80665 m/s²，不是零；orientation_covariance[0]=-1。
+`odom -> base_footprint` 由仿真发布；其余边由 RSP 发布。不能同时再发 `odom -> base_link`，否则会让 base_link 出现两个父节点。IMU 静止、水平时 z 比力约为 +9.81 m/s²，不是零；orientation_covariance[0]=-1。
 
 组合模型四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。轮径、轮距从未改动的机械 URDF 在构建时提取到共享 geometry.yaml，底盘和里程计读取同一值。新机器人若修改机械尺寸，应维护自己的模型并重新构建，不能只修改里程计侧的尺寸。
 

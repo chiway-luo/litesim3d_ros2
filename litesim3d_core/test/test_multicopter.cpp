@@ -102,7 +102,7 @@ TEST(Multicopter, ImuIncludesVerticalAccelerationAndLateralCentripetalTerm) {
   auto c=flightConfig();c.drive.unlimited_acceleration=false;c.drive.acceleration=1;
   Simulator sim(c,body(),{});Command cmd;cmd.vertical=1;sim.pause(false);ASSERT_TRUE(sim.command(cmd));
   auto events=sim.tick();ASSERT_FALSE(events.back().imus.empty());
-  EXPECT_NEAR(events.back().imus[0].acceleration.z(),10.80665,1e-10);
+  EXPECT_NEAR(events.back().imus[0].acceleration.z(),10.81,1e-10);
   c.drive.unlimited_acceleration=true;Simulator circling(c,body(),{});cmd={};cmd.lateral=1;cmd.w=1;
   circling.pause(false);ASSERT_TRUE(circling.command(cmd));events=circling.tick();
   const auto imu=events.back().imus[0];

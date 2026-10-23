@@ -45,7 +45,7 @@ def test_IMU07_real_ros_sixty_sim_seconds(h):
     assert [ns(c.header.stamp) for c in h.messages['points']]==[1+i*100_000_000 for i in range(600)]
     for m in h.messages['imu']:
         assert m.orientation_covariance[0]==-1
-        assert m.linear_acceleration.z==pytest.approx(9.80665,abs=1e-9)
+        assert m.linear_acceleration.z==pytest.approx(9.81,abs=1e-9)
         assert m.header.frame_id=='base_link'
     for c in h.messages['points']:
         times=[v[-1] for v in struct.iter_unpack('<ffffH2xf',bytes(c.data))]
@@ -140,7 +140,7 @@ def test_ROS09_reset_rejects_uncoordinated_and_stale_requests(h):
     h.until(lambda:bool(h.messages['teleport_truth']) and bool(h.messages['teleport_imu']))
     assert h.messages['teleport_truth'][-1].pose.pose.position.x==pytest.approx(.5)
     for imu in h.messages['teleport_imu']:
-        assert imu.linear_acceleration.z==pytest.approx(9.80665)
+        assert imu.linear_acceleration.z==pytest.approx(9.81)
         assert math.isfinite(imu.linear_acceleration.x) and abs(imu.linear_acceleration.x)<1e-9
 
 

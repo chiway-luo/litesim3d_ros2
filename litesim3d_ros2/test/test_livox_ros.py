@@ -108,7 +108,7 @@ def test_livox_matches_native_geometry_and_leaves_imu_unchanged(h, format, rate,
     assert not {p[-1] for p in boundary} & {ns(native.header.stamp)+s*5000 for s,_ in valid}
     imu = h.messages['imu'][-1]
     assert imu == native_imu  # Entire message: frame, stamp, SI units and covariances.
-    assert imu.linear_acceleration.z == pytest.approx(9.80665)
+    assert imu.linear_acceleration.z == pytest.approx(9.81)
     assert h.node.count_publishers(topic+'livox/imu') == 0
     assert h.node.count_publishers(topic+'points_raw') == 0
     assert h.node.get_publishers_info_by_topic(main)[0].qos_profile.reliability == ReliabilityPolicy.RELIABLE
@@ -127,7 +127,7 @@ def test_livox_defaults_keep_best_effort_imu(h, format):
             and h.node.get_publishers_info_by_topic('/imu/data_raw'))
     assert h.node.get_publishers_info_by_topic('/livox/lidar')[0].qos_profile.reliability == ReliabilityPolicy.RELIABLE
     assert h.node.get_publishers_info_by_topic('/imu/data_raw')[0].qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
-    assert h.messages['imu'][-1].linear_acceleration.z == pytest.approx(9.80665)
+    assert h.messages['imu'][-1].linear_acceleration.z == pytest.approx(9.81)
     assert h.node.count_publishers('/livox/imu') == 0
     assert h.node.count_publishers('/points_raw') == 0
 
@@ -162,7 +162,7 @@ def test_world_mid360_topics_frames_and_imu_stay_per_robot(h):
         msg = h.messages[robot+'-livox'][-1]
         assert msg.header.frame_id == robot+'/lidar_link'
         assert msg.point_num > 0
-        assert h.messages[robot+'-imu'][-1].linear_acceleration.z == pytest.approx(9.80665)
+        assert h.messages[robot+'-imu'][-1].linear_acceleration.z == pytest.approx(9.81)
         assert h.node.count_publishers(f'/{robot}/points_raw') == 0
     assert h.node.count_publishers('/livox/lidar') == 0
 
@@ -175,6 +175,50 @@ def test_invalid_livox_options_fail_before_publishing(h, parameters, error):
     h.until(lambda: process.poll() is not None)
     assert process.returncode != 0
     assert error in (h.directory/'sim.log').read_text()
+
+
+@pytest.mark.parametrize('format,gravity', [(0,9.81),(1,9.7)])
+def test_livox_custom_gravity_and_clean_shutdown(h, format, gravity):
+    mid360(h)
+    h.config['imus'][0]['gravity_mps2'] = gravity
+    h.subscribe('gravity_imu', Imu, '/imu/data_raw')
+    process = h.sim(wait_for_robot_state_publisher=False, lidar_interface='auto',
+                    xfer_format=format, sensor_reliable=True)
+    h.ready()
+    h.until(lambda: len(h.messages['gravity_imu']) >= 20)
+    assert all(msg.linear_acceleration.z == pytest.approx(gravity, abs=1e-10)
+               for msg in h.messages['gravity_imu'])
+    # QoS event weak control blocks must die before the vendor DSO is unloaded.
+    process.send_signal(signal.SIGINT)
+    assert process.wait(timeout=5) == 0
+
+
+@pytest.mark.parametrize('format,namespace', [(0, ''), (1, 'dual')])
+def test_two_mid360_streams_and_clean_shutdown(h, format, namespace):
+    mid360(h)
+    first=h.config['lidars'][0];first.update(name='front',topic='front/raw')
+    second=copy.deepcopy(first);second.update(name='rear',topic='rear/raw')
+    h.config['lidars'].append(second)
+    prefix='/'+namespace+'/' if namespace else '/'
+    topics=[prefix+'livox/'+name+'/lidar' for name in ['front','rear']]
+    for i,topic in enumerate(topics):
+        h.subscribe(str(i), CustomMsg if format else PointCloud2, topic)
+    process=h.sim(namespace=namespace,frame_prefix=namespace+'/' if namespace else '',
+                  start_paused=True,wait_for_robot_state_publisher=False,
+                  lidar_interface='livox',xfer_format=format,livox_lidar_id=7)
+    h.ready();matched(h,topics);assert h.step(20).success
+    h.until(lambda: all(h.messages[str(i)] for i in range(2)))
+    a,b=[h.messages[str(i)][-1] for i in range(2)]
+    assert ns(a.header.stamp)==ns(b.header.stamp)
+    assert a.header.frame_id==b.header.frame_id==(namespace+'/' if namespace else '')+'lidar_link'
+    if format:
+        assert a.lidar_id==7 and b.lidar_id==8
+        assert a.timebase==b.timebase==ns(a.header.stamp)
+        assert a.point_num>100 and b.point_num>100
+    else:
+        assert a.width>100 and b.width>100
+    assert h.node.count_publishers(prefix+'livox/lidar')==0
+    process.send_signal(signal.SIGINT);assert process.wait(timeout=5)==0
 
 
 @pytest.mark.parametrize('format', [0, 1])

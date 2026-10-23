@@ -149,7 +149,7 @@ TEST(SensorPlugins, ZeroErrorsPreserveImuAndAllCameraMeasurements) {
   lp::Loader loader; Scene scene; auto c = context(scene);
   auto imu = loader.sensor(classes[1]); imu->initialize(init(), config(classes[1]));
   lp::SensorOutput output; imu->step(c, output); ASSERT_EQ(output.imus.size(), 1u);
-  EXPECT_EQ(output.imus[0].acceleration, Vec3(0, 0, 9.80665));
+  EXPECT_EQ(output.imus[0].acceleration, Vec3(0, 0, 9.81));
   EXPECT_EQ(output.imus[0].angular_velocity, Vec3::Zero());
   for (size_t n = 2; n < classes.size(); ++n) {
     auto camera = loader.sensor(classes[n]); auto p = config(classes[n]); p["width"] = p["height"] = 16;
@@ -226,4 +226,14 @@ TEST(SensorPlugins, ConflictsBudgetsUnknownMountAndDuplicateTopicsFail) {
   cfg.plugins = {declaration(0,"huge",{{"columns",65536},{"vertical_angles_deg",std::vector<double>(65,0)}})};
   EXPECT_THROW(Simulator(cfg,model(),{}),std::runtime_error);
   cfg.plugins = {declaration(1,"same"),declaration(2,"same")}; EXPECT_THROW(Simulator(cfg,model(),{}),std::runtime_error);
+}
+
+
+TEST(SensorPlugins, ConfigurableImuGravityIsUsedAndReported) {
+  lp::Loader loader; auto plugin=loader.sensor(classes[1]); auto p=config(classes[1]);
+  p["gravity_mps2"]=9.7; plugin->initialize(init(),p);
+  Scene scene; auto context = ::context(scene); lp::SensorOutput output;
+  plugin->step(context,output); ASSERT_EQ(output.imus.size(),1u);
+  EXPECT_DOUBLE_EQ(output.imus[0].acceleration.z(),9.7);
+  EXPECT_DOUBLE_EQ(plugin->description().settings.at("gravity_mps2").get<double>(),9.7);
 }

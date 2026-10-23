@@ -6,6 +6,8 @@ topic: imu/data_raw
 enabled: true
 # 采样频率，Hz，(0,2000]。
 rate_hz: 200.0
+# 世界 -Z 重力加速度大小，m/s²，有限且 >0；默认与 FAST-LIO 的 9.81 对齐；启动时生效。
+gravity_mps2: 9.81
 # 安装坐标系 xyz 三轴加速度偏差，m/s²，有限数；含重力比力。
 accel_bias: [0.0, 0.0, 0.0]
 # 安装坐标系 xyz 三轴角速度偏差，rad/s，有限数。

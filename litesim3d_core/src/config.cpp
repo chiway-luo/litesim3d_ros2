@@ -215,10 +215,11 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
       require(imus.IsSequence() && imus.size() <= 16, "imus: require bounded sequence");
       for (auto i : imus) {
         keys(i, {"name", "link", "topic", "rate_hz", "accel_bias", "gyro_bias", "accel_sigma", "gyro_sigma",
-                 "accel_range_mps2", "gyro_range_radps"}, "imu");
+                 "accel_range_mps2", "gyro_range_radps", "gravity_mps2"}, "imu");
         ImuConfig c;
         c.name = get<std::string>(i, "name", "imu"); c.link = get<std::string>(i, "link", "base_link");
         c.topic = get<std::string>(i, "topic", "imu/data_raw"); c.rate = get(i, "rate_hz", 200.0);
+        c.gravity = get(i, "gravity_mps2", c.gravity);
         c.accel_bias = vector(i["accel_bias"]); c.gyro_bias = vector(i["gyro_bias"]);
         c.accel_sigma = vector(i["accel_sigma"]); c.gyro_sigma = vector(i["gyro_sigma"]);
         c.accel_range = get(i,"accel_range_mps2",0.0); c.gyro_range = get(i,"gyro_range_radps",0.0);

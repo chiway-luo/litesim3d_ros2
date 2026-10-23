@@ -130,6 +130,7 @@ Cloud scanTrajectory(const Scene &scene, const LidarConfig &cfg, uint64_t start,
 void ImuConfig::validate() const {
   require(!name.empty() && !link.empty() && !topic.empty(), "imu: empty name/link/topic");
   require(std::isfinite(rate) && rate > 0 && rate <= 2000, "imu: invalid rate");
+  require(std::isfinite(gravity) && gravity > 0, "imu: gravity_mps2 must be finite and positive");
   require(accel_bias.allFinite() && gyro_bias.allFinite() && accel_sigma.allFinite() &&
               gyro_sigma.allFinite() && accel_sigma.minCoeff() >= 0 && gyro_sigma.minCoeff() >= 0,
           "imu: invalid noise/bias");
@@ -147,7 +148,7 @@ ImuSample sampleImu(const ImuConfig &cfg, const Kinematics &body, const Pose &mo
   const Vec3 offset = body.world_body.linear() * mount.translation();
   const auto rotation = (body.world_body.linear() * mount.linear()).transpose().eval();
   result.acceleration = rotation * (body.acceleration + body.alpha.cross(offset) +
-      body.omega.cross(body.omega.cross(offset)) - Vec3(0, 0, -9.80665));
+      body.omega.cross(body.omega.cross(offset)) - Vec3(0, 0, -cfg.gravity));
   result.angular_velocity = rotation * body.omega;
   const auto ak = streamSeed(seed, cfg.name + "/acceleration"),
              gk = streamSeed(seed, cfg.name + "/angular_velocity");

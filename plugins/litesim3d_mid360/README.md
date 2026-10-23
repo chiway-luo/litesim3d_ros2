@@ -43,7 +43,7 @@ ROS 输出通过现有节点参数选择：
 | `xfer_format:=1` | `livox/lidar` 为 `CustomMsg`，另发 `livox/lidar/pointcloud` |
 | `xfer_format:=0` | `livox/lidar` 为 Livox 字段布局的 `PointCloud2` |
 
-话题、QoS、逐点时间、多机器人命名空间、IMU 和 `livox_output` 诊断字段保持原有约定。每台机器人最多一个 Livox 输出；混合场景中的普通雷达继续走通用输出。旧 YAML 的 Mid-360 采样继续通过通用雷达插件兼容，选择 Livox 输出时同样加载这里的输出插件。
+话题、QoS、逐点时间、多机器人命名空间、IMU 和 `livox_output` 诊断字段保持原有约定。单台 Mid-360 保持上表话题；同车多台时分别使用 `livox/<sensor-name>/lidar`，以及其 `/pointcloud`、`/range_boundary` 子话题。每个 sensor 必须有独立 name、topic 和安装 link；`livox_lidar_id` 作为起始 ID，按配置顺序递增，不能超过 255。各帧保持自己的安装坐标系和采样时间，不在仿真器输出层直接拼接；融合由下游公共节点完成。混合场景中的普通雷达继续走通用输出。旧 YAML 的 Mid-360 采样继续通过通用雷达插件兼容，选择 Livox 输出时同样加载这里的输出插件。
 
 ## 构建与依赖
 

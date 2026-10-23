@@ -82,7 +82,7 @@ def test_explicit_sensor_plugins_mount_tf_rates_and_blocked_truth(h):
     imu = h.messages['imu'][-1]
     assert imu.header.frame_id == 'imu_plugin_link'
     assert imu.linear_acceleration.x == 0 and imu.angular_velocity.z == 0
-    assert imu.linear_acceleration.z == pytest.approx(9.80665)
+    assert imu.linear_acceleration.z == pytest.approx(9.81)
     h.until(lambda: h.buffer.can_transform('base_link','imu_plugin_link',Time()))
     mount = h.buffer.lookup_transform('base_link','imu_plugin_link',Time()).transform.translation
     assert (mount.x,mount.y,mount.z) == pytest.approx((.2,0,.65))

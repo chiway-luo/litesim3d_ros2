@@ -166,7 +166,7 @@ TEST(CorePlugins, FreshSessionResetsPluginsAndTrueSensorsRemainBlocked) {
   const auto stopped = sim.snapshot(); auto events = advance(sim, 50); unsigned count = 0;
   for (const auto &event : events) for (const auto &imu : event.imus) {
     ++count; EXPECT_LT(imu.angular_velocity.norm(), 1e-12);
-    EXPECT_LT((imu.acceleration - Vec3(0, 0, 9.80665)).norm(), 1e-12);
+    EXPECT_LT((imu.acceleration - Vec3(0, 0, 9.81)).norm(), 1e-12);
     EXPECT_LT((event.snapshot.world_base.matrix() - stopped.world_base.matrix()).norm(), 1e-12);
   }
   EXPECT_GT(count, 0u); EXPECT_GT(sim.snapshot().odom_base.translation().x(), 1.9);

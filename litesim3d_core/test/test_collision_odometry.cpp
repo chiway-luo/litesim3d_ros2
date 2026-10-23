@@ -122,7 +122,7 @@ TEST(CollisionOdometry, SensorsStayAtBlockedPoseWhileEncodersAccumulate) {
     for (const auto &imu : e.imus) {
       ++imus;
       EXPECT_TRUE(imu.angular_velocity.isZero(1e-12));
-      EXPECT_TRUE(imu.acceleration.isApprox(Vec3(0, 0, 9.80665), 1e-12));
+      EXPECT_TRUE(imu.acceleration.isApprox(Vec3(0, 0, 9.81), 1e-12));
     }
     for (const auto &points : e.clouds) {
       if (clouds++) EXPECT_EQ(points.data, cloud);

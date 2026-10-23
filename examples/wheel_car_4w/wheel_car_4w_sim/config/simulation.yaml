@@ -87,7 +87,7 @@ imus:
     gyro_bias: [0.0, 0.0, 0.0]     # x/y/z 固定偏置，rad/s。
     accel_sigma: [0.0, 0.0, 0.0]   # 非负每样本标准差 m/s²，不是噪声密度。
     gyro_sigma: [0.0, 0.0, 0.0]    # 非负每样本标准差 rad/s。
-    # 水平静止时 accel.z≈9.80665；orientation_covariance[0]=-1 表示无姿态。
+    # 水平静止时 accel.z≈9.81；orientation_covariance[0]=-1 表示无姿态。
 
 odom:
   mode: ideal                      # ideal / noisy；非默认误差必须同时选择 noisy。
