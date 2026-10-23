@@ -64,7 +64,8 @@ class GraphicalSessionTests(unittest.TestCase):
                     deadline = time.monotonic() + 3
                     while process.exists() and time.monotonic() < deadline:
                         time.sleep(0.05)
-                    self.assertFalse(process.exists(), "Private D-Bus daemon survived the stage")
+                    self.assertFalse(process.exists(),
+                                     "Private D-Bus daemon was not reaped; containers require an init process (docker --init)")
             self.assertEqual(len(set(addresses)), 2, "Graphical stages shared a bus")
 
 

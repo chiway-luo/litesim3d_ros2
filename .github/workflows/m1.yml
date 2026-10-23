@@ -3,7 +3,10 @@ on: [push, pull_request, workflow_dispatch]
 jobs:
   quality:
     runs-on: ubuntu-22.04
-    container: ros:humble-ros-base-jammy
+    container:
+      image: ros:humble-ros-base-jammy
+      # Reap exited ROS, Xvfb and private D-Bus children in the job container.
+      options: --init
     timeout-minutes: ${{ matrix.profile == 'asan' && 180 || 90 }}
     strategy:
       fail-fast: false

@@ -35,6 +35,8 @@ python3 scripts/test_ubuntu.py --profile all --output "$HOME/litesim-quality" --
 
 统一入口为每个图形阶段启动独立的 [D-Bus 会话](https://dbus.freedesktop.org/doc/dbus-run-session.1.html)和 Xvfb 显示，阶段退出时一同回收。这样 SSH 和无桌面登录会话的 CI 容器使用相同环境：Ubuntu 22.04 的 Qt 5.15.3 / libdbus 1.12.20 在缺少用户运行目录且尝试自动发现会话时，可由空 Qt 窗口复现 1032 字节退出泄漏；显式私有会话消除该触发条件，不增加 LSan 例外。工具回归会在无 `XDG_RUNTIME_DIR`、继承无效总线地址的环境中运行真实 ASan Qt 程序，验证总线可用、成功/失败退出码正确传递以及总线进程回收。
 
+在 Docker 容器中运行这些检查时，使用 `docker run --init ...`，由 init 回收退出的子进程；CI 已配置同样的选项。仅用 `tail` 保活的容器不会回收被收养的孤儿进程，已退出的 D-Bus 进程会留下僵尸记录，使严格的回收检查失败。普通 Ubuntu 登录环境由系统 init 负责回收。
+
 CI 在独立容器中安装测试工具。已有 Nav2、SLAM 或其他版本 LLVM 的 Ubuntu 开发环境，应把 LLVM 14 回溯库解压到独立目录：Ubuntu 的 `libunwind-14-dev` 与部分现有开发包冲突，直接安装可能连带移除导航依赖。以下方式只下载和解压，不修改系统包：
 
 ```bash
