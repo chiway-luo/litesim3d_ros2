@@ -18,7 +18,7 @@ jobs:
           apt-get update
           apt-get install -y build-essential cmake pkg-config ninja-build \
             python3-colcon-common-extensions python3-rosdep python3-pytest python3-coverage \
-            clang-14 llvm-14 libunwind-14-dev ros-humble-rclcpp ros-humble-xacro xvfb xauth libgl1-mesa-dri
+            clang-14 llvm-14 libunwind-14-dev ros-humble-rclcpp ros-humble-xacro dbus xvfb xauth libgl1-mesa-dri
           rosdep update --rosdistro humble
           rosdep install --from-paths . --ignore-src --rosdistro humble -y
       - name: Run the shared Ubuntu entry point

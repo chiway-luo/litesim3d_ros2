@@ -31,7 +31,9 @@ source /opt/ros/humble/setup.bash
 python3 scripts/test_ubuntu.py --profile all --output "$HOME/litesim-quality" --jobs 2
 ```
 
-运行平台是 Ubuntu 22.04 / ROS 2 Humble。先按[安装与构建](../usage/安装与构建.md)安装 rosdep 声明依赖；测试工具还需要 `clang-14`、`llvm-14`、`libunwind-14-dev`、`python3-coverage`、`python3-pytest`、`xvfb`、`xauth` 和 `libgl1-mesa-dri`。输出目录必须在源码目录外，不同 profile 使用独立构建树。入口不会安装依赖或修改系统设置。
+运行平台是 Ubuntu 22.04 / ROS 2 Humble。先按[安装与构建](../usage/安装与构建.md)安装 rosdep 声明依赖；测试工具还需要 `clang-14`、`llvm-14`、`libunwind-14-dev`、`python3-coverage`、`python3-pytest`、`dbus`、`xvfb`、`xauth` 和 `libgl1-mesa-dri`。输出目录必须在源码目录外，不同 profile 使用独立构建树。入口不会安装依赖或修改系统设置。
+
+统一入口为每个图形阶段启动独立的 [D-Bus 会话](https://dbus.freedesktop.org/doc/dbus-run-session.1.html)和 Xvfb 显示，阶段退出时一同回收。这样 SSH 和无桌面登录会话的 CI 容器使用相同环境：Ubuntu 22.04 的 Qt 5.15.3 / libdbus 1.12.20 在缺少用户运行目录且尝试自动发现会话时，可由空 Qt 窗口复现 1032 字节退出泄漏；显式私有会话消除该触发条件，不增加 LSan 例外。工具回归会在无 `XDG_RUNTIME_DIR`、继承无效总线地址的环境中运行真实 ASan Qt 程序，验证总线可用、成功/失败退出码正确传递以及总线进程回收。
 
 CI 在独立容器中安装测试工具。已有 Nav2、SLAM 或其他版本 LLVM 的 Ubuntu 开发环境，应把 LLVM 14 回溯库解压到独立目录：Ubuntu 的 `libunwind-14-dev` 与部分现有开发包冲突，直接安装可能连带移除导航依赖。以下方式只下载和解压，不修改系统包：
 

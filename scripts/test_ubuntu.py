@@ -103,7 +103,10 @@ class Profile:
                 # tests and normal simulator defaults retain their deadlines.
                 env.update(LWS_TEST_STARTUP_TIMEOUT="600", LWS_TEST_WAIT_TIMEOUT="600",
                            LWS_TEST_SHUTDOWN_TIMEOUT="120", LWS_TEST_SUITE_TIMEOUT="6000")
-            command = ["xvfb-run", "-a", "env", "LIBGL_ALWAYS_SOFTWARE=1", "QT_X11_NO_MITSHM=1",
+            # Qt must not depend on an SSH user's bus or attempt D-Bus
+            # autolaunch in a container with no login session. The private bus
+            # exits with this stage, including when the tested command fails.
+            command = ["dbus-run-session", "--", "xvfb-run", "-a", "env", "LIBGL_ALWAYS_SOFTWARE=1", "QT_X11_NO_MITSHM=1",
                        "LWS_PRIVATE_TEST_DISPLAY=1", *map(str, command)]
         setup = self.prefix / "setup.bash" if installed else Path(self.args.ros_prefix) / "setup.bash"
         if installed:
@@ -159,6 +162,8 @@ class Profile:
                                    "Upstream fix: https://github.com/ros2/rclcpp/pull/3072")
         if self.name != "tsan" and not tool("xvfb-run"):
             raise RuntimeError("Install xvfb and xauth before profiles that run desktop tests")
+        if self.name != "tsan" and not tool("dbus-run-session"):
+            raise RuntimeError("Install dbus before profiles that run desktop tests")
         if self.name == "coverage" and (not importlib.util.find_spec("coverage") or
                 not tool("llvm-cov", "llvm-cov-14") or not tool("llvm-profdata", "llvm-profdata-14")):
             raise RuntimeError("Install python3-coverage and llvm-14 before the coverage profile")
