@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>dual_mid360_bringup</name>
+  <version>0.4.0</version>
+  <description>Simulation bringup for the dual MID-360 rover and workshop.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>dual_mid360_description</exec_depend>
+  <exec_depend>litesim3d_bringup</exec_depend>
+  <exec_depend>litesim3d_ros2</exec_depend>
+  <exec_depend>litesim3d_assets</exec_depend>
+  <exec_depend>litesim3d_gui</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>litesim3d_ros2_control</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>diff_drive_controller</exec_depend>
+  <exec_depend>forward_command_controller</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>litesim3d_diff_drive</exec_depend>
+  <exec_depend>litesim3d_diff_odometry</exec_depend>
+  <exec_depend>litesim3d_mid360</exec_depend>
+  <exec_depend>litesim3d_imu</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

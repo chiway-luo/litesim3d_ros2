@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="my_workshop">
+    <physics name="timing" type="ignored" default="true">
+      <max_step_size>0.01</max_step_size>
+      <real_time_factor>1</real_time_factor>
+    </physics>
+    <scene>
+      <ambient>0.65 0.65 0.65 1</ambient>
+      <background>0.12 0.15 0.19 1</background>
+    </scene>
+    <light name="sun" type="directional">
+      <direction>-0.4 -0.5 -1</direction>
+      <diffuse>0.85 0.85 0.85 1</diffuse>
+    </light>
+    <gui><camera name="overview"><pose>-2.6 -3.4 2.4 0 0.48 0.90</pose></camera></gui>
+
+    <!-- 名称对应 runtime.robot.id；几何和传感器来自组合 URDF。 -->
+    <model name="dual_mid360">
+      <static>false</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="spawn"/>
+    </model>
+
+    <!-- 地板上表面：-0.05 + 0.1/2 = 0。 -->
+    <model name="ground">
+      <static>true</static><pose>0 0 -0.05 0 0 0</pose>
+      <link name="ground_link">
+        <visual name="floor">
+          <geometry><box><size>12 10 0.1</size></box></geometry>
+          <material><diffuse>0.52 0.55 0.57 1</diffuse></material>
+        </visual>
+        <collision name="floor"><geometry><box><size>12 10 0.1</size></box></geometry></collision>
+      </link>
+    </model>
+
+    <!-- 墙高 2.4 m，中心 z=1.2，底面落地。 -->
+    <model name="north_wall">
+      <static>true</static><pose>0 4 1.2 0 0 0</pose>
+      <link name="wall_link">
+        <visual name="wall">
+          <geometry><box><size>10 0.15 2.4</size></box></geometry>
+          <material><diffuse>0.75 0.78 0.77 1</diffuse></material>
+        </visual>
+        <collision name="wall"><geometry><box><size>10 0.15 2.4</size></box></geometry></collision>
+      </link>
+    </model>
+
+    <!-- 箱高 0.6 m，中心 z=0.3，底面落地。 -->
+    <model name="floor_crate">
+      <static>true</static><pose>-2.5 1.6 0.3 0 0 0</pose>
+      <link name="crate_link">
+        <visual name="crate">
+          <geometry><box><size>0.8 0.8 0.6</size></box></geometry>
+          <material><diffuse>0.62 0.44 0.26 1</diffuse></material>
+        </visual>
+        <collision name="crate"><geometry><box><size>0.8 0.8 0.6</size></box></geometry></collision>
+      </link>
+    </model>
+  </world>
+</sdf>

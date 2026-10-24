@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(dual_mid360_description)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY urdf config meshes tools DESTINATION share/${PROJECT_NAME})
+install(FILES LICENSE DESTINATION share/${PROJECT_NAME})
+ament_package()

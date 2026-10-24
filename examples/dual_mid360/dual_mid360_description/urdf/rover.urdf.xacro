@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<robot name="dual_mid360" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- 独立 description：只有机械结构，不包含仿真插件。 -->
+  <xacro:property name="g" value="${xacro.load_yaml('$(find dual_mid360_description)/config/geometry.yaml')}"/>
+  <xacro:property name="radius" value="${g['drive']['wheel_radius_m']}"/>
+  <xacro:property name="track" value="${g['drive']['wheel_separation_m']}"/>
+  <xacro:property name="width" value="${g['wheel_width_m']}"/>
+  <material name="body_blue"><color rgba="0.08 0.29 0.43 1"/></material>
+  <material name="rubber"><color rgba="0.045 0.052 0.06 1"/></material>
+  <material name="metal"><color rgba="0.60 0.65 0.68 1"/></material>
+  <material name="lidar_white"><color rgba="0.90 0.91 0.88 1"/></material>
+  <material name="front_marker"><color rgba="1.0 0.68 0.08 1"/></material>
+  <material name="rear_marker"><color rgba="0.82 0.12 0.07 1"/></material>
+
+  <!-- 地面参考原点；车身几何抬高，而不是把 root 抬高。 -->
+  <link name="base_link"/>
+  <xacro:macro name="box_part" params="name parent xyz size material mass:=0.1 rpy:='0 0 0'">
+    <link name="${name}">
+      <visual><geometry><box size="${size}"/></geometry><material name="${material}"/></visual>
+      <collision><geometry><box size="${size}"/></geometry></collision>
+      <xacro:property name="s" value="${[float(v) for v in size.split()]}"/>
+      <inertial><mass value="${mass}"/><inertia ixx="${mass*(s[1]**2+s[2]**2)/12}" ixy="0" ixz="0"
+        iyy="${mass*(s[0]**2+s[2]**2)/12}" iyz="0" izz="${mass*(s[0]**2+s[1]**2)/12}"/></inertial>
+    </link>
+    <joint name="${name}_joint" type="fixed"><parent link="${parent}"/><child link="${name}"/><origin xyz="${xyz}" rpy="${rpy}"/></joint>
+  </xacro:macro>
+  <xacro:box_part name="chassis_link" parent="base_link" xyz="0 0 0.25" size="0.88 0.52 0.24" material="body_blue" mass="22"/>
+  <xacro:box_part name="deck_link" parent="base_link" xyz="0 0 0.38" size="0.84 0.50 0.02" material="metal" mass="2"/>
+  <xacro:box_part name="front_bumper" parent="base_link" xyz="0.465 0 0.25" size="0.05 0.58 0.12" material="rubber"/>
+  <xacro:box_part name="rear_bumper" parent="base_link" xyz="-0.465 0 0.25" size="0.05 0.58 0.12" material="rubber"/>
+  <xacro:box_part name="front_lamp" parent="front_bumper" xyz="0.028 0 0.02" size="0.006 0.22 0.025" material="lidar_white"/>
+  <xacro:box_part name="rear_lamp" parent="rear_bumper" xyz="-0.028 0 0.02" size="0.006 0.22 0.025" material="rear_marker"/>
+  <xacro:box_part name="electronics_link" parent="base_link" xyz="0 0 0.425" size="0.30 0.28 0.07" material="body_blue" mass="2"/>
+  <xacro:box_part name="imu_link" parent="electronics_link" xyz="0 0 0.043" size="0.04 0.03 0.016" material="rubber"/>
+
+  <xacro:macro name="wheel" params="prefix x side">
+    <!-- 轮轴跨过车身与轮胎间隙；圆柱本地 z 轴旋转到 +y。 -->
+    <link name="${prefix}_axle">
+      <visual><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="0.025" length="${track/2-0.23}"/></geometry><material name="metal"/></visual>
+      <collision><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="0.025" length="${track/2-0.23}"/></geometry></collision>
+    </link>
+    <joint name="${prefix}_axle_joint" type="fixed"><parent link="base_link"/><child link="${prefix}_axle"/>
+      <origin xyz="${x} ${side*(track/2+0.23)/2} ${radius}"/></joint>
+    <link name="${prefix}_wheel_link">
+      <visual><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="${radius}" length="${width}"/></geometry><material name="rubber"/></visual>
+      <collision><origin rpy="${-pi/2} 0 0"/><geometry><cylinder radius="${radius}" length="${width}"/></geometry></collision>
+      <visual><origin xyz="0 ${side*(width/2+0.002)} 0" rpy="${-pi/2} 0 0"/>
+        <geometry><cylinder radius="${radius*0.56}" length="0.004"/></geometry><material name="metal"/></visual>
+      <!-- 侧面胎纹让转动可见，不改变接触半径。 -->
+      <visual><origin xyz="0 ${side*(width/2+0.004)} 0"/><geometry><box size="0.025 0.004 ${radius*1.65}"/></geometry><material name="rubber"/></visual>
+      <inertial><mass value="1.5"/><inertia ixx="${1.5*(3*radius**2+width**2)/12}" ixy="0" ixz="0"
+        iyy="${1.5*radius**2/2}" iyz="0" izz="${1.5*(3*radius**2+width**2)/12}"/></inertial>
+    </link>
+    <joint name="${prefix}_wheel_joint" type="continuous"><parent link="base_link"/><child link="${prefix}_wheel_link"/>
+      <origin xyz="${x} ${side*track/2} ${radius}"/><axis xyz="0 1 0"/><limit effort="30" velocity="10"/></joint>
+  </xacro:macro>
+  <xacro:wheel prefix="front_left" x="${g['wheelbase_m']/2}" side="${1}"/>
+  <xacro:wheel prefix="front_right" x="${g['wheelbase_m']/2}" side="${-1}"/>
+  <xacro:wheel prefix="rear_left" x="${-g['wheelbase_m']/2}" side="${1}"/>
+  <xacro:wheel prefix="rear_right" x="${-g['wheelbase_m']/2}" side="${-1}"/>
+
+  <xacro:macro name="mid360_mount" params="prefix x yaw marker">
+    <xacro:property name="pitch" value="${g['lidar_mount']['outward_pitch_deg']*pi/180}"/>
+    <xacro:property name="wedge_height" value="${0.10*fabs(tan(pitch))}"/>
+    <!-- 向外的局部 +x 轴俯倾；后支架整体 yaw=pi，所以后雷达向车尾俯倾。 -->
+    <xacro:box_part name="${prefix}_mount_foot" parent="base_link" xyz="${x} 0 0.395" rpy="0 0 ${yaw}"
+      size="0.09 0.09 0.01" material="metal"/>
+    <xacro:box_part name="${prefix}_mount_post" parent="${prefix}_mount_foot" xyz="0 0 0.055" size="0.028 0.028 0.10" material="metal"/>
+    <xacro:box_part name="${prefix}_mount_adapter" parent="${prefix}_mount_post" xyz="0 0 0.055" size="0.10 0.08 0.01" material="metal"/>
+    <!-- 楔块下表面水平、上表面与倾斜安装板共面；缩放只用于自制楔块。 -->
+    <link name="${prefix}_mount_wedge">
+      <xacro:if value="${wedge_height > 1e-9}">
+        <visual><origin rpy="0 0 ${pi if pitch &lt; 0 else 0}"/>
+          <geometry><mesh filename="package://dual_mid360_description/meshes/unit_wedge.stl" scale="0.10 0.08 ${wedge_height}"/></geometry><material name="metal"/></visual>
+        <collision><origin rpy="0 0 ${pi if pitch &lt; 0 else 0}"/>
+          <geometry><mesh filename="package://dual_mid360_description/meshes/unit_wedge.stl" scale="0.10 0.08 ${wedge_height}"/></geometry></collision>
+      </xacro:if>
+    </link>
+    <joint name="${prefix}_mount_wedge_joint" type="fixed"><parent link="${prefix}_mount_adapter"/><child link="${prefix}_mount_wedge"/><origin xyz="0 0 0.005"/></joint>
+    <xacro:box_part name="${prefix}_mount_plate" parent="${prefix}_mount_wedge"
+      xyz="${0.004*sin(pitch)} 0 ${wedge_height/2+0.004*cos(pitch)}" rpy="0 ${pitch} 0"
+      size="0.14 0.14 0.008" material="${marker}"/>
+    <!-- STEP 原形网格已转为米制扫描坐标；O 距安装底面 47 mm，接插件在 -X。 -->
+    <link name="${prefix}_mid360_link">
+      <visual><geometry><mesh filename="package://dual_mid360_description/meshes/livox_mid360.dae"/></geometry></visual>
+      <!-- 碰撞用保守包围体；视觉与射线仍读取真实 CAD 网格。 -->
+      <collision><origin xyz="0 0 -0.017"/><geometry><box size="0.065 0.065 0.060"/></geometry></collision>
+      <collision><origin xyz="-0.0365 0 -0.0327" rpy="0 ${pi/2} 0"/>
+        <geometry><cylinder radius="0.008" length="0.008"/></geometry></collision>
+      <inertial><origin xyz="0 0 -0.017"/><mass value="0.265"/>
+        <inertia ixx="0.000173" ixy="0" ixz="0" iyy="0.000173" iyz="0" izz="0.000187"/></inertial>
+    </link>
+    <joint name="${prefix}_mid360_joint" type="fixed"><parent link="${prefix}_mount_plate"/><child link="${prefix}_mid360_link"/>
+      <origin xyz="0 0 0.051"/></joint>
+  </xacro:macro>
+  <xacro:mid360_mount prefix="front" x="${g['lidar_mount']['front_x_m']}" yaw="0" marker="front_marker"/>
+  <xacro:mid360_mount prefix="rear" x="${g['lidar_mount']['rear_x_m']}" yaw="${pi}" marker="rear_marker"/>
+</robot>

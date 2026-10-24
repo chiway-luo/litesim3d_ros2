@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<robot name="dual_mid360" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- 复用 description 的机械结构与安装 TF；以下只追加仿真插件配置。 -->
+  <xacro:include filename="$(find dual_mid360_description)/urdf/rover.urdf.xacro"/>
+  <litesim3d version="1">
+    <chassis name="drive" class="litesim3d_diff_drive/DifferentialDrive">
+      <!-- 先读插件默认值，再用 geometry.yaml 的 drive 段覆盖轮径、轮距和关节名。 -->
+      <parameters file="package://litesim3d_diff_drive/config/parameters.yaml"/>
+      <parameters file="package://dual_mid360_description/config/geometry.yaml" section="drive"/>
+      <!-- 速度上限：max_linear_speed_mps 为 m/s，max_angular_speed_radps 为 rad/s。 -->
+      <overrides>limits: {max_linear_speed_mps: 0.5, max_angular_speed_radps: 0.8}</overrides>
+    </chassis>
+    <odometry name="wheel_odometry" class="litesim3d_diff_odometry/DifferentialOdometry">
+      <!-- 编码器里程计与底盘共用同一 drive 段，保持轮径、轮距和驱动关节一致。 -->
+      <parameters file="package://litesim3d_diff_odometry/config/parameters.yaml"/>
+      <parameters file="package://dual_mid360_description/config/geometry.yaml" section="drive"/>
+    </odometry>
+    <!-- name 是独立传感器实例名；section 选择 sensors.yaml 中对应的参数段。 -->
+    <sensor name="front_mid360" class="litesim3d_mid360/Mid360">
+      <parameters file="package://litesim3d_mid360/config/parameters.yaml"/>
+      <parameters file="package://dual_mid360_bringup/config/sensors.yaml" section="front"/>
+    </sensor>
+    <sensor name="rear_mid360" class="litesim3d_mid360/Mid360">
+      <parameters file="package://litesim3d_mid360/config/parameters.yaml"/>
+      <parameters file="package://dual_mid360_bringup/config/sensors.yaml" section="rear"/>
+    </sensor>
+    <sensor name="body_imu" class="litesim3d_imu/Imu">
+      <parameters file="package://litesim3d_imu/config/parameters.yaml"/>
+      <!-- link 绑定机械模型中的 IMU 坐标系；topic 是相对 ROS 话题名，随节点命名空间解析。 -->
+      <overrides>link: imu_link
+topic: imu/data_raw</overrides>
+    </sensor>
+  </litesim3d>
+</robot>

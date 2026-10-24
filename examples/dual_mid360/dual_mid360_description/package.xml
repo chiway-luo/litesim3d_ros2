@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>dual_mid360_description</name>
+  <version>0.4.0</version>
+  <description>Grounded rover with front/rear tilted MID-360 CAD meshes; no simulator plugins.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license>
+  <license>Livox CAD assets: see meshes/MID360_SOURCE.md</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>xacro</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

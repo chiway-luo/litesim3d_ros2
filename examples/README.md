@@ -4,6 +4,7 @@
 
 | 示例 | 用途 |
 | --- | --- |
+| [双 MID-360 巡检小车](dual_mid360/README.md) | 独立 description / bringup、前后倾斜双雷达、world 与 launch 配置的完整教程 |
 | [四轮小车](wheel_car_4w/README.md) | 组合模型、办公场景、雷达和 IMU 的完整启动工程 |
 | [无人机](drone_3d/README.md) | 三维速度控制与场景接入；不含飞行动力学 |
 | [阿克曼](ackermann/README.md) | 转向约束与轮式里程计 |

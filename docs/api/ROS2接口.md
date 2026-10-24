@@ -51,7 +51,7 @@
 | `sim/joint_feedback` | litesim3d_interfaces/msg/JointFeedback | 仿真 → 硬件适配器；run_id、运行有效标志和实际 JointState |
 | `sim/odometry` | nav_msgs/msg/Odometry | 仿真编码器里程计；控制器可另行计算自己的里程计 |
 
-内部指令/反馈都是 reliable、depth 1，可显式 remap；硬件端的 command_topic/state_topic 填 remap 后的名称。多机模式下这些话题带 `/<robot_id>/` 前缀。算法使用标准控制器接口，不需要直接发送内部消息。位置/速度限位、停用 hold、指令超时、反馈失联和会话变化的行为见 [硬件接口](../../litesim3d_ros2_control/README.md)；完整配置见 [统一控制教程](../tutorials/全部模型与第三方算法ros2_control.md)。
+内部指令/反馈都是 reliable、depth 1，可显式 remap；硬件端的 command_topic/state_topic 填 remap 后的名称。多机模式下这些话题带 `/<robot_id>/` 前缀。算法使用标准控制器接口，不需要直接发送内部消息。位置/速度限位、停用 hold、指令超时、反馈失联和会话变化的行为见 [硬件接口](../../litesim3d_ros2_control/README.md)；完整配置见 [双 MID360 教程](../tutorials/双MID360从零搭建.md)。
 
 ## 速度输入
 
@@ -181,4 +181,4 @@ ros2 topic echo /sim/status --once
 
 ## 所有默认案例的控制入口
 
-四轮小车、阿克曼、三轮/四轮全向和无人机均默认使用 ros2_control。上方直接 Twist 输入和仿真发布 joint_states 的表格仅描述兼容 twist 模式；案例中的 /cmd_vel 实际由控制器订阅。无人机没有活动关节，所以没有 joint_states 广播器，仅由独立 RSP 发布固定安装 TF。私有反馈还包含机体位姿与速度，GPIO 命名和单位见 [硬件接口](../../litesim3d_ros2_control/README.md#无人机机体资源)。
+双 MID360、四轮小车、阿克曼、三轮/四轮全向和无人机均默认使用 ros2_control。上方直接 Twist 输入和仿真发布 joint_states 的表格仅描述兼容 twist 模式；案例中的 /cmd_vel 实际由控制器订阅。无人机没有活动关节，所以没有 joint_states 广播器，仅由独立 RSP 发布固定安装 TF。私有反馈还包含机体位姿与速度，GPIO 命名和单位见 [硬件接口](../../litesim3d_ros2_control/README.md#无人机机体资源)。

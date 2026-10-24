@@ -19,6 +19,7 @@ PAGES = [
     "docs/tutorials/启动与控制.md",
     "docs/tutorials/添加IMU.md",
     "docs/tutorials/ROS2接入.md",
+    "docs/tutorials/双MID360从零搭建.md",
 ]
 
 
@@ -31,6 +32,7 @@ def commands(root=ROOT):
                 raise ValueError(f"duplicate tutorial command: {name}")
             argv = shlex.split(code.replace("$PWD", str(root)))
             allowed = (argv[:4] == ["ros2", "launch", "wheel_car_4w_sim", "wheel_car_4w.launch.py"]
+                       or argv[:4] == ["ros2", "launch", "dual_mid360_bringup", "bringup.launch.py"]
                        or argv[:2] == ["python3", "docs/examples/ros_client.py"])
             if not allowed or any(token in {";", "|", "&&", ">", "<"} for token in argv):
                 raise ValueError(f"{page}: unexpected executable in {name}")
@@ -53,6 +55,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, help="new evidence directory")
     parser.add_argument("--domain-id", type=int, default=91, help="unused domain, 0–101")
+    parser.add_argument("--only-dual-mid360", action="store_true", help="run only the standalone dual lidar tutorial")
     args = parser.parse_args()
     if not 0 <= args.domain_id <= 101:
         parser.error("domain must be in 0–101")
@@ -67,13 +70,27 @@ def main():
     from tf2_msgs.msg import TFMessage
 
     selected = commands()
+    # Keep maintainer assertions out of the user-facing configuration tutorial.
+    dual_check = [sys.executable, str(ROOT / "scripts/checks/check_dual_mid360.py")]
+    selected.update({
+        "dual-observe": dual_check,
+        "dual-drive": [*dual_check, "--drive"],
+        "dual-native-observe": [*dual_check, "--interface", "native"],
+        "dual-minimal-observe": dual_check,
+    })
+    selected["dual-minimal-launch"] += ["gui:=false", "rviz:=false"]
     report = {"status": "FAIL", "platform": platform.platform(), "python": sys.executable,
               "ros_distro": os.environ.get("ROS_DISTRO"), "domain_id": args.domain_id,
               "cases": [], "source_sha256": {},
-              "scope": "Documented headless car/IMU/client operations; no GUI, SLAM/Nav2 or device acceptance."}
-    sources = [*PAGES, "docs/examples/ros_client.py",
+              "scope": "Documented headless tutorials, including dual MID-360 streams, ground contact and truth motion; no GUI, SLAM/Nav2 or device acceptance."}
+    sources = [*PAGES, "docs/examples/ros_client.py", "scripts/checks/check_dual_mid360.py",
                "docs/examples/tutorial_robot/config/runtime.yaml",
-               "docs/examples/tutorial_robot/urdf/simulation.urdf.xacro"]
+               "docs/examples/tutorial_robot/urdf/simulation.urdf.xacro",
+               "docs/examples/tutorial_robot/urdf/robot.urdf.xacro",
+               "docs/examples/tutorial_robot/urdf/sensor_mounts.xacro"]
+    sources += [p.relative_to(ROOT).as_posix() for p in sorted((ROOT / "examples/dual_mid360").rglob("*"))
+                if p.is_file() and p.suffix in {".py", ".xacro", ".yaml", ".sdf", ".rviz"}
+                and "__pycache__" not in p.parts]
     for relative in sources:
         report["source_sha256"][relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
     git = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, capture_output=True)
@@ -99,7 +116,7 @@ def main():
             rclpy.spin_once(node, timeout_sec=0.1)
 
     def client(name, expected=0):
-        completed = subprocess.run(selected[name], cwd=ROOT, text=True, capture_output=True, timeout=35)
+        completed = subprocess.run(selected[name], cwd=ROOT, text=True, capture_output=True, timeout=60)
         (out / f"{name}.stdout").write_text(completed.stdout)
         (out / f"{name}.stderr").write_text(completed.stderr)
         data = json.loads(completed.stdout)
@@ -119,10 +136,16 @@ def main():
         spin_for(2)
         if node.count_publishers("/clock") or any(name == "litesim3d" for name, _ in node.get_node_names_and_namespaces()):
             raise RuntimeError("selected domain is already in use; choose another --domain-id")
-        for launch_name, tests in [
+        groups = [
             ("car-launch", ["car-observe", "car-drive", "client-observe", "client-drive", "client-missing-imu"]),
             ("imu-launch", ["imu-observe"]),
-        ]:
+            ("dual-launch", ["dual-observe", "dual-drive"]),
+            ("dual-native-launch", ["dual-native-observe"]),
+            ("dual-minimal-launch", ["dual-minimal-observe"]),
+        ]
+        if args.only_dual_mid360:
+            groups = [item for item in groups if item[0].startswith("dual-")]
+        for launch_name, tests in groups:
             clock_samples.clear()
             transforms.clear()
             with (out / f"{launch_name}.log").open("w") as log:

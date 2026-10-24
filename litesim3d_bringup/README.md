@@ -16,7 +16,8 @@ ROS remapping, including scoped `SetRemap` actions around the include.
 
 After preparation, `prepared_config` in the launch context contains the generated
 runtime path. SDF-only example launch files can read its model after the include
-and create their own RSP. No simulation logic depends on the RSP node's identity.
+and create their own RSP. The dual MID-360 tutorial uses a separate mechanical
+Xacro directly. No simulation logic depends on the RSP node's identity.
 
 The complete argument list, defaults and example overrides are maintained in the
 [launch and node parameter reference](../docs/api/启动与节点参数.md).
@@ -35,4 +36,4 @@ and `joint_feedback_topic` for explicit simulator remaps, then configure the
 hardware's `command_topic` and `state_topic` to match. The shared launch starts
 neither controller_manager nor a joint-state publisher/broadcaster.
 See the [hardware interface](../litesim3d_ros2_control/README.md) and
-[four-wheel example](../examples/wheel_car_4w/README.md).
+[dual MID360 example](../examples/dual_mid360/README.md).

@@ -13,7 +13,7 @@ cd litesim3d_ros2
 
 | 模型 / 插件 | ros2_control 资源 | 默认控制器与案例 |
 | --- | --- | --- |
-| DifferentialDrive | 独立轮关节 velocity，position/velocity 反馈 | diff_drive_controller；四轮车 |
+| DifferentialDrive | 独立轮关节 velocity，position/velocity 反馈 | diff_drive_controller；四轮车、双 MID360 |
 | AckermannDrive | 后轮 velocity、前轮转向 position；前轮旋转仅状态 | ackermann_steering_controller；[阿克曼教程](阿克曼与全向轮ros2_control.md) |
 | Omni3Drive / Omni4Drive | 三个或四个轮关节 velocity | OmniDriveController；[全向轮教程](阿克曼与全向轮ros2_control.md) |
 | multicopter | body GPIO：机体系 XYZ 速度、偏航角速度；实际位姿/速度状态 | BodyVelocityController；下文无人机案例 |
@@ -653,4 +653,4 @@ ros2 control switch_controllers --deactivate altitude_controller --activate body
 
 仿真内部端点通过 joint_commands_topic / joint_feedback_topic 显式 remap；硬件 command_topic / state_topic 填写改名后的端点。算法输入在控制器 Node 的 remappings 或控制器参数中配置；joint_states、tf、tf_static、robot_description 的 remap 由案例 RSP 和相应发布方配套设置。节点名与命名空间不构成接口契约。
 
-odom 与 TF 的所有权要一致：本页四轮车、无人机选择仿真里程计，控制器不重复发布 odom TF。传感器话题可交给任意第三方感知、定位或导航节点，无需改变控制硬件插件。
+odom 与 TF 的所有权要一致：本页四轮车、无人机选择仿真里程计，控制器不重复发布 odom TF；双 MID360 选择 diff_drive_controller，仿真关闭该 TF。传感器话题可交给任意第三方感知、定位或导航节点，无需改变控制硬件插件。

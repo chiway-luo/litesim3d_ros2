@@ -36,6 +36,7 @@ def check(root=ROOT):
         "litesim3d_ros2/launch/demo.launch.py",
         "litesim3d_ros2/launch/world.launch.py",
         "examples/wheel_car_4w/wheel_car_4w_sim/launch/wheel_car_4w.launch.py",
+        "examples/dual_mid360/dual_mid360_bringup/launch/bringup.launch.py",
     ]
     for relative in launches:
         names = launch_arguments(root / relative)

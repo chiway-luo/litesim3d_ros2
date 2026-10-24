@@ -1,0 +1,26 @@
+schema_version: 1  # 配置格式版本，当前固定为 1。
+units: m_rad_s  # 基础单位：米、弧度、秒；带 _deg 的字段单独使用角度。
+simulation:
+  control_mode: ros2_control  # 外部控制器通过关节接口驱动仿真；原有速度入口使用 twist。
+  seed: 42  # 随机种子；相同配置与输入下用于复现随机采样和噪声。
+  odom_rate: 50.0  # 里程计发布频率（Hz），按仿真时间调度。
+  command_timeout: 0.5  # 硬件关节命令超时（仿真秒）；超时后停止执行旧命令。
+  threads: 2  # 射线计算的工作线程预算，取值 1–4。
+robot:
+  id: dual_mid360  # 必须匹配 world 中机器人占位 model 的 name。
+  urdf: ""  # 模型路径由 bringup.launch.py 从包的 share 目录传入。
+  base_link: base_link  # 机械模型的根 link；本例原点位于轮胎接地平面。
+  continue_on_collision: true  # 车体被碰撞约束挡住时，仍计算轮子空转和编码器位移。
+  # 地形支撑使用的轮子 link 名，需有 collision；这里填 link，不填驱动关节名。
+  support_links: [front_left_wheel_link, front_right_wheel_link, rear_left_wheel_link, rear_right_wheel_link]
+  visual_collision_fallback: false  # 不用 visual 补齐缺失的 collision，要求模型明确声明碰撞几何。
+  sensor_geometry: visual  # 机器人遮挡射线使用 visual 几何；可选 collision。
+terrain:
+  enabled: true  # 根据支撑面的 collision 解算机器人高度与姿态。
+  max_slope_deg: 15.0  # 可通行支撑坡度上限（度），超过上限时停止通行。
+  clearance_m: 0.0  # 支撑解算的额外高度偏移（m）；本例为 0，使轮胎贴地。
+  continuity_m: 0.02  # 连续支撑层的高度关联范围（m），不是允许攀爬的台阶高度。
+entity_bindings:
+  ground:  # 对应 world 中已有的 model name="ground"，不会创建新实体。
+    support: true  # 将该实体的 collision 标记为可行驶支撑面。
+    reflectivity: 0.35  # 合成激光回波强度系数，范围 [0,1]。

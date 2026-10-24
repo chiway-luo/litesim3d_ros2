@@ -1,0 +1,7 @@
+# 仅传给案例自己的 RSP；通配节点段使参数不依赖它的节点名或命名空间。
+/**:
+  ros__parameters:
+    use_sim_time: true  # 使用 /clock，与仿真的 joint_states 时间戳保持一致。
+    publish_frequency: 100.0  # 活动关节 TF 的最大发布频率（Hz）；固定关节通过 tf_static 发布。
+    # TF 坐标系名称前缀，例如 rover/；修改时同步设置仿真节点的 frame_prefix。
+    frame_prefix: ""  # 空字符串保留 URDF 中的 link 名；话题 remap 不会改变这些名称。

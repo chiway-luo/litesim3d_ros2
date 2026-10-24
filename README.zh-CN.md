@@ -49,6 +49,8 @@ LiteSim 3D 是基于 C++17 的三维运动学仿真器，适合 ROS 2 机器人�
 
 ## 快速开始
 
+**想从自己的 description 搭起完整环境？** 从[双 MID-360 从零搭建教程](docs/tutorials/双MID360从零搭建.md)开始：从克隆开始，使用独立 description 与 bringup 包，逐步配置 world、URDF 传感器和 bringup.launch.py，再构建启动。
+
 ### 1. 获取源码并构建
 
 准备好上述依赖后，在 Bash 终端执行：
@@ -98,7 +100,7 @@ JSON 输出中的 `success: true` 和 `checks.motion: true` 表示传感器连�
 
 | 入口 | 内容 |
 | --- | --- |
-| [入门教程](docs/tutorials/README.md) | 阿克曼/全向轮 ros2_control、启动与控制、添加 IMU、ROS 2 消费节点 |
+| [入门教程](docs/tutorials/README.md) | 双 MID-360 从零搭建、阿克曼/全向轮 ros2_control、启动与控制、添加 IMU、ROS 2 消费节点 |
 | [使用手册](docs/usage/README.md) | 日常运行、模型与传感器配置、场景、多机、重置和排障 |
 | [接口参考](docs/api/README.md) | 话题、消息/服务、QoS、参数、数据布局及 C++/插件契约 |
 | [逐插件参数](docs/api/plugins/README.md) | 标准插件的类型、必填项、默认值、单位与约束 |

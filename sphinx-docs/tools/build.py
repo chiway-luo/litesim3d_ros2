@@ -17,6 +17,7 @@ SLUGS = {
     "docs/README.md": "index",
     "docs/版本与验证状态.md": "versions",
     "docs/tutorials/README.md": "tutorials/index",
+    "docs/tutorials/双MID360从零搭建.md": "tutorials/dual-mid360-from-scratch",
     "docs/tutorials/阿克曼与全向轮ros2_control.md": "tutorials/ackermann-omni-control",
     "docs/tutorials/全部模型与第三方算法ros2_control.md": "tutorials/unified-control-plugins",
     "docs/tutorials/启动与控制.md": "tutorials/first-simulation",

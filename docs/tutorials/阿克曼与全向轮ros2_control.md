@@ -8,7 +8,7 @@
 | omni3_sim | litesim3d_ros2_control/OmniDriveController | 三个轮 velocity | 无 |
 | omni4_sim | litesim3d_ros2_control/OmniDriveController | 四个轮 velocity | 无 |
 
-差速底盘见 [四轮车案例](全部模型与第三方算法ros2_control.md)。这里的全向轮是带被动滚子的普通全向轮；四轮采用角点切向 X 布局。
+差速底盘见 [双 MID360 案例](双MID360从零搭建.md)。这里的全向轮是带被动滚子的普通全向轮；四轮采用角点切向 X 布局。
 
 ## 1. 克隆与文件分工
 

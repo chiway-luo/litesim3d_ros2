@@ -1,0 +1,28 @@
+{
+  "source_sha256": "c28576589f443c77cec7a8574d9afb9632ff83e3e876c68b5eb5b8f88aaf9d45",
+  "mesh_sha256": "dc06cc82d215a6299fa13673dcdf680548371dec2ee3c6352aa24e96a557d94b",
+  "cad_faces": 1715,
+  "discarded_degenerate_triangles": 54,
+  "triangles": 117483,
+  "bounds_m": [
+    [
+      -0.040299999999999996,
+      -0.032436920417369994,
+      -0.04700000000002
+    ],
+    [
+      0.03243692041784,
+      0.032436920417819995,
+      0.0130971
+    ]
+  ],
+  "scan_origin_above_mount_m": 0.047,
+  "cad_to_scan": "(-X, Z, Y-21.0829) / 1000",
+  "linear_deflection_mm": 0.15,
+  "angular_deflection_rad": 0.35,
+  "materials": {
+    "housing": 111358,
+    "optical_window": 986,
+    "connector": 5139
+  }
+}

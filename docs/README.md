@@ -7,6 +7,7 @@
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
 | 第一次使用 | [安装与构建](usage/安装与构建.md) → [启动并控制小车](tutorials/启动与控制.md) |
+| 从自己的 description 搭建完整仿真 | [双 MID-360：独立 bringup、world、URDF 传感器与 launch 配置](tutorials/双MID360从零搭建.md) |
 | 阿克曼与普通全向轮外部控制 | [ros2_control、控制器参数与案例 launch](tutorials/阿克曼与全向轮ros2_control.md) |
 | 给所有现有模型接入第三方控制算法 | [统一 ros2_control 接入、四轮车与无人机、独立控制器案例](tutorials/全部模型与第三方算法ros2_control.md) |
 | 学习模型扩展和 ROS 接入 | [完整教程目录](tutorials/README.md) |

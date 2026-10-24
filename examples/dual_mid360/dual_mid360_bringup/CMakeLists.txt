@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.20)
+project(dual_mid360_bringup)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY urdf config launch worlds rviz DESTINATION share/${PROJECT_NAME})
+ament_package()

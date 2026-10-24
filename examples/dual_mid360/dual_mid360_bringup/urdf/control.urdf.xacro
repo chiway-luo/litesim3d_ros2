@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<robot name="dual_mid360_control" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- controller_manager 使用完整机械模型及硬件接口；RSP 仍单独展开机械 Xacro。 -->
+  <xacro:include filename="$(find dual_mid360_description)/urdf/rover.urdf.xacro"/>
+  <xacro:macro name="controlled_wheel" params="joint_name">
+    <joint name="${joint_name}">
+      <!-- 可由速度控制器或位置控制器占用；同一关节不可同时占用这两种接口。 -->
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <!-- 来自仿真实际积分后的状态，供 broadcaster 与控制器读取。 -->
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+  <ros2_control name="DualMid360System" type="system">
+    <hardware>
+      <plugin>litesim3d_ros2_control/LiteSimSystem</plugin>
+      <!-- 两端可更名/改变命名空间；此处填写仿真 remap 后的实际话题。 -->
+      <param name="command_topic">/sim/joint_commands</param>
+      <param name="state_topic">/sim/joint_feedback</param>
+      <param name="feedback_timeout">2.0</param><!-- 墙钟秒，反馈失联后报硬件错误。 -->
+      <param name="activation_timeout">30.0</param><!-- 墙钟秒，等待模型加载及首次反馈。 -->
+    </hardware>
+    <xacro:controlled_wheel joint_name="front_left_wheel_joint"/>
+    <xacro:controlled_wheel joint_name="rear_left_wheel_joint"/>
+    <xacro:controlled_wheel joint_name="front_right_wheel_joint"/>
+    <xacro:controlled_wheel joint_name="rear_right_wheel_joint"/>
+  </ros2_control>
+</robot>

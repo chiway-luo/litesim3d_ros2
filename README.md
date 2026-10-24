@@ -49,6 +49,8 @@ First complete [dependency installation](docs/usage/安装与构建.md#安装依
 
 ## Quick start
 
+For a complete description-to-simulation workflow, follow the [dual MID-360 tutorial (Chinese)](docs/tutorials/双MID360从零搭建.md): clone, separate description and bringup packages, world configuration, URDF sensors, bringup.launch.py, build, and control. The [standalone example](examples/dual_mid360/README.md) includes all required model and configuration files.
+
 ### 1. Clone and build
 
 In a Bash terminal with the prerequisites installed:

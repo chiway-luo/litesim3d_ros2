@@ -1,0 +1,21 @@
+# 先加载插件默认参数，再用各段覆盖。以下显式写出常用设置。
+# 独立 name 在 simulation.urdf.xacro 声明；link、native topic 也必须各自唯一。
+# 当前 MID-360 扫描表要求 columns × rate_hz = 200000，两项需要一起调整。
+front:  # 组合 Xacro 中前雷达 parameters 的 section="front"。
+  link: front_mid360_link  # URDF 中的前雷达扫描坐标系；安装位置与倾角由关节链决定。
+  topic: mid360/front/points  # native 模式的相对话题名；Livox 模式按传感器实例名生成话题。
+  rate_hz: 10.0  # 点云帧率（Hz）。
+  columns: 20000  # 每帧采样槽数，不等于每帧有效回波数；需与 rate_hz 满足上述关系。
+  min_range_m: 0.1  # 最近有效测距（m）。
+  max_range_m: 40.0  # 最远有效测距（m）。
+  scan_mode: rolling  # 按帧内采样时间扫描，保留运动期间的逐点时间差。
+  self_filter: sensor_link  # 过滤自身雷达 link；支架、车体和另一台雷达仍会遮挡光束。
+rear:  # 组合 Xacro 中后雷达 parameters 的 section="rear"。
+  link: rear_mid360_link  # 后雷达扫描坐标系，须与前雷达使用不同 link。
+  topic: mid360/rear/points  # 后雷达的 native 点云话题，须与前雷达区分。
+  rate_hz: 10.0  # 后雷达点云帧率（Hz），可独立于前雷达配置。
+  columns: 20000  # 后雷达每帧采样槽数；columns × rate_hz 必须为 200000。
+  min_range_m: 0.1  # 后雷达最近有效测距（m）。
+  max_range_m: 40.0  # 后雷达最远有效测距（m）。
+  scan_mode: rolling  # 后雷达同样按帧内采样时间进行滚动扫描。
+  self_filter: sensor_link  # 仅过滤后雷达自身 link，其他机器人部件仍可遮挡。
