@@ -18,6 +18,15 @@ struct SensorOutput {
   std::vector<ImuSample> imus;
   std::vector<std::string> cameras; // request the shared renderer for this instance
 };
+// Optional capability: keeps SensorPlugin and SensorContext ABI/semantics intact.
+// Kinematics describes the mounted link origin/orientation in world coordinates,
+// including the accepted joint motion. Context.body remains the base body truth.
+class LinkKinematicsSensor {
+public:
+  virtual ~LinkKinematicsSensor() = default;
+  virtual void stepWithKinematics(const SensorContext &, const Kinematics &sensor,
+      SensorOutput &) = 0;
+};
 struct ImageFrame {
   uint64_t stamp_ns = 0;
   unsigned width = 0, height = 0;

@@ -2,7 +2,7 @@
 #include <pluginlib/class_list_macros.hpp>
 
 namespace litesim3d::plugins {
-class Imu final : public SensorPlugin {
+class Imu final : public SensorPlugin, public LinkKinematicsSensor {
 public:
   Json defaults() const override { return sensorDefaults("imu"); }
   void initialize(const Initialization &init, const Json &input) override {
@@ -18,6 +18,12 @@ public:
   void step(const SensorContext &context, SensorOutput &out) override {
     if (!enabled_) return;
     out.imus.push_back(sampleImu(config_,context.body,context.body_sensor,
+        context.stamp_ns,seed_,context.sample_index));
+  }
+  void stepWithKinematics(const SensorContext &context, const Kinematics &sensor,
+      SensorOutput &out) override {
+    if (!enabled_) return;
+    out.imus.push_back(sampleImu(config_,sensor,Pose::Identity(),
         context.stamp_ns,seed_,context.sample_index));
   }
   // Counter-based noise uses the host's sample index/stamp; there is no hidden clock.

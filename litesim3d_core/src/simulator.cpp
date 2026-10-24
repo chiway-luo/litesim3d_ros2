@@ -260,11 +260,12 @@ void Simulator::pause(bool paused) {
     state_ = State::Running;
 }
 std::optional<Contact> Simulator::clearance(const Pose &p, double &nearest,
-    const std::map<std::string, double> *joints) const {
+    const std::map<std::string, double> *joints, const std::set<std::string> *moving_links) const {
   nearest = INFINITY;
   std::optional<Contact> contact;
   const auto parts = model_.placed(model_.collision, p, config_.base_link, joints ? *joints : current_.joints);
-  for (auto &part : parts)
+  for (auto &part : parts) {
+    if (moving_links && !moving_links->count(part.link)) continue;
     for (auto &obstacle : scene_.collision) {
       auto collision_shape = obstacle.shape->collision;
       if (obstacle.support && config_.drive.support_links.count(part.link)) {
@@ -307,6 +308,7 @@ std::optional<Contact> Simulator::clearance(const Pose &p, double &nearest,
         contact = Contact{current_.stamp, part.link, obstacle.entity, nearest};
       }
     }
+  }
   return contact;
 }
 void Simulator::move(double dt, uint64_t end_stamp) {
@@ -632,11 +634,12 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
     }
     current_.joints = model_.positions(current_.joints);
     current_.joint_velocities = plugin_drive.joint_velocity;
+    if (drive_blocked_) for (auto &[name, velocity] : current_.joint_velocities) velocity = 0;
     // Feedback reflects accepted articulated motion, including blocked targets.
+    // A chassis collision stops wheel motion, not an unrelated moving joint.
     if (joint_chassis_)
       for (const auto &[name, value] : plugin_drive.steering_position)
         current_.joint_velocities[name] = (current_.joints.at(name) - previous_encoders.position.at(name)) / dt;
-    if (drive_blocked_) for (auto &[name, velocity] : current_.joint_velocities) velocity = 0;
     plugin_drive_velocity_ = drive_blocked_ ? plugins::Twist{} : plugin_drive.velocity;
     const auto output = odometry_plugin_->step({dt_ns, previous_encoders, {current_.joints, current_.joint_velocities}});
     require(output.pose.matrix().allFinite(), "odometry plugin returned non-finite pose");
@@ -661,6 +664,14 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
       current_.joint_velocities[name] =
           source == current_.joint_velocities.end() ? 0 : source->second * joint.multiplier;
     }
+  }
+  // Differentiate accepted endpoint rates at the integration deadline, after
+  // limits, collision acceptance and mimic propagation (never command rates).
+  joint_accelerations_.clear();
+  for (const auto &[name, velocity] : current_.joint_velocities) {
+    const auto previous = previous_encoders.velocity.find(name);
+    joint_accelerations_[name] =
+        (velocity - (previous == previous_encoders.velocity.end() ? 0 : previous->second)) / dt;
   }
   if (odometry_plugin_) {
     // Encoder odometry has already produced pose and endpoint twist independently.
@@ -855,6 +866,7 @@ void Simulator::setPose(const Pose &initial) {
   history_.clear();
   history_.push_back({current_.stamp, current_.world_base});
   kinematics_ = Kinematics{};
+  joint_accelerations_.clear();
 }
 void Simulator::fault(const std::string &reason) {
   state_ = State::Fault;

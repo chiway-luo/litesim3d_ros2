@@ -394,11 +394,14 @@ private:
   std::vector<Event> advanceStep();
   void move(double dt, uint64_t end_stamp);
   std::optional<Contact> clearance(const Pose &p, double &distance,
-      const std::map<std::string, double> *joints = nullptr) const;
+      const std::map<std::string, double> *joints = nullptr,
+      const std::set<std::string> *moving_links = nullptr) const;
   void initializeMotionPlugins();
   void initializeSensorPlugins(const plugins::Initialization &);
   plugins::SensorOutput sampleSensor(const std::string &name, uint64_t stamp,
       uint64_t sample_index, const Snapshot &snapshot) const;
+  Kinematics sensorKinematics(const Snapshot &, const std::map<std::string, Pose> &frames,
+      const std::string &link) const;
   void moveSteering(const std::map<std::string, double> &targets);
   Pose trajectory(uint64_t stamp) const;
   Config config_;
@@ -431,6 +434,7 @@ private:
   struct History { uint64_t stamp; Pose pose; };
   std::deque<History> history_;
   Kinematics kinematics_;
+  std::map<std::string, double> joint_accelerations_;
   uint64_t motion_samples_ = 0, contact_count_ = 0, discontinuities_ = 0, evicted_inputs_ = 0;
   bool motion_blocked_ = false, drive_blocked_ = false;
   double drive_v_ = 0, drive_w_ = 0;

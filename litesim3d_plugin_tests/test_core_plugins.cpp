@@ -300,6 +300,63 @@ TEST(JointControl, WheelCollisionFeedbackAndMissingChassis) {
   EXPECT_THROW(Simulator(config, diffModel(), {}), std::runtime_error);
 }
 
+TEST(JointControl, MovingGimbalDoesNotBlockChassisReverseEscape) {
+  for (bool slipping : {false, true}) {
+    SCOPED_TRACE(slipping);
+    auto config = diffConfig(slipping); config.control_mode = "ros2_control";
+    auto model = diffModel();
+    Joint gimbal; gimbal.name = "gimbal"; gimbal.type = "continuous";
+    gimbal.parent = "base_link"; gimbal.child = "gimbal_link";
+    gimbal.origin = pose({0, 0, .6}); gimbal.axis = Vec3::UnitZ(); gimbal.velocity = 1;
+    model.joints[gimbal.name] = gimbal; model.order.push_back(gimbal.name); model.links.insert(gimbal.child);
+    model.collision.push_back({"robot", gimbal.child, Shape::box({.06, .06, .06}), pose({.05, 0, 0})});
+    Simulator sim(config, model, wall());
+    JointCommand command;
+    command.joints = {{"left_wheel_joint", {JointCommandMode::Velocity, 10}},
+                      {"right_wheel_joint", {JointCommandMode::Velocity, 10}},
+                      {"gimbal", {JointCommandMode::Velocity, .2}}};
+    ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 100);
+    const auto stopped = sim.snapshot();
+    ASSERT_GT(sim.contactCount(), 0u);
+    EXPECT_NEAR(stopped.world_base.translation().x(), .75, 2e-5);
+    EXPECT_NEAR(stopped.joints.at("gimbal"), .2, 1e-10);
+    EXPECT_NEAR(stopped.joint_velocities.at("gimbal"), .2, 1e-10);
+    command.joints.at("left_wheel_joint").value = -5;
+    command.joints.at("right_wheel_joint").value = -5;
+    ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 20);
+    EXPECT_NEAR(sim.snapshot().world_base.translation().x(), stopped.world_base.translation().x() - .1, 1e-8);
+    EXPECT_NEAR(sim.snapshot().joints.at("gimbal"), .24, 1e-10);
+  }
+}
+
+TEST(JointControl, JointSweepStillChecksMimicFixedDescendantCollision) {
+  auto config = diffConfig(false); config.control_mode = "ros2_control";
+  auto model = diffModel();
+  Joint slide; slide.name = "slide"; slide.type = "prismatic";
+  slide.parent = "base_link"; slide.child = "empty_slider"; slide.axis = Vec3::UnitX();
+  slide.lower = 0; slide.upper = .8; slide.velocity = .4;
+  Joint follower = slide; follower.name = "follower"; follower.child = "follower_link";
+  follower.mimic = "slide"; follower.multiplier = .5; follower.upper = .4;
+  Joint tip; tip.name = "tip_mount"; tip.type = "fixed";
+  tip.parent = follower.child; tip.child = "tip"; tip.origin = pose({.4, 0, .4});
+  for (const auto &joint : {slide, follower, tip}) {
+    model.joints[joint.name] = joint; model.order.push_back(joint.name); model.links.insert(joint.child);
+  }
+  // Only the fixed descendant of a mimic joint carries collision geometry.
+  model.collision.push_back({"robot", tip.child, Shape::box({.1, .1, .1}), Pose::Identity()});
+  Scene scene; scene.collision = {{"barrier", "", Shape::box({.1, .2, 1}), pose({.6, 0, .5})}};
+  Simulator sim(config, model, scene);
+  JointCommand command; command.joints["slide"] = {JointCommandMode::Position, .6};
+  ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 100);
+  ASSERT_GT(sim.contactCount(), 0u);
+  const auto stopped = sim.snapshot();
+  EXPECT_NEAR(stopped.joints.at("follower"), .1, 2e-5);
+  EXPECT_LT(stopped.joints.at("follower"), .1);
+  command.joints["slide"] = {JointCommandMode::Velocity, -.2};
+  ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 20);
+  EXPECT_NEAR(sim.snapshot().joints.at("slide"), stopped.joints.at("slide") - .04, 1e-9);
+}
+
 TEST(JointControl, OmniBodyMotionFromWheelRatesAndTimeout) {
   for (int n : {3, 4}) for (const auto &target : {Vec3(.2, 0, 0), Vec3(0, .3, 0),
                                                 Vec3(0, 0, .4), Vec3(.2, -.1, .3)}) {

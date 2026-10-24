@@ -149,8 +149,51 @@ plugins::SensorOutput Simulator::sampleSensor(const std::string &name, uint64_t 
   if (desc.kind == "lidar")
     context.robot_in_sensor = model_.placed(model_.sensor,mount.inverse(),config_.base_link,snapshot.joints);
   plugins::SensorOutput output;
-  sensor_plugins_.at(name)->step(context,output);
+  auto &plugin = *sensor_plugins_.at(name);
+  if (auto *articulated = dynamic_cast<plugins::LinkKinematicsSensor *>(&plugin))
+    articulated->stepWithKinematics(context, sensorKinematics(snapshot, frames, desc.link), output);
+  else plugin.step(context,output);
   return output;
+}
+
+Kinematics Simulator::sensorKinematics(const Snapshot &snapshot,
+    const std::map<std::string, Pose> &frames, const std::string &link) const {
+  // base_link is fixed to the URDF root, which may have a different origin.
+  const Pose world_root = snapshot.world_base * frames.at(config_.base_link).inverse();
+  Kinematics result = kinematics_;
+  const Vec3 root_offset = world_root.translation() - snapshot.world_base.translation();
+  result.acceleration += result.alpha.cross(root_offset) +
+      result.omega.cross(result.omega.cross(root_offset));
+  std::vector<const Joint *> chain;
+  for (std::string child = link; child != model_.root;) {
+    const auto it = std::find_if(model_.joints.begin(), model_.joints.end(),
+        [&](const auto &entry) { return entry.second.child == child; });
+    require(it != model_.joints.end(), "invalid sensor joint chain: " + child);
+    chain.push_back(&it->second); child = it->second.parent;
+  }
+  auto rate = [](const auto &values, const std::string &name) {
+    const auto it = values.find(name); return it == values.end() ? 0. : it->second;
+  };
+  for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+    const auto &joint = **it;
+    const Pose parent = world_root * frames.at(joint.parent);
+    const Pose child = world_root * frames.at(joint.child);
+    const Vec3 offset = child.translation() - parent.translation();
+    result.acceleration += result.alpha.cross(offset) +
+        result.omega.cross(result.omega.cross(offset));
+    if (joint.type == "fixed") continue;
+    const Vec3 axis = parent.linear() * joint.origin.linear() * joint.axis;
+    const Vec3 velocity = axis * rate(snapshot.joint_velocities, joint.name);
+    const Vec3 acceleration = axis * rate(joint_accelerations_, joint.name);
+    if (joint.type == "prismatic") {
+      result.acceleration += acceleration + 2 * result.omega.cross(velocity);
+    } else {
+      result.alpha += acceleration + result.omega.cross(velocity);
+      result.omega += velocity;
+    }
+  }
+  result.world_body = world_root * frames.at(link);
+  return result;
 }
 
 void Simulator::processCamera(size_t index, plugins::ImageFrame &image) {
@@ -191,15 +234,28 @@ void Simulator::moveSteering(const std::map<std::string, double> &targets) {
     for (const auto &[name, value] : targets) q[name] += fraction * (value - initial.at(name));
     return model_.positions(q);
   };
+  // Only these subtrees move during this sweep. An unrelated chassis contact
+  // must not stop a free joint or prevent the subsequent body escape motion.
+  // Resolve mimic joints first, then include all fixed/movable descendants.
+  const auto final = sample(1);
+  std::set<std::string> moving_links;
+  std::function<void(const std::string &, bool)> descend = [&](const std::string &parent, bool moving) {
+    for (const auto &[name, joint] : model_.joints) if (joint.parent == parent) {
+      const bool child_moves = moving || final.at(name) != initial.at(name);
+      if (child_moves) moving_links.insert(joint.child);
+      descend(joint.child, child_moves);
+    }
+  };
+  descend(model_.root, false);
   double fraction = 0;
   for (size_t iteration = 0; fraction < 1; ++iteration) {
     auto q = sample(fraction);
     double distance;
-    auto contact = clearance(current_.world_base, distance, &q);
+    auto contact = clearance(current_.world_base, distance, &q, &moving_links);
     if (distance > 1e-9 && distance <= 2e-5 && speed_bound > 0 && iteration < 10000) {
       const double increment = std::min(1 - fraction, distance * .5 / speed_bound);
       const auto probe = sample(fraction + increment); double next_distance;
-      clearance(current_.world_base, next_distance, &probe);
+      clearance(current_.world_base, next_distance, &probe, &moving_links);
       if (next_distance > distance + 1e-10) { current_.joints = probe; fraction += increment; continue; }
     }
     if (distance <= 1e-5 || iteration >= 10000) {

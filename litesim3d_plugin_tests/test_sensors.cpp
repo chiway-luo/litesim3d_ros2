@@ -121,6 +121,112 @@ TEST(SensorPlugins, ImuMountBiasRangeCovarianceAndReset) {
   EXPECT_NEAR(b.imus[0].acceleration_covariance[8],.09,1e-14);
   p["gyro_range_radps"] = -1; EXPECT_THROW(plugin->initialize(init(),p),std::runtime_error);
 }
+
+TEST(SensorPlugins, MovingJointImuIncludesRotationLeverArmAndMountAxes) {
+  for (const auto &type : {"continuous", "revolute"}) for (double body_rate : {0., .4}) {
+    SCOPED_TRACE(type);
+    SCOPED_TRACE(body_rate);
+    auto cfg = base(); cfg.control_mode = "ros2_control";
+    auto robot = model(); auto &joint = robot.joints.at("imu_link_mount");
+    joint.type = type; joint.origin = pose({0, 0, .4}); joint.axis = Vec3::UnitZ();
+    joint.lower = -2; joint.upper = 2; joint.velocity = 2;
+    Joint mount; mount.name = "imu_tip_mount"; mount.type = "fixed";
+    mount.parent = joint.child; mount.child = "imu_tip";
+    mount.origin = pose({.25, 0, 0}, {pi/2, 0, 0});
+    robot.joints[mount.name] = mount; robot.order.push_back(mount.name); robot.links.insert(mount.child);
+    // A second IMU stays on the base and must not inherit the gimbal's rate.
+    cfg.plugins = {declaration(1, "moving", {{"link", "imu_tip"}, {"topic", "moving/imu"}}),
+                   declaration(1, "fixed", {{"link", "base_link"}, {"topic", "fixed/imu"}})};
+    Simulator sim(cfg, robot, {});
+    JointCommand command; command.body_velocity = lp::Twist{0, 0, 0, body_rate};
+    command.joints[joint.name] = {JointCommandMode::Velocity, 1};
+    ASSERT_TRUE(sim.jointCommand(command)); const auto events = advance(sim, 40);
+    ASSERT_FALSE(events.empty()); ASSERT_EQ(events.back().imus.size(), 2u);
+    const auto &moving = events.back().imus[0], &fixed = events.back().imus[1];
+    const double total_rate = 1 + body_rate;
+    EXPECT_NEAR(sim.snapshot().joints.at(joint.name), .2, 1e-10);
+    EXPECT_NEAR(moving.angular_velocity.x(), 0, 1e-10);
+    EXPECT_NEAR(moving.angular_velocity.y(), total_rate, 1e-10);
+    EXPECT_NEAR(moving.angular_velocity.z(), 0, 1e-10);
+    EXPECT_NEAR(moving.acceleration.x(), -.25 * total_rate * total_rate, 1e-9);
+    EXPECT_NEAR(moving.acceleration.y(), 9.81, 1e-9);
+    EXPECT_NEAR(moving.acceleration.z(), 0, 1e-9);
+    EXPECT_NEAR(fixed.angular_velocity.z(), body_rate, 1e-10);
+    EXPECT_NEAR(fixed.acceleration.z(), 9.81, 1e-10);
+  }
+}
+
+TEST(SensorPlugins, MovingJointImuIncludesPrismaticAccelerationAndCoriolis) {
+  auto cfg = base(); cfg.control_mode = "ros2_control";
+  cfg.plugins = {declaration(1, "imu")};
+  auto robot = model(); auto &joint = robot.joints.at("imu_link_mount");
+  joint.type = "prismatic"; joint.origin = pose({0, 0, .4}); joint.axis = Vec3::UnitX();
+  joint.lower = -1; joint.upper = 1; joint.velocity = 2;
+  Simulator sim(cfg, robot, {});
+  JointCommand command; command.body_velocity = lp::Twist{0, 0, 0, .5};
+  std::vector<Event> events;
+  for (int i = 1; i <= 20; ++i) {
+    command.joints[joint.name] = {JointCommandMode::Velocity, .01 * i};
+    ASSERT_TRUE(sim.jointCommand(command)); events = advance(sim, 1);
+  }
+  ASSERT_FALSE(events.empty()); ASSERT_EQ(events.back().imus.size(), 1u);
+  const auto &imu = events.back().imus[0];
+  const double radius = sim.snapshot().joints.at(joint.name);
+  EXPECT_NEAR(imu.angular_velocity.z(), .5, 1e-10);
+  EXPECT_NEAR(imu.acceleration.x(), 2 - .25 * radius, 1e-9);
+  EXPECT_NEAR(imu.acceleration.y(), .2, 1e-9);
+  EXPECT_NEAR(imu.acceleration.z(), 9.81, 1e-9);
+}
+
+TEST(SensorPlugins, MovingJointImuFollowsMimicVelocity) {
+  auto cfg = base(); cfg.control_mode = "ros2_control";
+  cfg.plugins = {declaration(1, "imu")};
+  auto robot = model(); auto &follower = robot.joints.at("imu_link_mount");
+  follower.type = "continuous"; follower.axis = Vec3::UnitZ(); follower.velocity = 2;
+  follower.mimic = "source"; follower.multiplier = -2;
+  Joint source = follower; source.name = "source"; source.child = "source_link";
+  source.mimic.clear(); source.multiplier = 1;
+  robot.links.insert(source.child); robot.joints[source.name] = source;
+  robot.order.insert(robot.order.begin(), source.name);
+  Simulator sim(cfg, robot, {});
+  JointCommand command; command.joints[source.name] = {JointCommandMode::Velocity, .3};
+  ASSERT_TRUE(sim.jointCommand(command)); const auto events = advance(sim, 40);
+  ASSERT_FALSE(events.empty()); ASSERT_EQ(events.back().imus.size(), 1u);
+  EXPECT_NEAR(events.back().imus[0].angular_velocity.z(), -.6, 1e-10);
+}
+
+TEST(SensorPlugins, MovingJointImuComposesNestedAxesWithNonRootBase) {
+  auto cfg = base(); cfg.control_mode = "ros2_control";
+  cfg.plugins = {declaration(1, "imu")};
+  auto robot = model(); robot.root = "robot_root"; robot.links.insert(robot.root);
+  Joint base_mount; base_mount.name = "base_mount"; base_mount.type = "fixed";
+  base_mount.parent = robot.root; base_mount.child = "base_link";
+  base_mount.origin = pose({.3, -.2, .1}, {.1, -.2, .3});
+  Joint yaw_joint; yaw_joint.name = "yaw_joint"; yaw_joint.type = "continuous";
+  yaw_joint.parent = "base_link"; yaw_joint.child = "yaw_link";
+  yaw_joint.axis = Vec3::UnitZ(); yaw_joint.velocity = 2;
+  for (const auto &joint : {base_mount, yaw_joint}) {
+    robot.joints[joint.name] = joint; robot.order.push_back(joint.name); robot.links.insert(joint.child);
+  }
+  auto &pitch = robot.joints.at("imu_link_mount"); pitch.parent = yaw_joint.child;
+  pitch.type = "revolute"; pitch.axis = Vec3::UnitY(); pitch.origin = Pose::Identity();
+  pitch.lower = -1; pitch.upper = 1; pitch.velocity = 2;
+  Simulator sim(cfg, robot, {});
+  JointCommand command; command.body_velocity = lp::Twist{0, 0, 0, .2};
+  command.joints[yaw_joint.name] = {JointCommandMode::Velocity, .6};
+  command.joints[pitch.name] = {JointCommandMode::Velocity, .4};
+  ASSERT_TRUE(sim.jointCommand(command)); const auto events = advance(sim, 40);
+  ASSERT_FALSE(events.empty()); ASSERT_EQ(events.back().imus.size(), 1u);
+  const auto &imu = events.back().imus[0];
+  const double angle = sim.snapshot().joints.at(pitch.name);
+  EXPECT_NEAR(imu.angular_velocity.x(), -.8 * std::sin(angle), 1e-10);
+  EXPECT_NEAR(imu.angular_velocity.y(), .4, 1e-10);
+  EXPECT_NEAR(imu.angular_velocity.z(), .8 * std::cos(angle), 1e-10);
+  EXPECT_NEAR(imu.acceleration.x(), -9.81 * std::sin(angle), 1e-9);
+  EXPECT_NEAR(imu.acceleration.y(), 0, 1e-9);
+  EXPECT_NEAR(imu.acceleration.z(), 9.81 * std::cos(angle), 1e-9);
+}
+
 TEST(SensorPlugins, CameraKindsBiasClippingNanEndianAndIndependentNoise) {
   lp::Loader loader; Scene scene; auto c = context(scene);
   for (size_t n = 2; n < classes.size(); ++n) for (bool big : {false,true}) {
