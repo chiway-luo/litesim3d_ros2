@@ -28,7 +28,8 @@ pytestmark = pytest.mark.skipif(os.environ.get("LWS_GUI_TESTS") != "1",
 def camera_car(tmp_path):
     car = Example(tmp_path)
     yield car
-    car.close()
+    car.close(require_clean_children=True,
+              expected_child_exits=getattr(car, "expected_child_exits", None))
 
 
 def configuration(car, kind="rgb", width=320, height=180, rate=15):
@@ -247,7 +248,7 @@ def render_error_samples(directory, kind):
                               QImage.Format_RGB888).save(str(directory / (key + ".png")))
         return samples
     finally:
-        car.close()
+        car.close(require_clean_children=True)
 
 
 @pytest.mark.parametrize("kind", ["rgb", "depth", "rgbd"])
@@ -332,4 +333,13 @@ def test_closing_previews_preserves_camera_data_and_renderer_failure_is_fatal(ca
     os.kill(int(match.group(1)),signal.SIGTERM)
     car.until(lambda:car.process.poll() is not None,timeout=12)
     assert car.process.returncode!=0
+    # Either launch sees the renderer exit first and shuts the simulator down
+    # cleanly, or the simulator observes the disconnect and fails explicitly.
+    # Permit only that diagnosed fault on that exact PID; every other child
+    # must still exit normally, and sanitizer log checks remain independent.
+    output = (car.directory / "launch.log").read_text()
+    failed_sim = re.search(r"\[sim_node-\d+\]: process has died \[pid (\d+), exit code (-?\d+)", output)
+    if failed_sim:
+        assert int(failed_sim[2]) == 1 and "simulation fault: camera renderer disconnected" in output
+        car.expected_child_exits = {failed_sim[1]: 1}
     (car.directory/"camera-evidence.json").write_text(json.dumps({"preview_close":"PASS","renderer_failure":"PASS","stats":stats},indent=2))

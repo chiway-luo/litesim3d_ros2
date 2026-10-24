@@ -3,6 +3,14 @@
 `litesim3d_ros2_control/LiteSimSystem` 是 Humble 的 `hardware_interface::SystemInterface` 插件。
 使用者的 bringup 启动 controller_manager、控制器、joint_state_broadcaster 和 RSP；公共仿真 launch 不启动这些节点。
 
+带相机或其他慢启动依赖的例子可使用 `spawn_when_ready.py --timeout 60 -- <原 spawner 参数>`。
+它等待 `/sim/status` 就绪和 `/clock` 实际推进，再执行原生 controller_manager spawner，保留其退出码。
+使用 `--executable ros2_control_node` 时以同样顺序启动管理器，`--` 后的 ROS 参数和 remap 原样传递；
+这样硬件接口不会在相机尚未就绪时提前激活、随后把初始化期间的反馈空窗误判为失联。
+等待期间仿真故障或超过墙钟预算会明确失败；不会推进仿真时间或放宽指令看门狗。
+五种基础运动模型的例子通过 `controller_startup_timeout` 配置该预算，默认 60 秒。
+Humble 的控制器加载会等待管理器更新线程；相机初始化时停滞的时钟不能靠提前启动 spawner 解决。
+
 在 runtime.yaml 中设置 `simulation.control_mode: ros2_control`，在控制模型的 `<ros2_control>` 中配置本插件。
 本模式关闭仿真器的直接 `cmd_vel` 订阅及 `joint_states` 发布，由控制器接收算法指令，broadcaster 发布实际状态。
 仿真编码器里程计改发 `sim/odometry`。odom TF 可由控制器负责，此时设置仿真 `publish_odom_tf: false`、`external_odom_tf: true`。

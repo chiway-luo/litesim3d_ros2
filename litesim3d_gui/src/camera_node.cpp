@@ -1,4 +1,5 @@
 #include "camera_renderer.hpp"
+#include "ros_event_loop.hpp"
 #include <litesim3d_interfaces/srv/render_cameras.hpp>
 
 int main(int argc,char **argv) {
@@ -7,6 +8,9 @@ int main(int argc,char **argv) {
   try {
     using namespace litesim3d_render;
     auto node=std::make_shared<rclcpp::Node>("litesim_camera_renderer");
+    const auto context=node->get_node_base_interface()->get_context();
+    rclcpp::executors::SingleThreadedExecutor executor(ros_executor_options(context));
+    executor.add_node(node);
     const auto file=node->declare_parameter<std::string>("scene_description","");
     J description;std::ifstream input(file);require(bool(input),"missing camera scene description");input>>description;
     CameraRenderer renderer(description);
@@ -40,7 +44,9 @@ int main(int argc,char **argv) {
         } catch(const std::exception &e) {response->message=e.what();}
       });
     QTimer timer;QObject::connect(&timer,&QTimer::timeout,[&] {
-      if(!rclcpp::ok()){app.quit();return;}rclcpp::spin_some(node);
+      try {
+        if(!process_ros_events(context,[&]{executor.spin_some();}))app.quit();
+      }catch(const std::exception &e){std::cerr<<"camera renderer: "<<e.what()<<'\n';app.exit(1);}
     });timer.start(1);
     RCLCPP_INFO(node->get_logger(),"Camera renderer ready (%zu cameras)",names.size());
     result=app.exec();

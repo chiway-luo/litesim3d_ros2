@@ -33,6 +33,7 @@ def generate_launch_description():
     ld.add_action(DeclareLaunchArgument("runtime", default_value=runtime_file))
     ld.add_action(DeclareLaunchArgument("params", default_value=ros_params))
     ld.add_action(DeclareLaunchArgument("controllers", default_value=controller_params))
+    ld.add_action(DeclareLaunchArgument("controller_startup_timeout", default_value="60"))
     ld.add_action(DeclareLaunchArgument("world", default_value="room.sdf"))
     ld.add_action(DeclareLaunchArgument("joint_states_topic", default_value="/joint_states"))
     ld.add_action(DeclareLaunchArgument("tf_topic", default_value="/tf"))
@@ -74,7 +75,9 @@ def generate_launch_description():
     ]))
 
     manager = Node(
-        package="controller_manager", executable="ros2_control_node", output="screen",
+        package="litesim3d_ros2_control", executable="spawn_when_ready.py", output="screen",
+        arguments=["--executable", "ros2_control_node",
+                   "--timeout", LaunchConfiguration("controller_startup_timeout"), "--"],
         # 不设置全局 name remap，防止动态加载的控制器被一并改名。
         parameters=[LaunchConfiguration("controllers"), {
             "robot_description": ParameterValue(xacro.process_file(control_xacro).toxml(), value_type=str),
@@ -87,8 +90,8 @@ def generate_launch_description():
     ld.add_action(RegisterEventHandler(OnProcessExit(target_action=manager, on_exit=required_exit)))
     ld.add_action(manager)
     spawner = Node(
-        package="controller_manager", executable="spawner", output="screen",
-        arguments=["joint_state_broadcaster", "omni_controller", "-c", "/controller_manager",
+        package="litesim3d_ros2_control", executable="spawn_when_ready.py", output="screen",
+        arguments=["--timeout", LaunchConfiguration("controller_startup_timeout"), "--", "joint_state_broadcaster", "omni_controller", "-c", "/controller_manager",
                    "--controller-manager-timeout", "60"],
     )
     ld.add_action(RegisterEventHandler(OnProcessExit(

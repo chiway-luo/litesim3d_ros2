@@ -7,6 +7,11 @@ leak:pluginlib::ClassLoader<litesim3d::plugins::SensorPlugin>::loadLibraryForCla
 leak:pluginlib::ClassLoader<litesim3d::plugins::ChassisPlugin>::loadLibraryForClass
 leak:pluginlib::ClassLoader<litesim3d::plugins::OdometryPlugin>::loadLibraryForClass
 leak:pluginlib::ClassLoader<litesim3d_ros::LidarOutputPlugin>::loadLibraryForClass
+# Same Humble registration graveyard for dynamically loaded control plugins.
+# control_plugin_probe verifies a clean load/unload and a real constructor leak
+# for BOTH base classes; constructor leaks must still fail with these rules.
+leak:pluginlib::ClassLoader<hardware_interface::SystemInterface>::loadLibraryForClass
+leak:pluginlib::ClassLoader<controller_interface::ControllerInterface>::loadLibraryForClass
 
 # Humble rosidl_typesupport_cpp caches heap SharedLibrary objects in a raw
 # type_support_map. The cache becomes unreachable on plugin dlclose.

@@ -16,6 +16,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from paths import EVIDENCE_DIR
 
 
+def prepare_runtime(directory):
+    """Use the same explicit simulation model as the installed example launch."""
+    return prepare_config(
+        Path(get_package_share_directory("wheel_car_4w_sim")) / "config/runtime.yaml",
+        directory,
+        robot_urdf=Path(get_package_share_directory("wheel_car_4w_description")) /
+        "urdf/simulation.urdf.xacro")
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=EVIDENCE_DIR / "sdf-viewer")
@@ -27,8 +36,7 @@ def main():
         parser.error("output must be a new or empty directory")
     args.output.mkdir(parents=True,exist_ok=True)
     importer=Path(get_package_prefix("litesim3d_assets")) / "lib/litesim3d_assets/sdf_import"
-    runtime=prepare_config(Path(get_package_share_directory("wheel_car_4w_sim")) / "config/runtime.yaml",
-                           args.output / "prepared")
+    runtime=prepare_runtime(args.output / "prepared")
     result={}
     for variant in ("obj","dae","pbr"):
         folder=args.output / variant

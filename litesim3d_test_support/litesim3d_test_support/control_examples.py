@@ -10,13 +10,14 @@ from litesim3d_interfaces.msg import JointFeedback
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Float64, Float64MultiArray
 from std_srvs.srv import SetBool
+from .timing import until_simulated
 
 
-def service(rig, kind, name, request):
+def service(rig, kind, name, request, *, timeout=20):
     client = rig.node.create_client(kind, name)
     assert client.wait_for_service(timeout_sec=15), name
     future = client.call_async(request)
-    rig.until(future.done, timeout=20)
+    rig.until(future.done, timeout=timeout)
     result = future.result()
     rig.node.destroy_client(client)
     return result
@@ -26,12 +27,21 @@ def controllers(rig):
     return service(rig, ListControllers, '/controller_manager/list_controllers', ListControllers.Request()).controller
 
 
-def switch(rig, start, stop=()):
+def switch_request(rig, start, stop=()):
     request = SwitchController.Request()
     request.activate_controllers = list(start)
     request.deactivate_controllers = list(stop)
     request.strictness = SwitchController.Request.STRICT
-    return service(rig, SwitchController, '/controller_manager/switch_controller', request).ok
+    # Humble defaults an omitted timeout to one WALL second. A slow simulated
+    # control tick can exceed that; this does not change command expiry in ROS time.
+    request.timeout.sec = int(rig.wall_timeout(10))
+    return request
+
+
+def switch(rig, start, stop=()):
+    request = switch_request(rig, start, stop)
+    return service(rig, SwitchController, '/controller_manager/switch_controller', request,
+                   timeout=request.timeout.sec + 5).ok
 
 
 def load(rig, name):
@@ -51,6 +61,15 @@ def drive(rig, publisher, message, seconds):
         assert time.monotonic() < end, 'simulation clock stopped'
         publisher.publish(message)
         rig.spin(.025)
+
+
+def wait_for_stop(rig, axis, seconds=2.0):
+    # Timeout and acceleration limits use simulation time. Instrumentation can
+    # slow /clock without changing either contract; retain a finite wall guard.
+    return until_simulated(
+        lambda: abs(getattr(rig.messages['feedback'][-1].body_velocity.linear, axis)) < 1e-6,
+        lambda: stamp(rig.messages['feedback'][-1].state.header.stamp),
+        rig.spin, seconds, wall_timeout=rig.wall_timeout(45))
 
 
 def start(rig, controller, *, drone=False, **arguments):
@@ -81,7 +100,7 @@ def verify_drone(rig):
     assert feedback.body_pose.position.z - beginning.z > .2
     assert feedback.body_pose.orientation.z > .05
     # Stop command streams: controller expires in simulation time, body then decelerates.
-    rig.until(lambda: abs(rig.messages['feedback'][-1].body_velocity.linear.z) < 1e-6, timeout=8)
+    stopped_after = wait_for_stop(rig, 'z')
     cmd.linear.z = float('nan')
     drive(rig, publisher, cmd, .3)
     assert abs(rig.messages['feedback'][-1].body_velocity.linear.z) < 1e-6
@@ -105,6 +124,7 @@ def verify_drone(rig):
         'body_interfaces': [c.claimed_interfaces for c in controllers(rig) if c.name == 'body_velocity_controller'],
         'cmd_vel_subscribers': rig.node.count_subscribers('/cmd_vel'), 'joint_state_publishers': rig.node.count_publishers('/joint_states'),
         'xyz_yaw_motion': True, 'timeout_and_invalid_stop': True, 'floor_collision': True, 'pause_resume': True,
+        'timeout_stop_sim_seconds': stopped_after,
     }, indent=2))
 
 
@@ -114,7 +134,7 @@ def verify_wheel_car(rig, **arguments):
     cmd = Twist(); cmd.linear.x = .3
     drive(rig, publisher, cmd, 1.0)
     rig.until(lambda: rig.messages['truth'][-1].pose.pose.position.x - beginning.x > .05)
-    rig.until(lambda: abs(rig.messages['feedback'][-1].body_velocity.linear.x) < 1e-6, timeout=8)
+    stopped_after = wait_for_stop(rig, 'x')
     load(rig, 'wheel_velocity_controller')
     assert not switch(rig, ['wheel_velocity_controller'])
     assert switch(rig, ['wheel_velocity_controller'], ['diff_drive_controller'])
@@ -130,6 +150,7 @@ def verify_wheel_car(rig, **arguments):
     (rig.directory / 'control-evidence.json').write_text(json.dumps({
         'model': 'wheel_car_4w', 'mimic_feedback': True, 'controller_conflict_rejected': True,
         'controller_handoff': True, 'timeout_stop': True,
+        'timeout_stop_sim_seconds': stopped_after,
         'joint_state_publishers': rig.node.count_publishers('/joint_states'),
     }, indent=2))
 

@@ -1,5 +1,6 @@
 """Real Humble controller_manager, pluginlib hardware, controllers and simulator."""
 import os
+import json
 from pathlib import Path
 import signal
 import subprocess
@@ -187,6 +188,7 @@ def test_controller_manager_joint_modes_and_feedback(tmp_path):
         wait(hardware_stopped, 5)
         wait(lambda: all(abs(v) < 1e-4 for v in messages['feedback'].state.velocity), 5)
     finally:
+        forced = []
         for process in reversed(processes):
             if process.poll() is None:
                 process.send_signal(signal.SIGCONT)
@@ -195,9 +197,14 @@ def test_controller_manager_joint_modes_and_feedback(tmp_path):
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
+                forced.append(process.pid)
                 process.kill(); process.wait()
         for output in files:
             output.close()
         executor.shutdown()
         node.destroy_node()
         context.shutdown()
+        exits = [{'executable': p.args[0], 'pid': p.pid, 'exit_code': p.returncode} for p in processes]
+        (tmp_path / 'process-exits.json').write_text(json.dumps({'processes': exits, 'forced_kills': forced}, indent=2))
+        assert not forced, exits
+        assert all(p.returncode == 0 for p in processes), exits

@@ -71,13 +71,21 @@ export LD_LIBRARY_PATH="$LITESIM_LLVM_UNWIND_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_
 
 可用 `--profile coverage` 等单独诊断失败。每次都重新执行测试，日志和 JUnit 放在 `PROFILE/runs/时间-进程号/`，`latest.json` 指向本轮结果。结果包含源码逐文件哈希、架构、RMW 和命令；测试期间源码变化会使本轮失败。旧构建缓存只在构建身份一致时复用，旧通过结果不会复用。完整检查的五项必须全部通过，短测不替代 8 小时长稳。
 
-ASan 的完整调用栈展开会显著增加高频分配用例的耗时，内核/插件测试墙钟预算为 1200 秒，ROS 套件为 2400 秒，整体回归预算为 3600 秒。两个 ROS 测试 Harness 的条件、服务与退出等待至少为 120 秒，以覆盖 SDF 导入、大型雷达模式的初始化与清理；示例套件为 900 秒，单个渲染程序和单批渲染请求为 900 秒。桌面测试单独将相机启动和条件等待设为 600 秒、ROS launch 的正常退出宽限设为 120 秒，桌面 pytest 套件为 6000 秒，整个桌面阶段为 9000 秒，CI 的 ASan 作业上限为 180 分钟。这些设置只由测试入口传入，普通运行的启动保护和故障测试保留原值；其他 profile 保持原预算。RTF 用例在所有 profile 中检查实际时钟、统计准确性与持续推进；目标速度精度由普通和覆盖率构建检查，避免把 Sanitizer 分配回溯的性能开销误判为调速错误。
+ASan 的完整调用栈展开会显著增加高频分配用例的耗时，内核/插件测试墙钟预算为 1200 秒，ROS 套件为 2400 秒，整体回归预算由 `test_m3.sh --timeout-budget` 汇总各子套件上限并加 60 秒调度余量，当前 ASan 为 9900 秒，避免父进程提前截断尚未结束的子套件。两个 ROS 测试 Harness 的条件、服务与退出等待至少为 120 秒，以覆盖 SDF 导入、大型雷达模式的初始化与清理；示例套件为 900 秒，单个渲染程序和单批渲染请求为 900 秒。桌面测试单独将相机启动和条件等待设为 600 秒、ROS launch 的正常退出宽限设为 120 秒，桌面 pytest 套件为 6000 秒，整个桌面阶段为 9000 秒，CI 的 ASan 作业上限为 180 分钟。这些设置只由测试入口传入，普通运行的启动保护和故障测试保留原值；控制器停流检查以反馈消息的仿真时间判断 2 秒内停止，并另设有界墙钟存活保护；降速运行不能延长实际的仿真超时契约。controller_manager 切换请求显式设置墙钟等待（普通测试 10 秒、ASan 120 秒），避免 Humble 默认 1 秒在慢仿真下提前失败；暂停超过 1 秒再恢复的回归仍要求严格、原子的控制器交接。嵌套 runner 被取消时会回收自身启动的进程，包括另建 session 的子进程。RTF 用例在所有 profile 中检查实际时钟、统计准确性与持续推进；目标速度精度由普通和覆盖率构建检查，避免把 Sanitizer 分配回溯的性能开销误判为调速错误。
 
 成功的内核校验不应为固定诊断文字分配堆内存。ASan 原生测试通过分配钩子验证该约束，并用真实分配确认钩子有效；失败校验仍须抛出原有异常和诊断，原 `std::string` 接口保留。Mid360 的大扫描表和传感器高频路径会放大此类无用分配，不能只靠延长启动等待掩盖。SDF 启动入口也须在导入资源之前拒绝非法的 `paused` 参数。
 
 ASan 的独立 GUI/相机渲染进程使用 LLVM 14 的 `libunwind` 展开分配调用栈。Mesa 软件渲染的 JIT 注册异常栈时，GCC 回溯库可能在 `malloc` 中递归获取同一把锁，导致启动死锁；测试工具会实际运行一个程序，确认渲染构建的 `_Unwind_Backtrace` 来自 LLVM。无图形进程保留平台回溯库，避免额外开销；两种回溯器分别执行泄漏与未定义行为阳性对照。发布构建不依赖 LLVM 回溯库。
 
 Linux x86_64 的 ASan 测试可执行文件使用 `-no-pie` 链接，避免 Clang 14 在较新内核的地址随机化下于 `main` 前发生分配器映射冲突。动态插件保留共享库形式，普通与发布构建保持原设置。入口不修改系统 ASLR，也不通过重试掩盖启动失败；工具回归会编译并运行真实的可执行文件与共享插件，检查 ELF 类型。
+
+ASan 测试通过临时 ament overlay 为系统 `ros2_control_node` 设置同一 Clang 版本的共享运行库，仅在执行该原生宿主时注入。Python、spawner 和其他仿真可执行文件继续使用各自原有环境，系统 ROS 安装不改动。发行版宿主剥离了 pluginlib 模板符号，因此仅对该宿主追加 `class_loader::impl::loadLibrary` 注册路径例外；带符号和剥离符号的两套真实加载器均执行正常加载与构造函数泄漏对照，未匹配整个 controller_manager/hardware_interface 库。真实动态加载回归必须同时通过正常加载、UB 检出和实例泄漏检出。硬件插件只链接 `hardware_interface::hardware_interface`，避免把 fake/mock 示例插件直接链接进宿主、造成重复注册。
+
+桌面阶段还运行 RGB、Depth、RGB-D 与真实 ros2_control 控制器同时工作的三项联调，检查实际 Ogre 图像、相机信息时间戳和运动反馈。普通 `functional` 阶段单独构建第三方高度控制器 overlay，检查冲突拒绝、原子交接和停流，并用 SHA-256 确认底层仿真器和硬件适配库未被改写。无显示或缺少 overlay 时跳过的用例因此均有对应的实际执行阶段。
+
+Qt 程序在启动时创建一个 ROS executor，并在所有定时回调中复用，避免关闭期间反复构造 executor 引起异常。回调统一处理 context 在状态检查与 spin 之间关闭的竞态：正常关闭结束事件循环，ROS 仍有效时的异常保持失败。三项原生回归使用真实 Humble executor，覆盖关闭竞态、已关闭状态和真实异常传播，并接受 ASan/LSan 检查。私有测试 context 在节点和 executor 析构后显式清理子 context，并断言弱引用失效，解除 Humble GraphListener / GuardCondition 的循环引用，不增加泄漏抑制。相机用例记录并核对子进程退出码，避免图像断言通过后遗漏关闭失败。渲染器故障注入仅允许已记录断连诊断的仿真器 PID 以 1 退出，其余进程须正常退出，检测器日志仍独立检查。测试 Harness 先向仍运行的 launch 发送一次 SIGINT，由 launch 转发；只有退出的 launch 留有子进程时才向所属进程组补发信号，防止重复信号打断析构或 LSan 检查。覆盖率和 ASan 的示例套件外层预算均为 900 秒，控制器和仿真时间断言不变。
+
+五种基础运动模型在仿真就绪、时钟推进后才执行原生管理器和 spawner，避免硬件提前激活后把慢启动误判为失联，也避免控制器列表切换一直等待更新线程。默认 `controller_startup_timeout` 为 60 秒，插桩测试按同一墙钟存活预算显式传入；这不修改仿真时钟、硬件反馈看门狗或控制器指令超时。真实 DDS 回归覆盖未就绪、时钟冻结、正常推进、仿真故障，以及两个原生程序的 ROS 参数和成功/失败退出码传播。
 
 ASan 要求 `rclcpp >= 16.0.19`。该 Humble 版本包含[默认分配器修复](https://github.com/ros2/rclcpp/pull/3072)，旧版可在空节点启动时触发 `new-delete-type-mismatch`。入口在编译前记录实际版本并拒绝旧版，应更新测试用 ROS underlay，不能关闭该检测绕过问题。CI 显式安装更新后的 `ros-humble-rclcpp`，避免基础镜像保留旧版。
 
@@ -91,7 +99,7 @@ ASan 始终开启 `detect_leaks=1`，阳性对照和真实测试统一使用 `fa
 
 | 依赖路径 | 已知问题与检测边界 |
 | --- | --- |
-| pluginlib 加载注册 | [class_loader 元对象未释放](https://github.com/ros/class_loader/issues/131)。只匹配加载库期间的注册；另一个实际加载的测试插件在构造函数故意泄漏 64 字节，必须仍被检出。该插件仅在 ASan 测试构建生成 |
+| pluginlib 加载注册 | [class_loader 元对象未释放](https://github.com/ros/class_loader/issues/131)。只匹配加载库期间的注册；另一个实际加载的测试插件在构造函数故意泄漏 64 字节，必须仍被检出。该插件仅在 ASan 测试构建生成。硬件和控制器基类各有独立的真实 pluginlib 对照，正常卸载仅应用注册例外，构造函数泄漏 64 字节必须仍失败 |
 | ROS 消息类型支持 | [Humble 的 SharedLibrary 原始指针缓存](https://github.com/ros2/rosidl_typesupport/blob/humble/rosidl_typesupport_cpp/src/type_support_dispatch.hpp)在插件卸载后失去可达引用；二进制已剥离内部模板符号，因此限定 `librosidl_typesupport_cpp.so`，不匹配整个 rclcpp/rmw |
 | Ignition Rendering 6 / Ogre2 | 6.6.4 的空场景创建、销毁、卸载独立程序仍保留场景/根节点/mesh factory 引用环；mesh factory 还缓存原始材质。例外覆盖引擎初始化、场景创建与网格导入的上游分配，这些路径的第三方泄漏不由本门禁证明已消除 |
 | Mesa EGL / Fontconfig | 软件渲染的 EGL 初始化与 Qt 首次字体初始化有退出缓存；限定引擎加载和 `FcInit`，没有对整个 Qt/Ogre 库关闭检测 |
@@ -120,7 +128,7 @@ source "$(python3 scripts/paths.py install)/setup.bash"
 | M1 / M2 子集 | `bash scripts/test_m1.sh` / `bash scripts/test_m2.sh` | 按阶段选择测试，非完整新版本验收 |
 | 逐包独立发布检查 | `python3 scripts/checks/check_release_packages.py --work-dir /tmp/litesim-release-check` | 每次只有当前包源码，依赖来自已安装前缀，并执行该包测试 |
 | 安装后独立运行 | `python3 scripts/checks/check_m3_install.py` | 新目录构建、隐藏源码副本后验证安装资源和节点 |
-| 真实桌面补测 | `bash scripts/test_desktop.sh` | 原 10 项桌面用例和无人机用例；须有桌面与 Ogre 渲染后端 |
+| 真实桌面补测 | `bash scripts/test_desktop.sh` | 23 项桌面、相机和无人机用例，3 项 ROS 事件循环退出回归，以及独立模型/渲染检查；须有桌面与 Ogre 渲染后端 |
 | 四轮示例 | 见 [四轮车与雷达测试](四轮车与雷达测试.md) | 真实 ROS 接口、配置、TF 和子进程退出 |
 
 `test_m3.sh` 默认不启动 GUI、正式性能窗口或 8 小时长稳。测试失败返回非零；日志/JUnit 输出到 `evidence/m3/run-*`，每轮单独保存。`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` 用于避开不兼容的自动加载插件，脚本会设置，不修改 Python 环境安装包。

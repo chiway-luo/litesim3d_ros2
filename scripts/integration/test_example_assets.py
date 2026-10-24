@@ -5,11 +5,44 @@ from pathlib import Path
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
+import importlib.util
 
 import pytest
 import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from litesim3d_bringup.model import prepare_config
+
+
+def test_desktop_fixture_imports_explicit_installed_simulation_model(tmp_path):
+    script = Path(__file__).resolve().parents[1] / 'checks/check_sdf_viewer.py'
+    spec = importlib.util.spec_from_file_location('sdf_viewer_check', script)
+    viewer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(viewer)
+    runtime = viewer.prepare_runtime(tmp_path / 'prepared')
+    models = Path(get_package_share_directory('wheel_car_4w_models'))
+    importer = Path(get_package_prefix('litesim3d_assets')) / 'lib/litesim3d_assets/sdf_import'
+    scene_dir = tmp_path / 'scene'
+    result = subprocess.run([str(importer), str(models / 'worlds/warehouse.sdf'),
+                             str(runtime), str(scene_dir), 'false'],
+                            env={**os.environ, 'GZ_SIM_RESOURCE_PATH': str(models / 'models')},
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    scene = json.loads((scene_dir / 'scene.json').read_text())
+    model = Path(scene['robot_model']['source'])
+    assert model.is_file()
+    assert ET.parse(model).find('./litesim3d/chassis') is not None
+    assert scene['visuals']
+
+
+@pytest.mark.skipif(os.uname().sysname != 'Linux', reason='ELF dependency regression')
+def test_hardware_plugin_does_not_link_unrelated_mock_plugins():
+    library = Path(get_package_prefix('litesim3d_ros2_control')) / 'lib/liblitesim3d_system.so'
+    dependencies = subprocess.check_output(['readelf', '-d', str(library)], text=True)
+    # GCC's --as-needed can remove the interface DSO when its used methods are
+    # inline. The real manager integration verifies loading; this guards only
+    # the unwanted plugin registrations that caused the namespace collision.
+    assert 'libmock_components.so' not in dependencies
+    assert 'libfake_components.so' not in dependencies
 
 
 @pytest.mark.parametrize('world,package,models_package,description_package,visual_min', [

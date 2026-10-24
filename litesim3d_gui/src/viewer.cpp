@@ -1,4 +1,5 @@
 #include "render_scene.hpp"
+#include "ros_event_loop.hpp"
 #include <ignition/rendering.hh>
 #include <ignition/rendering/OrbitViewController.hh>
 #include <ignition/common/Console.hh>
@@ -37,7 +38,9 @@ namespace {
 using namespace litesim3d_render;
 class Viewer final:public QWidget {
 public:
-  explicit Viewer(std::shared_ptr<rclcpp::Node> node):node_(std::move(node)) {
+  explicit Viewer(std::shared_ptr<rclcpp::Node> node):node_(std::move(node)),
+      executor_(ros_executor_options(node_->get_node_base_interface()->get_context())) {
+    executor_.add_node(node_);
     setWindowTitle("LiteSim 3D");resize(1100,740);setMinimumSize(480,320);
     setFocusPolicy(Qt::NoFocus);setContextMenuPolicy(Qt::NoContextMenu);
     const auto filename=node_->declare_parameter<std::string>("scene_description","");
@@ -49,7 +52,11 @@ public:
       auto description=node_->create_subscription<std_msgs::msg::String>("/sim/scene_description",
         rclcpp::QoS(1).reliable().transient_local(),[this](std_msgs::msg::String::ConstSharedPtr msg){description_=J::parse(msg->data);});
       auto deadline=Clock::now()+std::chrono::seconds(10);
-      while(rclcpp::ok()&&description_.is_null()&&Clock::now()<deadline){rclcpp::spin_some(node_);std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+      while(description_.is_null()&&Clock::now()<deadline) {
+        if(!process_ros_events(node_->get_node_base_interface()->get_context(),
+            [this]{executor_.spin_some();}))break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
       require(!description_.is_null(),"timed out waiting for /sim/scene_description");
     }
     rendering_=std::make_unique<RenderScene>(description_);scene_=rendering_->scene();
@@ -81,8 +88,11 @@ public:
     readyFile_=node_->declare_parameter<std::string>("ready_file","");
     started_=fpsStart_=Clock::now();
     connect(&timer_,&QTimer::timeout,this,[this]{
-      if(!rclcpp::ok()){close();return;}
-      try{rclcpp::spin_some(node_);frame();}catch(const std::exception &e){std::cerr<<"viewer: "<<e.what()<<'\n';QApplication::exit(1);}
+      try{
+        if(!litesim3d_render::process_ros_events(node_->get_node_base_interface()->get_context(),
+            [this]{executor_.spin_some();})){close();return;}
+        frame();
+      }catch(const std::exception &e){std::cerr<<"viewer: "<<e.what()<<'\n';QApplication::exit(1);}
     });timer_.start(33);
   }
   ~Viewer() override {
@@ -134,6 +144,7 @@ private:
     if(exitAfter_>0&&frames_>=exitAfter_){if(!snapshot_.empty())require(grab().save(QString::fromStdString(snapshot_)),"capture failed");close();}
   }
   std::shared_ptr<rclcpp::Node> node_;
+  rclcpp::executors::SingleThreadedExecutor executor_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr states_,stats_;
   std::unique_ptr<RenderScene> rendering_;render::ScenePtr scene_;render::CameraPtr camera_;
   std::unique_ptr<render::OrbitViewController> orbit_;

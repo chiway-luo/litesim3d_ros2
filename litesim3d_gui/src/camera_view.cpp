@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include "ros_event_loop.hpp"
 #include <std_msgs/msg/string.hpp>
 #include <nlohmann/json.hpp>
 #include <QApplication>
@@ -20,7 +21,9 @@ class CameraView final:public QWidget {
   using Clock=std::chrono::steady_clock;
   struct Pair {Image::ConstSharedPtr color,depth;};
 public:
-  explicit CameraView(rclcpp::Node::SharedPtr node):node_(std::move(node)) {
+  explicit CameraView(rclcpp::Node::SharedPtr node):node_(std::move(node)),
+      executor_(litesim3d_render::ros_executor_options(node_->get_node_base_interface()->get_context())) {
+    executor_.add_node(node_);
     topic_=node_->declare_parameter<std::string>("topic","camera/front");
     type_=node_->declare_parameter<std::string>("type","rgb");
     rate_=node_->declare_parameter<double>("rate_hz",15);
@@ -50,8 +53,10 @@ public:
     stats_=node_->create_subscription<std_msgs::msg::String>("/sim/stats",rclcpp::QoS(1).best_effort(),
       [this](std_msgs::msg::String::ConstSharedPtr msg) {state_=nlohmann::json::parse(msg->data).value("state","");});
     connect(&timer_,&QTimer::timeout,[this] {
-      if(!rclcpp::ok()){close();return;}
-      try {rclcpp::spin_some(node_);update();
+      try {
+        if(!litesim3d_render::process_ros_events(node_->get_node_base_interface()->get_context(),
+            [this]{executor_.spin_some();})){close();return;}
+        update();
         if(exitAfter_>0&&frames_>=exitAfter_){if(!capture_.empty()&&!grab().save(QString::fromStdString(capture_)))throw std::runtime_error("preview capture failed");close();}
       }catch(const std::exception &e){RCLCPP_ERROR(node_->get_logger(),"%s",e.what());QApplication::exit(1);}
     });timer_.start(30);
@@ -93,7 +98,9 @@ private:
     }
     return result;
   }
-  rclcpp::Node::SharedPtr node_;rclcpp::Subscription<Image>::SharedPtr colorSub_,depthSub_;
+  rclcpp::Node::SharedPtr node_;
+  rclcpp::executors::SingleThreadedExecutor executor_;
+  rclcpp::Subscription<Image>::SharedPtr colorSub_,depthSub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr stats_;
   QTimer timer_;QImage color_,depth_;std::map<int64_t,Pair> pending_;
   std::deque<std::pair<Clock::time_point,int64_t>> samples_;

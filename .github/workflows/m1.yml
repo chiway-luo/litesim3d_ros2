@@ -52,6 +52,8 @@ jobs:
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/positive-control/*.log
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/positive-control/render/*.json
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/positive-control/render/*.log
+            /tmp/litesim-quality/${{ matrix.profile }}/runs/*/positive-control/control/*.json
+            /tmp/litesim-quality/${{ matrix.profile }}/runs/*/positive-control/control/*.log
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/tutorials/
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/ros_logs/
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/packages/validation.json
@@ -60,4 +62,8 @@ jobs:
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/packages/build/**/Testing/
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/bridge-only/validation.json
             /tmp/litesim-quality/${{ matrix.profile }}/runs/*/bridge-only/evidence/
+            /tmp/litesim-quality/${{ matrix.profile }}/runs/*/external-controller/before.json
+            /tmp/litesim-quality/${{ matrix.profile }}/runs/*/external-controller/result.json
+            /tmp/litesim-quality/${{ matrix.profile }}/runs/*/external-controller/cases.xml
+            /tmp/litesim-quality/${{ matrix.profile }}/runs/*/external-controller/test-results/
           retention-days: 14

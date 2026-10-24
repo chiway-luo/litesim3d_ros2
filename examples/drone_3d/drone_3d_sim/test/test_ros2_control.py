@@ -9,7 +9,7 @@ def controlled_drone(tmp_path):
     try:
         yield rig
     finally:
-        rig.close()
+        rig.close(require_clean_children=True)
 
 def test_body_control_motion_collision_lifecycle(controlled_drone):
     verify_drone(controlled_drone)

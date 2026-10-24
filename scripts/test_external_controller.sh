@@ -24,7 +24,8 @@ source "$controller_workspace/install/setup.bash"
 export LITESIM_EXTERNAL_CONTROLLER_PARAMS="$controller_workspace/install/share/litesim3d_example_altitude_controller/config/controllers.yaml"
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 python3 -m pytest "$controller_root/examples/drone_3d/drone_3d_sim/test/test_ros2_control.py" \
-  -k external_controller -v --basetemp="$controller_workspace/test-results"
+  -k external_controller -v -p no:cacheprovider --basetemp="$controller_workspace/test-results" \
+  --junitxml="$controller_workspace/cases.xml"
 python3 - "$controller_workspace" <<'PY'
 from pathlib import Path
 import hashlib, json, sys

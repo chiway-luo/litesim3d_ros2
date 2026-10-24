@@ -1,0 +1,6 @@
+# ONLY added to ros2_control_node's private policy by asan_host.py.
+# Ubuntu strips pluginlib's template frames from libcontroller_manager and
+# libhardware_interface. The surviving loadLibrary frame still ends before
+# createInstance / plugin constructors. Never suppress either whole library.
+# The stripped-host positive controls must still detect both constructor leaks.
+leak:class_loader::impl::loadLibrary(

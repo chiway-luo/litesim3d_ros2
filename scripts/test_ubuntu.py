@@ -9,11 +9,12 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
 
-from checks.run_checked import run
+from checks.run_checked import Interrupted, run
 from quality.inventory import inventory, coverage_config
 from quality.sanitizer_control import asan_options
 
@@ -50,7 +51,8 @@ class Profile:
                     "LSAN_OPTIONS", "LWS_TEST_STEP_TIMEOUT", "LWS_INSTRUMENTED_MEMORY",
                     "LWS_TEST_LAUNCH_TIMEOUT", "LWS_TEST_CORE_TIMEOUT", "LWS_TEST_ROS_TIMEOUT",
                     "LWS_TEST_WAIT_TIMEOUT", "LWS_TEST_SUITE_TIMEOUT", "LWS_TEST_RENDER_TIMEOUT",
-                    "LWS_TEST_STARTUP_TIMEOUT", "LWS_TEST_SHUTDOWN_TIMEOUT"):
+                    "LWS_TEST_STARTUP_TIMEOUT", "LWS_TEST_SHUTDOWN_TIMEOUT",
+                    "LWS_QUALITY_HOST_PREFIX", "LWS_TEST_LAUNCH_SUITE_TIMEOUT"):
             self.env.pop(key, None)
         self.env.update(LITESIM3D_ARTIFACTS_DIR=str(self.evidence / "artifacts"),
                         LWS_BUILD_ROOT=str(self.runtime), LWS_BUILD_GUI="1",
@@ -62,13 +64,16 @@ class Profile:
         if name in ("coverage", "asan"):
             self.env["LWS_TEST_STEP_TIMEOUT"] = "60"
             self.env["LWS_TEST_LAUNCH_TIMEOUT"] = "60"
+            # Whole example suites include several instrumented simulator
+            # processes. Keep their outer wall budget separate from each
+            # assertion's simulation-time deadline and controller watchdog.
+            self.env["LWS_TEST_SUITE_TIMEOUT"] = "900"
         if name in ("asan", "tsan"):
             self.env["LWS_INSTRUMENTED_MEMORY"] = name
         if name == "asan":
             self.env["LWS_TEST_CORE_TIMEOUT"] = "1200"
             self.env["LWS_TEST_ROS_TIMEOUT"] = "2400"
             self.env["LWS_TEST_WAIT_TIMEOUT"] = "120"
-            self.env["LWS_TEST_SUITE_TIMEOUT"] = "900"
             self.env["LWS_TEST_RENDER_TIMEOUT"] = "900"
         self.record = {"profile": name, "status": "RUNNING", "source": str(ROOT),
                        "source_snapshot": source_snapshot(ROOT), "stages": [],
@@ -78,6 +83,7 @@ class Profile:
                        "step_wall_timeout_seconds": int(self.env.get("LWS_TEST_STEP_TIMEOUT", "6")),
                        "core_wall_timeout_seconds": int(self.env.get("LWS_TEST_CORE_TIMEOUT", "600")),
                        "ros_wall_timeout_seconds": int(self.env.get("LWS_TEST_ROS_TIMEOUT", "1200")),
+                       "suite_wall_timeout_seconds": int(self.env.get("LWS_TEST_SUITE_TIMEOUT", "180")),
                        "minimum_wait_timeout_seconds": int(self.env.get("LWS_TEST_WAIT_TIMEOUT", "0")),
                        "render_wall_timeout_seconds": int(self.env.get("LWS_TEST_RENDER_TIMEOUT", "60")),
                        "world_launch_wall_timeout_seconds": int(self.env.get("LWS_TEST_LAUNCH_TIMEOUT", "15"))}
@@ -113,6 +119,11 @@ class Profile:
             env["LWS_INSTALL_PREFIX"] = str(self.prefix)
         command = ["bash", "-c", 'set -eo pipefail; source "$1"; shift; exec "$@"',
                    "quality-stage", str(setup), *map(str, command)]
+        if installed and self.name == "asan":
+            # Setup scripts prepend their underlay. Put the quality-only host
+            # overlay first afterwards, without preloading Python or the shell.
+            command[2] = ('set -eo pipefail; source "$1"; shift; '
+                          'export AMENT_PREFIX_PATH="$LWS_QUALITY_HOST_PREFIX:$AMENT_PREFIX_PATH"; exec "$@"')
         entry = {"name": name, "status": "RUNNING", "command": command,
                  "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
         if graphical:
@@ -129,6 +140,11 @@ class Profile:
             os.environ.update(env)
             entry["exit_code"] = run(command, timeout, self.evidence / f"{name}.xml",
                                      self.evidence / f"{name}.log")
+        except Interrupted as error:
+            entry.update(exit_code=128 + error.signum, status="CANCELLED",
+                         seconds=round(time.monotonic() - started, 2))
+            self.save()
+            raise
         finally:
             os.environ.clear()
             os.environ.update(original)
@@ -202,6 +218,10 @@ class Profile:
                 "--compiler", clangxx, "--mode", "asan", "--llvm-unwind",
                 "--output", self.evidence / "positive-control/render"], installed=False):
             return False
+        if self.name == "asan" and not self.stage(
+                "controller-leak-control", [sys.executable, ROOT / "scripts/quality/control_plugin_control.py",
+                "--compiler", clangxx, "--output", self.evidence / "positive-control/control"], installed=False):
+            return False
         identity = {"source": str(ROOT), "profile": self.name, "cmake": cmake,
                     "ros_prefix": str(self.args.ros_prefix)}
         identity_path = self.work / "build-identity.json"
@@ -210,6 +230,12 @@ class Profile:
         identity_path.write_text(json.dumps(identity, indent=2) + "\n")
         if not self.stage("build", ["bash", ROOT / "scripts/build.sh", *cmake], 2400, installed=False):
             return False
+        if self.name == "asan":
+            self.env["LWS_QUALITY_HOST_PREFIX"] = str(self.runtime / "controller-host")
+            if not self.stage("controller-runtime", [sys.executable, ROOT / "scripts/quality/asan_host.py",
+                    "--compiler", clangxx, "--underlay", self.args.ros_prefix,
+                    "--output", self.env["LWS_QUALITY_HOST_PREFIX"]], installed=False):
+                return False
         if self.name == "coverage":
             self.configure_coverage()
         if self.name == "asan" and not self.stage(
@@ -234,7 +260,9 @@ class Profile:
                    *(["--instrumented"] if self.name in ("asan", "tsan") else [])], 600, unit=True)
 
     def regression(self):
-        self.stage("regression", ["bash", ROOT / "scripts/test_m3.sh"], 3600 if self.name == "asan" else 1800)
+        runner = ROOT / "scripts/test_m3.sh"
+        budget = int(subprocess.check_output(["bash", runner, "--timeout-budget"], env=self.env, text=True))
+        self.stage("regression", ["bash", runner], budget)
         self.stage("bringup-unit", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                    ROOT / "litesim3d_bringup/test",
                    f"--junitxml={self.evidence / 'bringup-cases.xml'}"], 300, unit=True)
@@ -242,7 +270,8 @@ class Profile:
         for example in ("ackermann", "omni3", "omni4"):
             self.stage(example, [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                        ROOT / "examples" / example / f"{example}_sim/test",
-                       f"--junitxml={self.evidence / (example + '-cases.xml')}"], 300)
+                       f"--junitxml={self.evidence / (example + '-cases.xml')}"],
+                       int(self.env.get("LWS_TEST_SUITE_TIMEOUT", "300")))
         if self.name == "functional":
             # Tutorials assert real-time motion over a fixed wall interval.
             self.stage("tutorials", [sys.executable, ROOT / "scripts/checks/check_documented_tutorials.py",
@@ -276,6 +305,8 @@ class Profile:
                     self.stage("optional-plugin-absent", [sys.executable, ROOT / "scripts/quality/check_optional_plugin.py",
                                "--output", self.evidence / "bridge-only", "--jobs", str(self.args.jobs)],
                                2100, installed=False)
+                    self.stage("external-controller", ["bash", ROOT / "scripts/test_external_controller.sh",
+                               self.evidence / "external-controller", self.prefix], 300)
                 if self.name == "coverage":
                     self.stage("coverage-report", [sys.executable, ROOT / "scripts/quality/collect_coverage.py",
                                "--root", ROOT, "--prefix", self.prefix, "--build", self.runtime / "build",
@@ -322,7 +353,15 @@ def main():
         snapshots = []
         for profile in PROFILES if args.profile == "all" else (args.profile,):
             current = Profile(args, profile)
-            results[profile] = current.execute()
+            try:
+                results[profile] = current.execute()
+            except Interrupted as error:
+                current.record.update(status="CANCELLED", error=f"Interrupted by signal {error.signum}")
+                current.save()
+                (args.output / "summary.json").write_text(json.dumps({
+                    "status": "CANCELLED", "profiles": results, "cancelled_profile": profile,
+                    "signal": error.signum}, indent=2) + "\n")
+                return 128 + error.signum
             snapshots.append(current.record["source_snapshot"]["sha256"])
         final = source_snapshot(ROOT)
         same_source = set(snapshots + [final["sha256"]]) == {initial["sha256"]}

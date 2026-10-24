@@ -30,8 +30,8 @@ def findings(evidence):
 def suppression_usage(evidence):
     """Keep dependency exceptions visible instead of silently discarding them."""
     result = []
-    rules = {line.removeprefix("leak:") for line in
-             Path(__file__).with_name("lsan.supp").read_text().splitlines() if line.startswith("leak:")}
+    rules = {line.removeprefix("leak:") for name in ("lsan.supp", "lsan_controller_host.supp")
+             for line in Path(__file__).with_name(name).read_text().splitlines() if line.startswith("leak:")}
     for path in sorted(evidence.rglob("*")):
         if (not path.is_file() or "positive-control" in path.relative_to(evidence).parts or
                 not (path.suffix == ".log" or re.match(r"^(asan|ubsan)\.[0-9]+$", path.name))):
@@ -62,10 +62,14 @@ def main():
         plugin_control = args.evidence / "positive-control/plugin-result.json"
         if not plugin_control.exists() or json.loads(plugin_control.read_text()).get("status") != "PASS":
             failures.append("Plugin instance leak must remain detectable with dependency suppressions")
+        control_probe = args.evidence / "positive-control/control/result.json"
+        if not control_probe.exists() or json.loads(control_probe.read_text()).get("status") != "PASS":
+            failures.append("Hardware and controller instance leaks must remain detectable")
     result = {"status": "FAIL" if failures else "PASS", "failures": failures,
               "findings": detected, "mode": args.mode, "leak_detection": args.mode == "asan",
               "dependency_suppression_usage": suppression_usage(args.evidence),
-              "suppression_policy": "scripts/quality/lsan.supp" if args.mode == "asan" else None}
+              "suppression_policy": "scripts/quality/lsan.supp" if args.mode == "asan" else None,
+              "controller_host_suppression_policy": "scripts/quality/lsan_controller_host.supp" if args.mode == "asan" else None}
     (args.evidence / "sanitizers.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({key: value for key, value in result.items() if key != "dependency_suppression_usage"}, indent=2))
     return int(bool(failures))

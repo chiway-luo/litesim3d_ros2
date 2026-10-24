@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# The parent must allow all independently bounded suites to finish. In ASan,
+# the old 3600-second aggregate cap was shorter than its child-suite budgets.
+if [[ "${1:-}" == --timeout-budget ]]; then
+  printf '%s\n' "$(( ${LWS_TEST_CORE_TIMEOUT:-300} + 300 + 60 + ${LWS_TEST_ROS_TIMEOUT:-1200} + 60 + 60 + 6 * ${LWS_TEST_SUITE_TIMEOUT:-180} + 2 * ${LWS_TEST_LAUNCH_SUITE_TIMEOUT:-180} + 60 ))"
+  exit 0
+fi
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 evidence_dir="$(python3 "$project_dir/scripts/paths.py" evidence)"
 export PYTHONDONTWRITEBYTECODE=1
@@ -19,7 +25,7 @@ python3 "$project_dir/scripts/checks/run_checked.py" --timeout 300 --xml "$run_d
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout 60 --xml "$run_dir/control-configuration-runner.xml" --log "$run_dir/control-configuration.log" -- \
   ctest --test-dir "$(dirname "$prefix")/build/litesim3d_ros2_control" -R configuration --output-on-failure || status=1
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_SUITE_TIMEOUT:-180}" --xml "$run_dir/control-hardware-runner.xml" --log "$run_dir/control-hardware.log" -- \
-  python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/litesim3d_ros2_control/test/test_integration.py" \
+  python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/litesim3d_ros2_control/test/test_integration.py" "$project_dir/litesim3d_ros2_control/test/test_spawner.py" \
     --basetemp="$run_dir/control-hardware" --junitxml="$run_dir/control-hardware.xml" || status=1
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_ROS_TIMEOUT:-1200}" --xml "$run_dir/ros-runner.xml" --log "$run_dir/ros.log" -- \
   python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/litesim3d_ros2/test" --basetemp="$run_dir/ros" --junitxml="$run_dir/ros.xml" || status=1
@@ -41,8 +47,10 @@ python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_SUITE
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_SUITE_TIMEOUT:-180}" --xml "$run_dir/integration-runner.xml" --log "$run_dir/integration.log" -- \
   python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/scripts/integration" --basetemp="$run_dir/integration" --junitxml="$run_dir/integration.xml" || status=1
 for milestone in m1 m3; do
-  ROS_DOMAIN_ID=4 launch_test "$project_dir/litesim3d_ros2/test/launch_$milestone.py" \
-    --junit-xml "$run_dir/launch-$milestone.xml" > "$run_dir/launch-$milestone.log" 2>&1 || status=1
+  ROS_DOMAIN_ID=4 python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_LAUNCH_SUITE_TIMEOUT:-180}" \
+    --xml "$run_dir/launch-$milestone-runner.xml" --log "$run_dir/launch-$milestone.log" -- \
+    launch_test "$project_dir/litesim3d_ros2/test/launch_$milestone.py" \
+      --junit-xml "$run_dir/launch-$milestone.xml" || status=1
 done
 if [[ "${LWS_M3_PERFORMANCE:-0}" == 1 ]]; then
   python3 "$project_dir/scripts/fixtures/generate_m3_fixtures.py" --resources "$prefix/share/litesim3d_core" --output "$run_dir/fixtures"

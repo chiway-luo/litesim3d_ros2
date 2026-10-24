@@ -3,6 +3,7 @@ from collections import deque
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import time
@@ -79,6 +80,8 @@ class SimulationHarness:
             for topic, (key, kind) in sensors.items():
                 self.subscribe(key, kind, topic, 100)
         startup_timeout = self.environment.get("LWS_TEST_STARTUP_TIMEOUT")
+        if external_joint_states:
+            arguments.setdefault("controller_startup_timeout", str(self.wall_timeout(60)))
         if reliable_sensors or startup_timeout:
             params = yaml.safe_load(Path(arguments.get("params", self.share / "config/ros.yaml")).read_text())
             settings = params["/litesim3d"]["ros__parameters"]
@@ -192,7 +195,7 @@ class SimulationHarness:
         self.until(lambda: self.status().get("run_id") == run_id
                    and self.status().get("pending_command") == "true")
 
-    def close(self):
+    def close(self, *, require_clean_children=False, expected_child_exits=None):
         try:
             # Capture before SIGINT removes the writers. Keep failures in their
             # original run; do not retry graph assertions or hide extra writers.
@@ -216,12 +219,28 @@ class SimulationHarness:
                         return False
 
                 try:
-                    os.killpg(self.process.pid, signal.SIGINT)
+                    # A live launch forwards SIGINT to its children. Signalling
+                    # the whole group as well sends it twice and can interrupt
+                    # native destructors or LeakSanitizer during shutdown.
+                    if leader_exited:
+                        os.killpg(self.process.pid, signal.SIGINT)
+                    else:
+                        self.process.send_signal(signal.SIGINT)
                 except ProcessLookupError:
                     pass
                 deadline = time.monotonic() + self.wall_timeout(10)
                 while group_exists() and time.monotonic() < deadline:
                     time.sleep(.02)
+                if group_exists() and self.process.poll() is not None:
+                    # Retain cleanup for an exited launch that left a writer
+                    # behind without relaying its shutdown signal.
+                    try:
+                        os.killpg(self.process.pid, signal.SIGINT)
+                    except ProcessLookupError:
+                        pass
+                    deadline = time.monotonic() + self.wall_timeout(3)
+                    while group_exists() and time.monotonic() < deadline:
+                        time.sleep(.02)
                 forced_kill = group_exists()
                 if forced_kill:
                     try:
@@ -236,6 +255,22 @@ class SimulationHarness:
                     "group_exists_after_cleanup": group_exists(),
                 }, indent=2))
                 assert not forced_kill, "example launch failed to stop its process group"
+                if require_clean_children:
+                    output = (self.directory / "launch.log").read_text()
+                    started = {pid: name for name, pid in re.findall(
+                        r"\[([^\]]+)\]: process started with pid \[(\d+)\]", output)}
+                    exited = {pid: 0 for _, pid in re.findall(
+                        r"\[([^\]]+)\]: process has finished cleanly \[pid (\d+)\]", output)}
+                    exited.update({pid: int(code) for _, pid, code in re.findall(
+                        r"\[([^\]]+)\]: process has died \[pid (\d+), exit code (-?\d+)", output)})
+                    expected = expected_child_exits or {}
+                    assert set(expected) <= set(started), "expected exit names an unobserved child PID"
+                    children = {pid: {"name": name, "exit_code": exited.get(pid),
+                                      "expected_exit_code": expected.get(pid, 0)}
+                                for pid, name in started.items()}
+                    (self.directory / "child-exits.json").write_text(json.dumps(children, indent=2))
+                    assert children and all(item["exit_code"] == item["expected_exit_code"]
+                                            for item in children.values()), children
             (self.directory / "status.json").write_text(json.dumps(self.status(), indent=2))
         finally:
             if self.log:
