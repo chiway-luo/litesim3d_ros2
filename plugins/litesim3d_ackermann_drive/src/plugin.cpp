@@ -5,7 +5,7 @@
 #include <cmath>
 
 namespace litesim3d::plugins {
-class AckermannDrive : public ChassisPlugin {
+class AckermannDrive : public ChassisPlugin, public JointDrivenChassis {
 public:
   Json defaults() const override {
     return {{"wheel_radius_m", nullptr}, {"wheelbase_m", nullptr}, {"track_width_m", nullptr},
@@ -34,6 +34,35 @@ public:
     for (const auto &name : steering_) steeringJoint(model_, name, max_steering_);
     // Limit the inner road wheel, not just the virtual bicycle steering angle.
     max_curvature_ = std::tan(max_steering_) / (length_ + track_ / 2 * std::tan(max_steering_));
+  }
+  std::set<std::string> drivenJoints() const override { return {wheels_[0], wheels_[1]}; }
+  std::set<std::string> passiveJoints() const override { return {wheels_[2], wheels_[3]}; }
+  std::map<std::string, std::pair<double, double>> positionLimits() const override {
+    return {{steering_[0], {-max_steering_, max_steering_}},
+            {steering_[1], {-max_steering_, max_steering_}}};
+  }
+  Twist forward(const JointState &state) const override {
+    double curvature = 0;
+    for (size_t i = 0; i < steering_.size(); ++i) {
+      const double angle = encoderPosition(state, steering_[i]);
+      require(std::abs(angle) <= max_steering_ + 1e-9, "steering exceeds configured limit");
+      const double t = std::tan(angle), denominator = length_ + (i ? -1 : 1) * track_ / 2 * t;
+      require(denominator > 1e-12, "invalid steering geometry");
+      curvature += .5 * t / denominator;
+    }
+    const double speed = radius_ * (state.velocity.at(wheels_[0]) + state.velocity.at(wheels_[1])) / 2;
+    require(std::isfinite(speed), "non-finite Ackermann wheel velocity");
+    return {speed, 0, 0, speed * curvature};
+  }
+  std::map<std::string, double> passiveVelocities(const JointState &state, const Twist &body) const override {
+    std::map<std::string, double> rates;
+    for (size_t i = 0; i < steering_.size(); ++i) {
+      const double angle = encoderPosition(state, steering_[i]);
+      const double y = (i ? -1 : 1) * track_ / 2;
+      rates[wheels_[i + 2]] = ((body.vx - body.wz * y) * std::cos(angle) +
+                              body.wz * length_ * std::sin(angle)) / radius_;
+    }
+    return rates;
   }
   DriveStep step(const ChassisInput &input) const override {
     auto result = limits_.predict(input);

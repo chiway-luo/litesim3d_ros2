@@ -1,4 +1,4 @@
-# 阿克曼示例
+# 阿克曼 ros2_control 示例
 
 构建并 source 安装环境后执行：
 
@@ -6,6 +6,18 @@
 ros2 launch ackermann_sim ackermann.launch.py gui:=false
 ```
 
-省略 gui 参数可打开三维窗口；`cameras:=true` 开启前向 RGB，需要图形后端。示例带固定地面、前墙和侧墙，默认碰撞后车体受阻，编码器与轮式里程计继续累计；在 runtime.yaml 把 robot.continue_on_collision 改为 false 可让驱动累计停止。
+另一个已 source 的终端发送车体速度：
 
-`config/geometry.yaml` 同时供机械 Xacro、底盘和里程计引用；`urdf/sensors.xacro` 定义雷达、IMU 和光学坐标系，`urdf/simulation.urdf.xacro` 组合模型并选择独立插件。所有传感器跟随真实车体。参数与替换方法见 [模型组合与插件迁移](../../docs/usage/模型组合与插件迁移.md)。
+```bash
+ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.4}, angular: {z: 0.2}}'
+```
+
+默认由 标准 `ackermann_steering_controller` 接收速度并写入 LiteSimSystem 的关节接口；停止发布后 0.5 仿真秒停车。公共仿真 launch 不创建 RSP 或控制器，案例使用 `ld` 单独配置这些节点并显式传入参数文件。
+
+`geometry.yaml` 是机械 Xacro、仿真底盘和编码器里程计共用的几何来源；`controllers.yaml` 的尺寸/数组须与其一致。`robot.urdf.xacro` 用于 RSP，`control.urdf.xacro` 声明控制硬件，`simulation.urdf.xacro` 声明仿真底盘和传感器插件；runtime 的模型路径留空，由 launch 动态定位。
+
+本例使用仿真编码器里程计 `/odom` 和 odom TF；`joint_state_broadcaster` 是 `/joint_states` 的唯一发布者。碰撞后车体受阻，默认驱动轮和编码器里程计继续累计；`robot.continue_on_collision: false` 可停止驱动累计。阿克曼前轮旋转关节只提供状态，按实际行程被动滚动；转向关节范围为 ±0.6 rad。
+
+省略 `gui:=false` 打开三维窗口；`rviz:=true` 打开 RViz；`cameras:=true` 开启前向 RGB，需要可用图形后端。world 提供固定地面、前墙和侧墙，车轮贴地；传感器跟随实际车体和关节。
+
+完整的 world、URDF、控制器、launch 和第三方算法接管流程见 [阿克曼与全向轮接入 ros2_control](../../docs/tutorials/阿克曼与全向轮ros2_control.md)。

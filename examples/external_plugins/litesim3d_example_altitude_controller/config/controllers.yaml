@@ -1,0 +1,24 @@
+# 案例负责启动 controller_manager；公共仿真 launch 不读取本文件。
+/controller_manager:
+  ros__parameters:
+    use_sim_time: true  # 控制周期采用仿真时间。
+    update_rate: 100  # Hz。
+    altitude_controller:
+      type: litesim3d_example_altitude_controller/AltitudeController  # 单独工作空间构建的算法插件。
+    body_velocity_controller:
+      type: litesim3d_ros2_control/BodyVelocityController
+/body_velocity_controller:
+  ros__parameters:
+    use_sim_time: true
+    body_name: body  # 对应 control.urdf.xacro 中 gpio 的 name。
+    command_timeout: 0.5  # 秒；指令停止后输出零速度。
+    max_linear_velocity: 2.0  # XYZ 速度向量的模长上限，m/s。
+    max_angular_velocity: 1.2  # 偏航角速度上限，rad/s。
+/altitude_controller:
+  ros__parameters:
+    use_sim_time: true
+    body_name: body  # 硬件 GPIO 资源名。
+    target_topic: /altitude_target  # Float64；可替换话题，不绑定仿真或 RSP 节点名。
+    gain: 1.0  # P 增益，单位 1/s。
+    max_vertical_velocity: 0.4  # m/s，饱和后的垂直速度。
+    command_timeout: 0.5  # 仿真秒；目标高度需持续发布，超时悬停。

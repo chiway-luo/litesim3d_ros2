@@ -17,6 +17,8 @@ SLUGS = {
     "docs/README.md": "index",
     "docs/版本与验证状态.md": "versions",
     "docs/tutorials/README.md": "tutorials/index",
+    "docs/tutorials/阿克曼与全向轮ros2_control.md": "tutorials/ackermann-omni-control",
+    "docs/tutorials/全部模型与第三方算法ros2_control.md": "tutorials/unified-control-plugins",
     "docs/tutorials/启动与控制.md": "tutorials/first-simulation",
     "docs/tutorials/添加IMU.md": "tutorials/add-imu",
     "docs/tutorials/ROS2接入.md": "tutorials/ros-client",

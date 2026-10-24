@@ -83,22 +83,24 @@ class Harness:
         self.processes.append((name, p))
         return p
 
-    def rsp(self, namespace="", frame_prefix="", use_sim_time=True):
+    def rsp(self, namespace="", frame_prefix="", use_sim_time=True, name="robot_state_publisher", remappings=()):
         robot = Path(self.config["robot"]["urdf"]).read_text()
         params = self.directory / "rsp.yaml"
         params.write_text(yaml.safe_dump({"/**": {"ros__parameters": {"robot_description": robot,
                           "use_sim_time": use_sim_time, "frame_prefix": frame_prefix, "publish_frequency": 200.0}}}))
         return self.process("rsp", [str(Path(get_package_prefix("robot_state_publisher")) / "lib/robot_state_publisher/robot_state_publisher"),
-                                    "--ros-args", "--params-file", str(params), "-r", f"__ns:=/{namespace}"])
+                                    "--ros-args", "--params-file", str(params), "-r", f"__ns:=/{namespace}", "-r", f"__node:={name}",
+                                    *[part for src, dst in remappings for part in ("-r", f"{src}:={dst}")]])
 
-    def sim(self, namespace="", **parameters):
+    def sim(self, namespace="", remappings=(), **parameters):
         config = self.directory / "config.yaml"
         config.write_text(yaml.safe_dump(self.config))
         settings = {"config": str(config), "use_sim_time": True, "manifest_path": str(self.directory / "manifest.json"), **parameters}
         params = self.directory / "sim.yaml"
         params.write_text(yaml.safe_dump({"/**": {"ros__parameters": settings}}))
         return self.process("sim", [str(Path(get_package_prefix("litesim3d_ros2")) / "lib/litesim3d_ros2/sim_node"),
-                                    "--ros-args", "--params-file", str(params), "-r", f"__ns:=/{namespace}"])
+                                    "--ros-args", "--params-file", str(params), "-r", f"__ns:=/{namespace}",
+                                    *[part for src, dst in remappings for part in ("-r", f"{src}:={dst}")]])
 
     def spin(self, duration=.1):
         end = time.monotonic() + duration
@@ -346,13 +348,11 @@ def test_T_ROS_08_pause_step_service(h):
 @pytest.mark.parametrize("delayed",[False,True])
 def test_T_ROS_10_startup_order(h,delayed):
     if delayed:
-        # Observe the initialized, waiting node before starting its dependency.
-        # Use the normal startup budget; the separate timeout test exercises
-        # deadline failure without relying on a short DDS discovery window.
         process=h.sim()
-        h.until(lambda:bool(h.status()))
-        assert process.poll() is None and h.status()["ready"]=="false"
-        assert h.status()["step"]=="0" and h.status()["time_ns"]=="1"
+        h.ready()
+        h.until(lambda:int(h.status()["step"])>10)
+        assert process.poll() is None
+        assert not any(name == "robot_state_publisher" for name, _ in h.node.get_node_names_and_namespaces())
         h.rsp()
     else:
         h.rsp();h.spin(.3);h.sim()
@@ -360,7 +360,7 @@ def test_T_ROS_10_startup_order(h,delayed):
 
 
 def test_T_ROS_10_timeout(h):
-    process=h.sim(startup_timeout=.3);h.until(lambda:h.status().get("state")=="fault")
+    process=h.sim(startup_timeout=.3, viewer_ready_file=str(h.directory/"missing-viewer.ready"));h.until(lambda:h.status().get("state")=="fault")
     assert "readiness timeout" in h.status()["last_error"]
     # The one initial best-effort clock can precede DDS discovery. Reliable
     # diagnostics and the exit manifest independently prove no step occurred.
@@ -423,13 +423,14 @@ def test_T_DEL_02_03_installed_headless(h):
     h.rsp();h.sim();h.ready()
     h.until(lambda:bool(h.messages["clock"]) and ns(h.messages["clock"][-1].clock)>300_000_000)
     manifest=json.loads((h.directory/"manifest.json").read_text())
-    assert manifest["model"]["source"].startswith(str(h.share))
+    assert Path(manifest["model"]["source"]).resolve().is_relative_to(h.share.resolve())
     assert manifest["model"]["resources"]=={}  # R01 has no external mesh files.
     assert h.status()["state"]=="running"
 
 
 @pytest.mark.parametrize("angle",[-.5,0.,.3])
-def test_T_URD_19_articulated_tf(h,angle):
+@pytest.mark.parametrize("late_tf_listener",[False,True])
+def test_T_URD_19_articulated_tf(h,angle,late_tf_listener):
     root=ET.parse(h.share/"urdf/r01.urdf").getroot()
     joints=ET.parse(h.share/"urdf/r03.urdf").getroot()
     for element in joints:
@@ -440,8 +441,22 @@ def test_T_URD_19_articulated_tf(h,angle):
     h.config["robot"]["initial_joints"]={"main":angle,"slide":.25}
     h.config["entities"]=[]  # R03 is a free kinematic fixture, not a supported ground robot.
     h.rsp();h.sim();h.ready();h.until(lambda:len(h.messages["clock"])>15)
+    if late_tf_listener:
+        h.listener.unregister()
+        h.buffer=Buffer()
+        h.listener=TransformListener(h.buffer,h.node,spin_thread=False)
+    children=("arm","slider","follower","chain","tip")
+    # /clock can arrive before the first joint TF. A timestamp older than the
+    # listener's first sample will never become queryable, regardless of how
+    # long we wait. Establish TF history before choosing the clock sample.
+    h.until(lambda:all(h.buffer.can_transform("base_link",child,Time()) for child in children))
+    first_stamp=max(ns(h.buffer.lookup_transform("base_link",child,Time()).header.stamp) for child in children)
+    h.until(lambda:ns(h.messages["clock"][-1].clock)>=first_stamp)
     sample=h.messages["clock"][-1].clock
-    for child in ("arm","slider","follower","chain","tip"):
+    (h.directory/"tf-readiness.json").write_text(json.dumps({
+        "first_available_stamp_ns":first_stamp,"requested_ns":ns(sample),"late_tf_listener":late_tf_listener,
+    },indent=2))
+    for child in children:
         h.until(lambda:h.buffer.can_transform("base_link",child,Time.from_msg(sample)),timeout=.5)
     t=h.buffer.lookup_transform("base_link","tip",Time.from_msg(sample)).transform
     a=1/math.sqrt(3);v=[.25,0,.2];cross=[a*(v[2]-v[1]),a*(v[0]-v[2]),a*(v[1]-v[0])]
@@ -464,3 +479,27 @@ def test_T_ROS_04_invalid_responsibility_config(h):
     h.until(lambda:p.poll() is not None)
     assert p.returncode!=0
     assert "conflicting odom TF" in (h.directory/"sim.log").read_text()
+
+
+def test_external_rsp_custom_name_namespace_and_topics(h):
+    topics = [("joint_states", "/custom/joints"), ("/tf", "/custom/tf")]
+    h.subscribe("custom_joints", JointState, "/custom/joints")
+    h.subscribe("custom_tf", TFMessage, "/custom/tf")
+    h.subscribe("custom_static", TFMessage, "/custom/tf_static", durable=True)
+    h.subscribe("custom_model", String, "/custom/model", durable=True)
+    process = h.sim(namespace="physics", frame_prefix="robotA/", remappings=topics)
+    h.ready()
+    h.until(lambda:len(h.messages["custom_joints"])>2)
+    assert process.poll() is None
+    h.rsp(namespace="external", name="kinematics", frame_prefix="robotA/",
+          remappings=[*topics, ("/tf_static", "/custom/tf_static"),
+                      ("robot_description", "/custom/model")])
+    def has_tf(key, child):
+        return any(t.child_frame_id == child for m in h.messages[key] for t in m.transforms)
+    h.until(lambda:has_tf("custom_tf", "robotA/base_link") and
+                   has_tf("custom_tf", "robotA/left_wheel") and
+                   has_tf("custom_static", "robotA/lidar_link") and h.messages["custom_model"])
+    assert ("kinematics", "/external") in h.node.get_node_names_and_namespaces()
+    assert h.node.count_publishers("/joint_states") == 0
+    assert h.node.count_publishers("/tf_static") == 0
+    assert "left_wheel_joint" in h.messages["custom_model"][-1].data

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <link name="tutorial_imu_link"/>
+  <joint name="tutorial_imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="tutorial_imu_link"/>
+    <origin xyz="0.1 0 0.15" rpy="0 0 0"/>
+  </joint>
+</robot>

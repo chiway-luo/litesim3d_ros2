@@ -32,7 +32,7 @@ def camera_car(tmp_path):
 
 
 def configuration(car, kind="rgb", width=320, height=180, rate=15):
-    path = prepare_config(car.share / "config/runtime.yaml", car.directory / "model")
+    path = prepare_config(car.share / "config/runtime_twist.yaml", car.directory / "model")
     data = yaml.safe_load(path.read_text())
     model = ET.parse(data["robot"]["urdf"])
     override(model.find("./litesim3d/sensor[@name='roof_lidar']"), {"columns":32})

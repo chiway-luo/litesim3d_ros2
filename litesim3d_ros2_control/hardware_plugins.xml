@@ -1,0 +1,7 @@
+<library path="litesim3d_system">
+  <class name="litesim3d_ros2_control/LiteSimSystem"
+         type="litesim3d_ros2_control::LiteSimSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>Joint position/velocity commands and actual simulated feedback.</description>
+  </class>
+</library>

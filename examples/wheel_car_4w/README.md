@@ -12,7 +12,8 @@ examples/wheel_car_4w/
 │   ├── package.xml
 │   ├── CMakeLists.txt
 │   ├── urdf/wheel_car_4w.urdf         # 原始机械文件，保持不变，可独立 RViz
-│   ├── urdf/sensors.xacro             # 传感器挂载与插件声明
+│   ├── urdf/robot.urdf.xacro          # 机械与 sensor_mounts，单独给 RSP
+│   ├── urdf/sensors.xacro             # 传感器插件声明
 │   ├── urdf/simulation.urdf.xacro     # 组合机械、传感器、底盘与里程计
 │   └── config/                      # 共享几何（构建提取）及实例覆盖
 └── wheel_car_4w_sim/                  # 独立仿真启动包
@@ -21,9 +22,12 @@ examples/wheel_car_4w/
     ├── config/
     │   ├── runtime.yaml              # 组合模型路径、碰撞策略及地形绑定
     │   ├── simulation.yaml           # 保留旧 URDF/YAML 回归入口
-    │   ├── ros.yaml                  # 控制类型、QoS、TF、暂停、RSP 等 ROS 参数
+    │   ├── ros.yaml                  # 仿真 QoS、TF、暂停参数
+    │   ├── rsp.yaml                  # 独立 RSP 参数
+    │   ├── controllers.yaml          # ros2_control 参数
+    │   └── runtime_twist.yaml        # 旧直接 Twist 模式
     │   └── lidars/                   # vlp16、mid360、mid40，带厂家来源与建模说明
-    ├── launch/wheel_car_4w.launch.py  # 唯一启动入口
+    ├── launch/wheel_car_4w.launch.py  # 默认 ros2_control 启动入口
     ├── rviz/wheel_car_4w.rviz         # 模型、点云、环境、TF、轨迹
     └── test/test_wheel_car_4w.py      # 安装态核心/ROS/启动故障与可选 GUI 测试
 ```
@@ -45,7 +49,7 @@ mkdir -p "$ROS_LOG_DIR"
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```
 
-默认同时启动 RSP、仿真和独立三维查看器，**不需要再手工启动模型发布器或单独的传感器节点**。默认 16 线×512 列、10 Hz rolling 激光、零测距噪声，200 Hz raw IMU，50 Hz odom，5 ms 积分步长。机械多线、球面带非重复扫描和圆形花瓣扫描的切换及真实规格参考，见 [雷达配置说明](雷达配置说明.md)。
+默认由案例启动 RSP、controller_manager、diff_drive_controller、joint_state_broadcaster、仿真和独立三维查看器，**不需要再手工启动模型发布器或单独的传感器节点**。默认 16 线×512 列、10 Hz rolling 激光、零测距噪声，200 Hz raw IMU，50 Hz odom，5 ms 积分步长。机械多线、球面带非重复扫描和圆形花瓣扫描的切换及真实规格参考，见 [雷达配置说明](雷达配置说明.md)。
 
 桌面不可用或只测算法时关闭查看器：
 
@@ -57,13 +61,13 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false
 
 独立窗口只允许左键旋转、中键或右键平移、滚轮缩放；无模型选择和仿真控制入口。底部自动显示实际 RTF、目标倍率、FPS 和碰撞预算状态。关闭窗口后仿真继续，可用 `ros2 run litesim3d_gui viewer` 重连。需要点云/TF 图层时显式加 `rviz:=true`。
 
-车载相机已支持 `rgb`、`depth`、`rgbd`，在 runtime 的 `cameras` 中设置分辨率、帧率、视场角和近远裁剪面。示例相机默认关闭，类型默认 `rgb`；用 `cameras:=true` 开启 640×480 / 15 Hz 普通彩色相机，通过 ROS 2 话题输出，不弹出摄像头窗口：
+车载相机已支持 `rgb`、`depth`、`rgbd`，组合模型的 sensors.xacro 声明相机类及参数；修改其覆盖参数可设置分辨率、帧率、视场角和近远裁剪面。示例相机默认关闭，类型默认 `rgb`；用 `cameras:=true` 开启 640×480 / 15 Hz 普通彩色相机，通过 ROS 2 话题输出，不弹出摄像头窗口：
 
 ```bash
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py cameras:=true
 ```
 
-普通相机只输出 `/camera/front/color/image_raw` 及对应 `camera_info`，不创建深度渲染目标或深度话题。需要彩色加深度时显式设置 `type: rgbd`，额外输出 `/camera/front/depth/image_raw` 及对应 `camera_info`；`type: depth` 则仅输出深度。深度是 `32FC1` 米制光轴距离，RGB-D 两通道同帧对齐。图像预览默认关闭；仅手动加 `camera_view:=true` 时打开。`gui:=false` 关闭三维窗口，不停止相机渲染和话题发布。参数当前启动时生效，修改后重新启动。具体字段、光学坐标与平台限制见 [相机使用说明](../../docs/usage/SDF与独立窗口.md#车载-rgb-与深度相机)。
+普通相机只输出 `/camera/front/color/image_raw` 及对应 `camera_info`，不创建深度渲染目标或深度话题。需要彩色加深度时将相机 class 和参数文件改为 litesim3d_rgbd_camera/RgbdCamera 对应配置，额外输出 `/camera/front/depth/image_raw` 及对应 `camera_info`；litesim3d_depth_camera/DepthCamera 则仅输出深度。深度是 `32FC1` 米制光轴距离，RGB-D 两通道同帧对齐。图像预览默认关闭；仅手动加 `camera_view:=true` 时打开。`gui:=false` 关闭三维窗口，不停止相机渲染和话题发布。参数当前启动时生效，修改后重新启动。具体字段、光学坐标与平台限制见 [相机使用说明](../../docs/usage/SDF与独立窗口.md#车载-rgb-与深度相机)。
 
 同一个 domain 只运行一个仿真时钟；开始本例前关闭此前启动的单机/world 仿真。
 
@@ -180,12 +184,12 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
   runtime:="$PWD/examples/wheel_car_4w/wheel_car_4w_sim/config/runtime.yaml"
 ```
 
-旧 `simulation.yaml` 和 URDF 保留用于回归，显式 `config:=路径` 才启用旧入口。参数在启动时读取，无热加载。
+旧 `simulation.yaml` 和 URDF 保留用于回归，通过 `legacy_twist.launch.py config:=路径` 使用旧入口。参数在启动时读取，无热加载。
 
 | 想改什么 | 改哪个字段 |
 | --- | --- |
-| 最大速度/转速 | description/config/motion.yaml 的 limits.max_linear_speed_mps / max_angular_speed_radps |
-| 加速和停车快慢 | 底盘插件 limits.acceleration_mps2 / deceleration_mps2 / angular_acceleration_radps2 |
+| 最大速度/转速 | controllers.yaml 的 linear.x / angular.z 速度限制；关节仍受 URDF velocity 约束 |
+| 加速和停车快慢 | controllers.yaml 的 linear.x / angular.z 加速度限制 |
 | 初始位置/航向 | world SDF 中对应 include/model 的 pose，单位米/弧度 |
 | 雷达频率/点数 | sensors.yaml 的 lidar.rate_hz / columns / vertical_angles_deg；环数由角度数组推导 |
 | 雷达安装位置 | 本例复用原始机械 URDF 的 lidar_mount_joint；新增传感器在 sensors.xacro 定义 |
@@ -196,19 +200,15 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 | 场景障碍 | SDF include/model；尺寸和 pose 按米/弧度 |
 | 障碍物运动 | 当前所有环境障碍固定；旧 motion 字段拒绝非零速度 |
 | 算法要求 reliable | ros.yaml 中 sensor_reliable=true |
-| 算法发 TwistStamped | cmd_mode=stamped；时间戳用当前 /clock、frame=base_link |
+| 算法发 TwistStamped | 控制器 use_stamped_vel=true，并将其 cmd_vel remap 到算法话题；时间戳用 /clock |
 | 外部估计器接管 odom TF | publish_odom_tf=false、external_odom_tf=true；输出到 URDF root |
-| TF 前缀 | frame_prefix，如 car/；launch 自动同步 RSP 和 RViz，话题仍在根命名空间 |
+| TF 前缀 | frame_prefix，如 car/；同步配置 ros.yaml、rsp.yaml 和控制器 frame 参数，话题仍可单独 remap |
 
 暂停单步校验大点云时，建议在 `ros.yaml` 中设置 `sensor_reliable: true`，通过 `params:=` 加载，并把算法订阅及 RViz 点云显示的 Reliability Policy 设为 Reliable。20,000 点的数据区为 480,000 字节；best effort 即使 DDS 已匹配也可能丢失整帧，暂停后不会自动补发。只修改发布端可靠性、保留 best effort 消费端，仍不能得到可靠传输。默认配置保留 best effort，适合允许丢帧的实时显示。
 
-不要直接把 `cmd_mode:=stamped` 写在本 launch 后假定会改变节点参数；修改 `ros.yaml` 后通过 `params:=` 加载。Stamped 模式可以用项目的接入示例控制：
+默认 /cmd_vel 由 diff_drive_controller 订阅；仿真节点的 cmd_mode 不改变控制器输入类型。若算法发送 TwistStamped，将 controllers.yaml 的 use_stamped_vel 改为 true，并把 manager 的 remap 从 /diff_drive_controller/cmd_vel_unstamped 改为 /diff_drive_controller/cmd_vel。使用相同的仿真时间与 frame 约定。
 
-```bash
-python3 docs/examples/ros_client.py --stamped --drive --duration 5
-```
-
-如果同时设了 `frame_prefix: car/`，上面的命令再加 `--frame car/base_link`。此启动包面向一个小车实例，不是多机器人世界；多机共享时钟的方法见总手册。
+独立轮速接管、完整 control Xacro 和 launch 见 [统一教程](../../docs/tutorials/全部模型与第三方算法ros2_control.md)。此启动包面向一个小车实例；多机共享时钟的方法见总手册。
 
 ### launch 参数
 
@@ -221,7 +221,9 @@ python3 docs/examples/ros_client.py --stamped --drive --duration 5
 | gui | true；仅查看三维场景，false 无窗口 |
 | collision_budget_enabled | false；仅关闭预算，保留碰撞检测 |
 | real_time_factor | 空使用 SDF；0 不限速 |
-| config | 空；显式传入旧 simulation.yaml 切换到旧入口 |
+| config | 公共 launch 兼容参数；旧直接 Twist 配置使用 legacy_twist.launch.py，避免与默认控制器冲突 |
+| controllers | config/controllers.yaml；显式替换控制器参数文件 |
+| robot_urdf / rsp_model | 仿真组合 / RSP 机械 Xacro；新增固定传感器时同步修改 |
 | params | 安装的 config/ros.yaml |
 | lidar_profile | config；也可选 vlp16、mid360、mid40 或自定义预设YAML绝对路径，启动时生效 |
 | rviz | false；true 另开算法图层查看器 |
@@ -233,7 +235,7 @@ python3 docs/examples/ros_client.py --stamped --drive --duration 5
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py --show-args
 ```
 
-launch 自动填入 config、同一份 URDF 的 robot_description，并将 RSP/RViz frame 前缀与仿真节点同步。RViz 显示配置使用临时副本，正常关闭时删除，安装模板保持不变。
+launch 分别展开机械模型给 RSP、控制模型给 controller_manager，并给公共仿真 launch 传入组合 Xacro 和参数文件。RViz 显示配置使用临时副本，正常关闭时删除，安装模板保持不变。
 
 ## 6. 暂停、单步和保存实验
 

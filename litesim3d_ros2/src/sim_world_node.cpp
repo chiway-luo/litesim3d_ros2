@@ -2,6 +2,7 @@
 #include "litesim3d/sim.hpp"
 #include "service_responses.hpp"
 #include "lidar_outputs.hpp"
+#include "joint_control.hpp"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -52,6 +53,7 @@ geometry_msgs::msg::Pose pose(const litesim3d::Pose &p) {
 class WorldNode : public rclcpp::Node {
   struct Channels {
     std::string prefix;
+    std::unique_ptr<litesim3d_ros::JointControl> joint_control;
     std::unique_ptr<litesim3d_ros::LidarOutputs> livox;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom, truth;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joints;
@@ -77,12 +79,6 @@ public:
     world_ = litesim3d::World::load(declare_parameter<std::string>("config", ""));
     output_ = declare_parameter<std::string>("manifest_path", "");
     paused_ = declare_parameter<bool>("start_paused", false);
-    wait_rsp_ = declare_parameter<bool>("wait_for_robot_state_publisher", true);
-    rsp_name_ = declare_parameter<std::string>("robot_state_publisher_name",
-                                               "robot_state_publisher");
-    startup_timeout_ = declare_parameter<double>("startup_timeout", 15.0);
-    litesim3d::require(std::isfinite(startup_timeout_) && startup_timeout_ > 0,
-                 "invalid startup_timeout");
     cmd_mode_ = declare_parameter<std::string>("cmd_mode", "twist");
     litesim3d::require(cmd_mode_ == "twist" || cmd_mode_ == "stamped",
                  "cmd_mode must be twist or stamped");
@@ -115,13 +111,15 @@ public:
       const auto topic = [&](const std::string &t) {
         return "/" + c.prefix + t;
       };
-      c.odom = create_publisher<nav_msgs::msg::Odometry>(topic("odom"), 10);
+      c.odom = create_publisher<nav_msgs::msg::Odometry>(topic(r.config().control_mode == "ros2_control" ? "sim/odometry" : "odom"), 10);
       c.truth = create_publisher<nav_msgs::msg::Odometry>(
           "/sim/ground_truth/" + r.config().robot_id + "/odom", 10);
       c.contacts = create_publisher<litesim3d_interfaces::msg::Contact>(
           "/sim/ground_truth/" + r.config().robot_id + "/contacts", 10);
-      c.joints = create_publisher<sensor_msgs::msg::JointState>(
-          topic("joint_states"), 10);
+      if (r.config().control_mode == "ros2_control")
+        c.joint_control = std::make_unique<litesim3d_ros::JointControl>(*this, r,
+            [this, i](const auto &cmd) { return world_->jointCommand(i, cmd); }, "/" + c.prefix);
+      else c.joints = create_publisher<sensor_msgs::msg::JointState>(topic("joint_states"), 10);
       c.description = create_publisher<std_msgs::msg::String>(
           topic("robot_description"), rclcpp::QoS(1).transient_local());
       std_msgs::msg::String description;
@@ -164,13 +162,13 @@ public:
         command.frame = frame;
         world_->command(i, command);
       };
-      if (cmd_mode_ == "twist")
+      if (!c.joint_control && cmd_mode_ == "twist")
         c.command = create_subscription<geometry_msgs::msg::Twist>(
             topic("cmd_vel"), rclcpp::QoS(1).reliable(),
             [accept](geometry_msgs::msg::Twist::ConstSharedPtr m) {
               accept(*m, {}, "");
             });
-      else
+      else if (!c.joint_control)
         c.stamped_command =
             create_subscription<geometry_msgs::msg::TwistStamped>(
                 topic("cmd_vel"), rclcpp::QoS(1).reliable(),
@@ -252,7 +250,7 @@ public:
             fail(e.what());
           }
         });
-    started_ = anchor_ = std::chrono::steady_clock::now();
+    anchor_ = std::chrono::steady_clock::now();
     anchor_stamp_ = time();
     const auto &cfg = world_->robot(0).config();
     timer_ = create_wall_timer(
@@ -302,9 +300,7 @@ private:
     m["started_wall_ns"] = started_wall_ns_;
     m["recorded_wall_ns"] = wallTime();
     m["ros_interface"] = {{"cmd_mode", cmd_mode_},
-                          {"sensor_reliable", sensor_reliable_},
-                          {"startup_timeout", startup_timeout_},
-                          {"robot_state_publisher_name", rsp_name_}};
+                          {"sensor_reliable", sensor_reliable_}};
     for (size_t i = 0; i < channels_.size(); ++i) {
       m["robots"][i]["exit_reason"] = reason;
       m["robots"][i]["livox_output"] = channels_[i].livox->description();
@@ -328,7 +324,8 @@ private:
         js.velocity.push_back(
             s.joint_velocities.count(name) ? s.joint_velocities.at(name) : 0);
       }
-    c.joints->publish(js);
+    if (c.joints) c.joints->publish(js);
+    if (c.joint_control) c.joint_control->publish(js, s);
     if (!c.publish_tf)
       return;
     geometry_msgs::msg::TransformStamped t;
@@ -459,23 +456,6 @@ private:
       return;
     try {
       if (!ready_) {
-        bool ready = true;
-        for (const auto &c : channels_)
-          if (wait_rsp_) {
-            bool found = false;
-            for (auto &e :
-                 get_subscriptions_info_by_topic(c.joints->get_topic_name()))
-              if (e.node_name() == rsp_name_)
-                found = true;
-            ready &= found;
-          }
-        if (!ready) {
-          if (std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                            started_)
-                  .count() > startup_timeout_)
-            fail("world RSP readiness timeout");
-          return;
-        }
         ready_ = true;
         world_->pause(paused_);
         anchor_ = std::chrono::steady_clock::now();
@@ -550,7 +530,7 @@ private:
       };
       count_matches(clock_);
       count_matches(channels_[i].odom);
-      count_matches(channels_[i].joints);
+      if (channels_[i].joints) count_matches(channels_[i].joints);
       channels_[i].livox->matches(matches);
       d["livox_output"] = channels_[i].livox->description();
       for (const auto &[topic, publisher] : channels_[i].clouds) count_matches(publisher);
@@ -594,11 +574,10 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stats_;
   std::unique_ptr<litesim3d::World> world_;
   std::vector<Channels> channels_;
-  std::string output_, error_, cmd_mode_, rsp_name_;
-  double startup_timeout_ = 15;
+  std::string output_, error_, cmd_mode_;
   bool sensor_reliable_ = false;
   uint64_t started_wall_ns_ = wallTime();
-  bool ready_ = false, paused_ = false, wait_rsp_ = true, failed_ = false;
+  bool ready_ = false, paused_ = false, failed_ = false;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_watch_;
   rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_;
@@ -606,7 +585,7 @@ private:
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr pause_;
   rclcpp::Service<litesim3d_interfaces::srv::Step>::SharedPtr step_;
   rclcpp::TimerBase::SharedPtr timer_, status_timer_;
-  std::chrono::steady_clock::time_point started_, anchor_, next_status_;
+  std::chrono::steady_clock::time_point anchor_, next_status_;
   uint64_t anchor_stamp_ = 1;
   std::deque<double> compute_, bridge_;
 };

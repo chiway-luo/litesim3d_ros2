@@ -1,5 +1,5 @@
 import pytest
-from litesim3d_test_support.composed_models import verify_motion_and_model, verify_collision
+from litesim3d_test_support.composed_models import verify_motion_and_model, verify_collision, verify_control_handoff, verify_controller_geometry
 
 
 def test_composed_motion_tf_and_model(tmp_path):
@@ -9,3 +9,11 @@ def test_composed_motion_tf_and_model(tmp_path):
 @pytest.mark.parametrize("enabled", [False, True])
 def test_collision_and_encoder_odometry(tmp_path, enabled):
     verify_collision(tmp_path, "omni3", enabled)
+
+
+def test_ros2_control_handoff_and_timeout(tmp_path):
+    verify_control_handoff(tmp_path, "omni3")
+
+
+def test_controller_geometry_and_interfaces():
+    verify_controller_geometry("omni3")

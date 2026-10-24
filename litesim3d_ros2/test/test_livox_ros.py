@@ -121,7 +121,7 @@ def test_livox_defaults_keep_best_effort_imu(h, format):
     h.subscribe('imu', Imu, '/imu/data_raw', reliable=False)
     # Exercise the default QoS while streaming: best effort does not promise
     # delivery of a particular sample from a single paused step.
-    h.sim(wait_for_robot_state_publisher=False, lidar_interface='auto', xfer_format=format)
+    h.sim(lidar_interface='auto', xfer_format=format)
     h.ready()
     h.until(lambda: h.messages['imu'] and h.node.get_publishers_info_by_topic('/livox/lidar')
             and h.node.get_publishers_info_by_topic('/imu/data_raw'))
@@ -139,7 +139,7 @@ def test_mid360_can_coexist_with_unchanged_spinning_lidar(h):
     h.config['lidars'].append(other)
     h.subscribe('livox', CustomMsg, '/livox/lidar')
     h.subscribe('other', PointCloud2, '/other_points', reliable=False)
-    h.sim(start_paused=True, wait_for_robot_state_publisher=False, lidar_interface='auto')
+    h.sim(start_paused=True, lidar_interface='auto')
     h.ready(); matched(h, ['/livox/lidar','/other_points'])
     assert h.step(20).success
     h.until(lambda: h.messages['livox'] and h.messages['other'])
@@ -171,7 +171,7 @@ def test_world_mid360_topics_frames_and_imu_stay_per_robot(h):
     ({'livox_lidar_id':256},'livox_lidar_id'), ({'lidar_interface':'invalid'},'lidar_interface')])
 def test_invalid_livox_options_fail_before_publishing(h, parameters, error):
     mid360(h)
-    process = h.sim(wait_for_robot_state_publisher=False, **parameters)
+    process = h.sim(**parameters)
     h.until(lambda: process.poll() is not None)
     assert process.returncode != 0
     assert error in (h.directory/'sim.log').read_text()
@@ -182,7 +182,7 @@ def test_livox_custom_gravity_and_clean_shutdown(h, format, gravity):
     mid360(h)
     h.config['imus'][0]['gravity_mps2'] = gravity
     h.subscribe('gravity_imu', Imu, '/imu/data_raw')
-    process = h.sim(wait_for_robot_state_publisher=False, lidar_interface='auto',
+    process = h.sim(lidar_interface='auto',
                     xfer_format=format, sensor_reliable=True)
     h.ready()
     h.until(lambda: len(h.messages['gravity_imu']) >= 20)
@@ -204,7 +204,7 @@ def test_two_mid360_streams_and_clean_shutdown(h, format, namespace):
     for i,topic in enumerate(topics):
         h.subscribe(str(i), CustomMsg if format else PointCloud2, topic)
     process=h.sim(namespace=namespace,frame_prefix=namespace+'/' if namespace else '',
-                  start_paused=True,wait_for_robot_state_publisher=False,
+                  start_paused=True,
                   lidar_interface='livox',xfer_format=format,livox_lidar_id=7)
     h.ready();matched(h,topics);assert h.step(20).success
     h.until(lambda: all(h.messages[str(i)] for i in range(2)))
@@ -225,7 +225,7 @@ def test_two_mid360_streams_and_clean_shutdown(h, format, namespace):
 @pytest.mark.parametrize('format', [0, 1])
 def test_livox_shutdown_releases_callback_groups_before_plugin_unload(h, format):
     mid360(h)
-    process = h.sim(start_paused=True, wait_for_robot_state_publisher=False,
+    process = h.sim(start_paused=True,
                     lidar_interface='auto', xfer_format=format)
     h.ready()
     assert h.step(20, 'shutdown-frame').success

@@ -1,0 +1,31 @@
+/**:
+  ros__parameters:
+    use_sim_time: true  # 管理器和所有控制器使用 /clock。
+/controller_manager:
+  ros__parameters:
+    update_rate: 100  # 控制循环频率，Hz。
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster  # 发布实际关节反馈。
+    omni_controller:
+      type: litesim3d_ros2_control/OmniDriveController
+    wheel_velocity_controller:
+      type: forward_command_controller/ForwardCommandController  # 可选轮速直控，默认不加载。
+/joint_state_broadcaster:
+  ros__parameters:
+    use_local_topics: false  # 发布到全局 /joint_states，launch 可 remap。
+/omni_controller:
+  ros__parameters:
+    # 数组索引一一对应；轮位、滚动方向和半径与 geometry.yaml 保持一致。
+    wheel_joints: [wheel_0_joint, wheel_1_joint, wheel_2_joint, wheel_3_joint]  # 独立轮关节。
+    wheel_x: [0.3, -0.3, -0.3, 0.2999999999999999]  # 轮心 x，m。
+    wheel_y: [0.3, 0.3, -0.3, -0.3]  # 轮心 y，m。
+    wheel_radius: [0.1, 0.1, 0.1, 0.1]  # 有效半径，m。
+    wheel_angle: [2.356194490192345, 3.926990816987241, 5.497787143782138, 7.068583470577035]  # 正滚动方向相对 +x 的角度，rad。
+    max_wheel_velocity: [30.0, 30.0, 30.0, 30.0]  # 不超过机械 URDF 的 velocity，rad/s。
+    max_linear_velocity: 1.0  # 平面速度向量的模长上限，m/s。
+    max_angular_velocity: 1.0  # 绕 z 轴的角速度上限，rad/s。
+    command_timeout: 0.5  # 算法停止发布 ~/cmd_vel 后停车，仿真秒。
+/wheel_velocity_controller:
+  ros__parameters:
+    joints: [wheel_0_joint, wheel_1_joint, wheel_2_joint, wheel_3_joint]  # Float64MultiArray.data 的顺序，rad/s。
+    interface_name: velocity  # 与底盘控制器互斥，需原子切换。

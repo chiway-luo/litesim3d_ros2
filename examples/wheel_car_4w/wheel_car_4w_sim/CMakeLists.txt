@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(wheel_car_4w_sim)
 find_package(ament_cmake REQUIRED)
 # Example defaults and resources; the shared pipeline is installed by litesim3d_bringup.
-install(DIRECTORY launch config rviz DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch config rviz urdf DESTINATION share/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   find_package(litesim3d_interfaces REQUIRED)

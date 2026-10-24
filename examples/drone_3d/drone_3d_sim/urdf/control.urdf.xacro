@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<robot name="quadrotor" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find drone_3d_sim)/urdf/robot.urdf.xacro"/>
+  <ros2_control name="LiteSimDrone" type="system">
+    <hardware>
+      <plugin>litesim3d_ros2_control/LiteSimSystem</plugin>
+      <param name="command_topic">/sim/joint_commands</param>
+      <param name="state_topic">/sim/joint_feedback</param>
+      <param name="feedback_timeout">2.0</param>
+      <param name="activation_timeout">30.0</param>
+    </hardware>
+    <!-- 机体系速度；不虚构电机转速或可动 URDF 关节。 -->
+    <gpio name="body">
+      <command_interface name="linear.x.velocity"/>
+      <command_interface name="linear.y.velocity"/>
+      <command_interface name="linear.z.velocity"/>
+      <command_interface name="angular.z.velocity"/>
+      <state_interface name="linear.x.velocity"/>
+      <state_interface name="linear.y.velocity"/>
+      <state_interface name="linear.z.velocity"/>
+      <state_interface name="angular.z.velocity"/>
+      <state_interface name="position.x"/>
+      <state_interface name="position.y"/>
+      <state_interface name="position.z"/>
+      <state_interface name="orientation.x"/>
+      <state_interface name="orientation.y"/>
+      <state_interface name="orientation.z"/>
+      <state_interface name="orientation.w"/>
+    </gpio>
+  </ros2_control>
+</robot>

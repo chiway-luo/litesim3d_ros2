@@ -8,6 +8,7 @@ history; no earlier tagged releases or publication dates are implied. See the
 
 Forthcoming
 -----------
+* Remove single/world startup gating on RSP names and namespaces; keep viewer/camera readiness and duplicate odometry TF detection. Cover absent/late RSP and explicit remaps across namespaces.
 * Share paused-command acceptance and target-timestamp waits across ROS tests instead of fixed sleeps; observe per-robot pending/rejected command diagnostics before stepping and retain the original deadlines and motion assertions.
 * Wait for the target step timestamp on every robot's odometry before comparing shared-world poses; preserve exact position/cloud assertions and record the observed timestamps.
 * Retain and retry timed-out service responses in a shared bounded module for single/world nodes, preserving the original request identity and result without re-executing commands. Add Linux fault-injection coverage for recovery, expiry, capacity, fatal errors and shutdown; keep the original reset stress test and client deadline.

@@ -1,0 +1,29 @@
+# 由 simulation.urdf.xacro 按实例加载，未列字段继承对应插件参数文件。
+roof_lidar:
+  link: lidar_link  # 机械模型内的安装坐标系。
+  topic: points_raw  # PointCloud2 输出，支持 ROS remap。
+  rate_hz: 10.0  # 每秒扫描帧数。
+  columns: 256  # 每帧水平列数；线数由下方仰角数组决定。
+  vertical_angles_deg: [-30, -25, -20, -15, -10, -5, -2, 0, 2, 5, 10, 15, 20, 25, 30, 40]
+  min_range_m: 0.1  # 最近有效距离，m。
+  max_range_m: 50.0  # 最大有效距离，m。
+  horizontal_start_deg: -180.0  # 水平起始角，度。
+  horizontal_end_deg: 180.0  # 水平结束角，度。
+  scan_mode: rolling  # 按真实运动轨迹生成一帧内各点。
+  self_filter: robot  # 过滤整个机器人自身几何。
+  publish_range_boundary: true  # 另发显示用量程边界，不混入实际回波。
+  range_sigma_m: 0.0  # 默认零测距噪声；可用 noise_config 覆盖。
+body_imu:
+  link: imu_link  # 按此 link 轴向输出。
+  topic: imu/data_raw  # sensor_msgs/Imu；含重力比力，无姿态估计。
+  rate_hz: 200.0  # Hz。
+front_camera:
+  enabled: false  # launch cameras:=true 可开启。
+  link: camera_optical_frame  # 光学坐标：z 前、x 右、y 下。
+  topic: camera/front  # 输出图像和 CameraInfo 的前缀。
+  width: 640  # 横向像素数。
+  height: 480  # 纵向像素数。
+  rate_hz: 15.0  # Hz。
+  horizontal_fov_deg: 80.0  # 水平视场角，度。
+  near_clip_m: 0.1  # 最近裁剪面，m。
+  far_clip_m: 40.0  # 最远裁剪面，m。

@@ -2,6 +2,7 @@
 #include "litesim3d/sim.hpp"
 #include "service_responses.hpp"
 #include "lidar_outputs.hpp"
+#include "joint_control.hpp"
 #include <chrono>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <fstream>
@@ -63,9 +64,6 @@ public:
     publish_tf_ = declare_parameter<bool>("publish_odom_tf", true);
     const bool external_odom_tf = declare_parameter<bool>("external_odom_tf", false);
     litesim3d::require(!(publish_tf_ && external_odom_tf), "conflicting odom TF publishers configured");
-    wait_rsp_ = declare_parameter<bool>("wait_for_robot_state_publisher", true);
-    rsp_name_ =
-        declare_parameter<std::string>("robot_state_publisher_name", "robot_state_publisher");
     viewer_ready_file_ = declare_parameter<std::string>("viewer_ready_file", "");
     startup_timeout_ = declare_parameter<double>("startup_timeout", 10.0);
     litesim3d::require(std::isfinite(startup_timeout_) && startup_timeout_ > 0,
@@ -142,13 +140,15 @@ public:
       camera_executor_.add_node(camera_client_node_);
       startup_timeout_ = std::max(startup_timeout_, 30.0);
     }
-    odom_ = create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10).reliable());
+    odom_ = create_publisher<nav_msgs::msg::Odometry>(cfg.control_mode == "ros2_control" ? "sim/odometry" : "odom", rclcpp::QoS(10).reliable());
     truth_ = create_publisher<nav_msgs::msg::Odometry>(
         "/sim/ground_truth/" + cfg.robot_id + "/odom", rclcpp::QoS(10).reliable());
     contacts_ = create_publisher<litesim3d_interfaces::msg::Contact>(
         "/sim/ground_truth/" + cfg.robot_id + "/contacts", rclcpp::QoS(10).reliable());
-    joints_ =
-        create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::QoS(10).reliable());
+    if (cfg.control_mode == "ros2_control")
+      joint_control_ = std::make_unique<litesim3d_ros::JointControl>(*this, *sim_,
+          [this](const auto &cmd) { return sim_->jointCommand(cmd); });
+    else joints_ = create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::QoS(10).reliable());
     clock_ = create_publisher<rosgraph_msgs::msg::Clock>("/clock", rclcpp::QoS(1).best_effort());
     description_ = create_publisher<std_msgs::msg::String>(
         "robot_description", rclcpp::QoS(1).reliable().transient_local());
@@ -175,11 +175,11 @@ public:
               : (frame == prefix_ + sim_->config().base_link ? sim_->config().base_link : frame);
       sim_->command(c);
     };
-    if (mode == "twist")
+    if (!joint_control_ && mode == "twist")
       twist_ = create_subscription<geometry_msgs::msg::Twist>(
           "cmd_vel", rclcpp::QoS(1).reliable(),
           [accept](geometry_msgs::msg::Twist::ConstSharedPtr m) { accept(*m, std::nullopt, ""); });
-    else
+    else if (!joint_control_)
       stamped_ = create_subscription<geometry_msgs::msg::TwistStamped>(
           "cmd_vel", rclcpp::QoS(1).reliable(),
           [accept](geometry_msgs::msg::TwistStamped::ConstSharedPtr m) {
@@ -364,7 +364,8 @@ private:
         js.position.push_back(value);
         js.velocity.push_back(s.joint_velocities.count(name) ? s.joint_velocities.at(name) : 0);
       }
-    joints_->publish(js);
+    if (joints_) joints_->publish(js);
+    if (joint_control_) joint_control_->publish(js, s);
     if (publish_tf_) {
       geometry_msgs::msg::TransformStamped t;
       t.header.stamp = stamp(s.stamp);
@@ -494,20 +495,12 @@ private:
   void update() {
     if (!rclcpp::ok()) return;
     if (!ready_) {
-      bool rsp_ready = !wait_rsp_;
-      if (wait_rsp_) {
-        for (const auto &endpoint : get_subscriptions_info_by_topic(joints_->get_topic_name())) {
-          if (endpoint.node_name() == rsp_name_ && endpoint.node_namespace() == get_namespace())
-            rsp_ready = true;
-        }
-      }
       const bool viewer_ready = viewer_ready_file_.empty() || std::filesystem::is_regular_file(viewer_ready_file_);
       const bool camera_ready = !camera_client_ || camera_client_->service_is_ready();
-      if (!rsp_ready || !viewer_ready || !camera_ready) {
+      if (!viewer_ready || !camera_ready) {
         if (std::chrono::duration<double>(std::chrono::steady_clock::now() - started_).count() >
             startup_timeout_) {
-          sim_->fault(!camera_ready ? "camera renderer readiness timeout" :
-              (viewer_ready ? "robot_state_publisher readiness timeout" : "viewer readiness timeout"));
+          sim_->fault(!camera_ready ? "camera renderer readiness timeout" : "viewer readiness timeout");
           timer_->cancel();
           publishStatus();
           saveManifest("startup_timeout");
@@ -589,7 +582,7 @@ private:
     };
     count_matches(clock_);
     count_matches(odom_);
-    count_matches(joints_);
+    if (joints_) count_matches(joints_);
     livox_->matches(matches);
     data["livox_output"] = livox_->description();
     for (const auto &[topic, publisher] : clouds_) count_matches(publisher);
@@ -707,11 +700,11 @@ private:
   std::unique_ptr<litesim3d_ros::LidarOutputs> livox_;
   litesim3d::Pose scene_inverse_ = litesim3d::Pose::Identity();
   std::unique_ptr<tf2_ros::TransformBroadcaster> broadcaster_;
-  bool publish_tf_ = true, wait_rsp_ = true, paused_ = false, ready_ = false,
+  bool publish_tf_ = true, paused_ = false, ready_ = false,
        sensor_reliable_ = false;
   double startup_timeout_ = 10;
   double camera_render_timeout_ = 30;
-  std::string prefix_, manifest_path_, rsp_name_, viewer_ready_file_;
+  std::string prefix_, manifest_path_, viewer_ready_file_;
   uint64_t qos_conflicts_ = 0, dropped_frames_ = 0;
   uint64_t published_clouds_ = 0, published_imus_ = 0;
   uint64_t published_camera_frames_ = 0;
@@ -736,6 +729,7 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_, truth_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_;
   rclcpp::Publisher<litesim3d_interfaces::msg::Contact>::SharedPtr contacts_;
+  std::unique_ptr<litesim3d_ros::JointControl> joint_control_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joints_;
   rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr description_;

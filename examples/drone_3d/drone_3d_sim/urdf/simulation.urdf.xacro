@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<robot name="quadrotor" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="camera_type" default="rgb"/>
+  <xacro:property name="camera_kind" value="$(arg camera_type)"/>
+  <xacro:include filename="$(find drone_3d_sim)/urdf/robot.urdf.xacro"/>
+  <litesim3d version="1">
+    <sensor name="roof_lidar" class="litesim3d_lidar/Lidar">
+      <parameters file="package://litesim3d_lidar/config/parameters.yaml"/>
+      <parameters file="package://drone_3d_sim/config/sensors.yaml" section="roof_lidar"/>
+    </sensor>
+    <sensor name="body_imu" class="litesim3d_imu/Imu">
+      <parameters file="package://litesim3d_imu/config/parameters.yaml"/>
+      <parameters file="package://drone_3d_sim/config/sensors.yaml" section="body_imu"/>
+    </sensor>
+    <sensor name="front_camera" class="litesim3d_${camera_kind}_camera/${dict(rgb='RgbCamera', depth='DepthCamera', rgbd='RgbdCamera')[camera_kind]}">
+      <parameters file="package://litesim3d_${camera_kind}_camera/config/parameters.yaml"/>
+      <parameters file="package://drone_3d_sim/config/sensors.yaml" section="front_camera"/>
+    </sensor>
+  </litesim3d>
+</robot>

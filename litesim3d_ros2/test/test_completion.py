@@ -124,7 +124,6 @@ def test_AUD04_duplicate_or_wrong_parent_tf_faults_world(h, parent):
 
 @pytest.mark.parametrize('settings, message', [
     ({'cmd_mode': 'invalid'}, 'cmd_mode'),
-    ({'startup_timeout': 0.0}, 'startup_timeout'),
     ({'external_odom_tf_robots': ['missing']}, 'unknown'),
     ({'external_odom_tf_robots': ['r1', 'r1']}, 'duplicate'),
 ])
@@ -135,13 +134,13 @@ def test_AUD05_world_rejects_invalid_interface_parameters(h, settings, message):
     assert message in (h.directory/'world.log').read_text()
 
 
-def test_AUD06_world_readiness_timeout_is_bounded_and_recorded(h):
-    process = start_world(h, 2, ready=False, startup_timeout=.2,
-                          robot_state_publisher_name='missing_rsp')
-    h.until(lambda: process.poll() is not None)
-    assert process.returncode != 0
-    manifest = json.loads((h.directory/'world-manifest.json').read_text())
-    assert 'readiness timeout' in manifest['error']
+def test_AUD06_world_runs_without_rsp(h):
+    process = start_world(h, 2, ready=False, rsp=False)
+    h.ready()
+    assert process.poll() is None
+    assert not any(name == "robot_state_publisher" for name, _ in h.node.get_node_names_and_namespaces())
+    result = h.step(20, "without-rsp")
+    assert result.success and result.time_ns > 1
 
 
 def launch(h, multi, extra=(), invalid=False, file_uri=False):
@@ -208,7 +207,7 @@ def test_AUD09_installed_launch_supports_file_uri_and_normal_exit(h, multi):
 
 def test_AUD10_installed_world_launch_passes_interface_options(h):
     process = launch(h, True, extra=['cmd_mode:=stamped', 'sensor_reliable:=true',
-                                   'external_odom_tf_robots:=r1', 'startup_timeout:=3.0'])
+                                   'external_odom_tf_robots:=r1'])
     h.ready()
     h.until(lambda: statuses(h)['r0'].get('cmd_mode') == 'stamped')
     assert statuses(h)['r0']['sensor_queue_policy'] == 'keep_last/reliable'

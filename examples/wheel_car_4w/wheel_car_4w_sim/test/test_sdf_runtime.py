@@ -25,7 +25,7 @@ def example(tmp_path):
     car = Example(tmp_path, monitor_only=True)
     car.subscribe("stats", String, "/sim/stats")
     car.subscribe("scene_state", String, "/sim/scene_state")
-    runtime = prepare_config(car.share / "config/runtime.yaml", tmp_path / "model")
+    runtime = prepare_config(car.share / "config/runtime_twist.yaml", tmp_path / "model")
     data = yaml.safe_load(runtime.read_text())
     model = ET.parse(data["robot"]["urdf"])
     override(model.find("./litesim3d/sensor[@name='roof_lidar']"), {

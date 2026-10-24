@@ -2,7 +2,7 @@
 #include <pluginlib/class_list_macros.hpp>
 
 namespace litesim3d::plugins {
-class DifferentialDrive : public ChassisPlugin {
+class DifferentialDrive : public ChassisPlugin, public JointDrivenChassis {
 public:
   Json defaults() const override {
     return {{"wheel_radius_m", nullptr}, {"wheel_separation_m", nullptr},
@@ -33,6 +33,20 @@ public:
       }
     limitWheelSpeed(result, model_);
     return result;
+  }
+  std::set<std::string> drivenJoints() const override {
+    std::set<std::string> names(left_.begin(), left_.end());
+    names.insert(right_.begin(), right_.end());
+    return names;
+  }
+  Twist forward(const JointState &joints) const override {
+    auto average = [&](const auto &names) {
+      double speed = 0;
+      for (const auto &name : names) speed += joints.velocity.at(name);
+      return speed * radius_ / names.size();
+    };
+    const double left = average(left_), right = average(right_);
+    return {(left + right) / 2, 0, 0, (right - left) / separation_};
   }
   void reset(const JointState &joints) override {
     validateState(joints);

@@ -1,6 +1,6 @@
 # drone_3d：无人机三维仿真
 
-本例采用 `robot.motion_model: multicopter`，通过 ROS 2 速度指令控制机体三轴平移和偏航。机体保持水平，使用限速、加减速与三维几何碰撞约束；适合三维建图、避障与导航接口验证。当前不模拟电机推力、桨叶转动、空气动力学、姿态飞控或自由落体。初始位置为世界坐标 `(-8, -8, 1.2)` 米，零速度时悬停；IMU 仍包含重力比力。
+本例采用 `robot.motion_model: multicopter`，默认由独立 controller_manager 加载 BodyVelocityController，经 LiteSimSystem 的机体 GPIO 控制三轴平移和偏航。机体保持水平，使用限速、加减速与三维几何碰撞约束；适合三维建图、避障与导航接口验证。当前不模拟电机推力、桨叶转动、空气动力学、姿态飞控或自由落体。初始位置为世界坐标 `(-8, -8, 1.2)` 米，零速度时悬停；IMU 仍包含重力比力。
 
 ## 目录
 
@@ -10,7 +10,8 @@ drone_3d/
 │   ├── models/            # quadrotor、aerial_course、textured_crate
 │   └── worlds/            # drone_arena.sdf
 └── drone_3d_sim/
-    ├── config/            # 运动与传感器配置、ROS 参数
+    ├── config/            # runtime、传感器、controllers 和 RSP 参数
+    ├── urdf/              # 分别给 RSP、仿真、控制管理器的模型
     ├── launch/            # 无人机启动入口
     └── test/              # ROS 与图形回归
 ```
@@ -50,7 +51,7 @@ ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
   '{linear: {x: 0.3, y: 0.2}, angular: {z: 0.2}}'
 ```
 
-`linear.x/y/z` 分别为机体前、左、上方向的 m/s；`angular.z` 为绕上轴的 rad/s。`angular.x/y` 会被明确拒绝。指令中断 0.5 **仿真秒**后，三轴和偏航速度减速至零并悬停。碰撞会停止全部速度；地板、侧墙、顶梁均参与防穿透检测。模型没有自动起降控制器。
+`linear.x/y/z` 分别为机体前、左、上方向的 m/s；`angular.z` 为绕上轴的 rad/s。`angular.x/y` 非零或输入非有限值时，控制器输出停车目标。指令中断 0.5 **仿真秒**后，三轴和偏航速度减速至零并悬停。碰撞会停止全部速度；地板、侧墙、顶梁均参与防穿透检测。模型没有自动起降控制器。
 
 | 数据 | 话题 / 坐标系 |
 | --- | --- |
@@ -65,10 +66,13 @@ ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
 
 ## 参数、普通相机与深度相机
 
-- [`runtime.yaml`](drone_3d_sim/config/runtime.yaml)：传感器、速度限制、超时和运动类型。`drive.max_v` 是 XYZ 合速度上限，`acceleration` / `deceleration` 是合加速度上限，`max_w` / `angular_acceleration` 限制偏航；不需要轮关节或车轮参数。
+- [`runtime.yaml`](drone_3d_sim/config/runtime.yaml)：control_mode、机体速度限制、硬件指令超时和运动类型。`drive.max_v` 是 XYZ 合速度上限，`acceleration` / `deceleration` 是合加速度上限，`max_w` / `angular_acceleration` 限制偏航；不需要轮关节或车轮参数。
+- [`controllers.yaml`](drone_3d_sim/config/controllers.yaml)：默认 BodyVelocityController 的算法输入超时和限速。
+- [`sensors.yaml`](drone_3d_sim/config/sensors.yaml)：传感器实例参数；类名在 simulation.urdf.xacro 中声明。
+- [`rsp.yaml`](drone_3d_sim/config/rsp.yaml)：独立 RSP 参数，机械模型单独展开。
 - [`ros.yaml`](drone_3d_sim/config/ros.yaml)：ROS 参数、QoS 和 TF。使用 `params:=/绝对路径/ros.yaml` 加载自定义文件。
 - [`drone_arena.sdf`](drone_3d_models/worlds/drone_arena.sdf)：地图、机器人初始位姿、步长、默认目标 RTF 和观察相机初始视角。
-- [`quadrotor/model.sdf`](drone_3d_models/models/quadrotor/model.sdf)：机体、传感器安装位置、visual/collision 和材质。
+- [`robot.urdf.xacro`](drone_3d_sim/urdf/robot.urdf.xacro)：默认组合模型的机械结构、安装位置和 visual/collision；保留原 SDF 同样的几何。SDF model 用于兼容入口，默认模型由 launch 显式传入。
 - `terrain.enabled` 必须为 false，里程计目前只支持 `odom.mode: ideal`。所有配置在启动时读取，修改后重新启动。
 
 相机默认禁用、类型为 `rgb`。开启普通相机只发布 640 × 480、15 Hz 的彩色图像及 CameraInfo，不打开摄像头窗口：
@@ -77,6 +81,8 @@ ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
 ros2 launch drone_3d_sim drone_3d.launch.py cameras:=true
 ```
 
-需要深度数据时复制 runtime 文件，将相机 `type` 改为 `rgbd`（彩色与深度）或 `depth`（仅深度），再传入 `runtime:=/绝对路径/runtime.yaml cameras:=true`。修改 `width`、`height`、`rate_hz` 控制分辨率与仿真帧率。话题为 `/camera/front/color/image_raw` 和按类型启用的 `/camera/front/depth/image_raw`，分别为 `rgb8` 与 `32FC1` 米制光轴深度，配有同时间戳 `camera_info`。无图形窗口的相机也需要可用的渲染后端，详见 [SDF 与相机说明](../../docs/usage/SDF与独立窗口.md)。
+需要深度数据时使用 `model_arguments:='{"camera_type":"rgbd"}'` 或 `model_arguments:='{"camera_type":"depth"}'`，并设置 `cameras:=true`。在 sensors.yaml 修改 width、height、rate_hz 控制分辨率与帧率。话题为 /camera/front/color/image_raw 和按类型启用的 /camera/front/depth/image_raw，分别为 rgb8 与 32FC1 米制光轴深度，并带同时间戳 CameraInfo。相机需要可用的渲染后端，详见 [SDF 与相机说明](../../docs/usage/SDF与独立窗口.md)。
 
-该示例复用四轮包的 SDF 启动流程，拥有独立 runtime、ROS 参数和模型资源包；不需要启动小车节点。修改地图可直接编辑 SDF，或修改并运行仓库内的 `scripts/fixtures/generate_example_worlds.py`，后者将办公区写入 `wheel_car_4w_models`，将四旋翼和飞行场地写入 `drone_3d_models`。
+独立 RSP、硬件 GPIO、参数文件和第三方定高控制器的构建、加载与切换见 [完整教程](../../docs/tutorials/全部模型与第三方算法ros2_control.md)。此模型没有活动关节，默认不启动 joint_state_broadcaster。旧直接 Twist 入口为 legacy_twist.launch.py。
+
+该示例复用公共仿真包的 SDF 启动流程，拥有独立 runtime、ROS 参数和模型资源包；不需要启动小车节点。修改地图可直接编辑 SDF，或修改并运行仓库内的 `scripts/fixtures/generate_example_worlds.py`，后者将办公区写入 `wheel_car_4w_models`，将四旋翼和飞行场地写入 `drone_3d_models`。

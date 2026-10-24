@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>litesim3d_ros2_control</name>
+  <version>0.4.0</version>
+  <description>ROS 2 control hardware and controllers for LiteSim3D joint and kinematic body simulation.</description>
+  <maintainer email="chiwayfpv@gmail.com">litesim3d contributors</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>hardware_interface</depend>
+  <depend>controller_interface</depend>
+  <depend>geometry_msgs</depend>
+  <depend>realtime_tools</depend>
+  <depend>eigen</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>litesim3d_interfaces</depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>std_srvs</test_depend>
+  <test_depend>nav_msgs</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>python3-yaml</test_depend>
+  <test_depend>ament_index_python</test_depend>
+  <test_depend>controller_manager</test_depend>
+  <test_depend>controller_manager_msgs</test_depend>
+  <test_depend>diff_drive_controller</test_depend>
+  <test_depend>forward_command_controller</test_depend>
+  <test_depend>joint_state_broadcaster</test_depend>
+  <test_depend>litesim3d_ros2</test_depend>
+  <test_depend>litesim3d_diff_drive</test_depend>
+  <test_depend>litesim3d_diff_odometry</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

@@ -1,6 +1,5 @@
 """launch_testing verifies the installed launch lifecycle and real message flow."""
 import os
-from pathlib import Path
 import unittest
 
 from ament_index_python.packages import get_package_share_directory
@@ -21,8 +20,8 @@ from rosgraph_msgs.msg import Clock
 def generate_test_description():
     os.environ.setdefault("ROS_DOMAIN_ID", "5")
     os.environ["ROS_LOCALHOST_ONLY"]="1"
-    path=Path(get_package_share_directory("litesim3d_ros2"))/"launch/demo.launch.py"
-    demo=IncludeLaunchDescription(PythonLaunchDescriptionSource(str(path)),launch_arguments={"rviz":"false"}.items())
+    path=os.path.join(get_package_share_directory("litesim3d_ros2"),"launch","demo.launch.py")
+    demo=IncludeLaunchDescription(PythonLaunchDescriptionSource(path),launch_arguments={"rviz":"false"}.items())
     return LaunchDescription([demo,launch_testing.actions.ReadyToTest()])
 
 

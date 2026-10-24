@@ -98,7 +98,7 @@ JSON 输出中的 `success: true` 和 `checks.motion: true` 表示传感器连�
 
 | 入口 | 内容 |
 | --- | --- |
-| [入门教程](docs/tutorials/README.md) | 启动与控制小车、添加 IMU、编写 ROS 2 消费节点 |
+| [入门教程](docs/tutorials/README.md) | 阿克曼/全向轮 ros2_control、启动与控制、添加 IMU、ROS 2 消费节点 |
 | [使用手册](docs/usage/README.md) | 日常运行、模型与传感器配置、场景、多机、重置和排障 |
 | [接口参考](docs/api/README.md) | 话题、消息/服务、QoS、参数、数据布局及 C++/插件契约 |
 | [逐插件参数](docs/api/plugins/README.md) | 标准插件的类型、必填项、默认值、单位与约束 |
@@ -115,3 +115,5 @@ JSON 输出中的 `success: true` 和 `checks.motion: true` 表示传感器连�
 ## 许可证
 
 [Apache-2.0](LICENSE)。随附第三方材料保留各自的许可声明。
+
+全部现有车型默认接入 ros2_control。四轮车、无人机及第三方算法插件的完整配置见 [统一接入教程](docs/tutorials/全部模型与第三方算法ros2_control.md)。

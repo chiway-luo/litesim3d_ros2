@@ -1,20 +1,23 @@
 # 场景和出生位姿来自 SDF；模型、底盘、里程计、传感器来自组合 Xacro。
-schema_version: 1
-units: m_rad_s
+schema_version: 1  # 运行配置格式版本。
+units: m_rad_s  # 长度 m、角度 rad、时间 s。
 simulation:
-  seed: 42
-  odom_rate: 50.0
-  command_timeout: 0.5
-  threads: 2
+  # 由外部 controller_manager 写关节指令，仿真不直接订阅 cmd_vel。
+  control_mode: ros2_control
+  seed: 42  # 噪声与随机事件的可复现种子。
+  odom_rate: 50.0  # 仿真编码器里程计输出频率，Hz。
+  command_timeout: 0.5  # 硬件指令中断后的停车时间，仿真秒。
+  threads: 2  # 传感器计算线程数。
 robot:
-  id: omni4
-  urdf: package://omni4_sim/urdf/simulation.urdf.xacro
-  base_link: base_link
+  id: omni4  # 必须与 world 中的机器人 model 名相同。
+  urdf: ""  # launch 使用 get_package_share_directory 定位组合 Xacro 后传入。
+  base_link: base_link  # 车体运动学参考坐标系。
   # true：碰撞时车体受阻，驱动轮和轮式里程计继续累计。
   continue_on_collision: true
+  # 参与地形支撑的实际轮 link。
   support_links: [wheel_0_joint_link, wheel_1_joint_link, wheel_2_joint_link, wheel_3_joint_link]
 terrain:
-  enabled: true
+  enabled: true  # 使用场景支撑表面放置车体。
 entity_bindings:
   ground:
-    support: true
+    support: true  # ground 的 collision 作为可行驶地面。

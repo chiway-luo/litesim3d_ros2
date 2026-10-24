@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<robot name="wheel_car_4w" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find wheel_car_4w_description)/urdf/robot.urdf.xacro"/>
+  <ros2_control name="LiteSimWheelCar" type="system">
+    <hardware>
+      <plugin>litesim3d_ros2_control/LiteSimSystem</plugin>
+      <param name="command_topic">/sim/joint_commands</param>
+      <param name="state_topic">/sim/joint_feedback</param>
+      <param name="feedback_timeout">2.0</param>
+      <param name="activation_timeout">30.0</param>
+    </hardware>
+    <!-- 后轮是独立驱动，原始 URDF 的前轮 mimic 仅导出状态。 -->
+    <xacro:macro name="wheel" params="name driven">
+      <joint name="${name}">
+        <xacro:if value="${driven}">
+          <command_interface name="velocity"/><command_interface name="position"/>
+        </xacro:if>
+        <state_interface name="position"/><state_interface name="velocity"/>
+      </joint>
+    </xacro:macro>
+    <xacro:wheel name="rear_left_wheel_joint" driven="true"/>
+    <xacro:wheel name="rear_right_wheel_joint" driven="true"/>
+    <xacro:wheel name="front_left_wheel_joint" driven="false"/>
+    <xacro:wheel name="front_right_wheel_joint" driven="false"/>
+  </ros2_control>
+</robot>

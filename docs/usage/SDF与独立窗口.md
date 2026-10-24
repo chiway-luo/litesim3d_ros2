@@ -46,7 +46,7 @@ examples/
 
 SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光。可选 `<gui><camera><pose>` 指定世界坐标系下的观察初始视角，仅影响查看器；不引入其他交互控件。`<physics>` 的 `max_step_size`、`real_time_factor` 提供积分步长及默认目标速率；这里只使用计时参数，仍是运动学内核，不执行 Ode/Bullet 刚体求解。
 
-`wheel_car_4w_sim/config/runtime.yaml` 现在指向组合 `simulation.urdf.xacro`，并保留碰撞、地形和 `entity_bindings`。组合模型提供完整机器人结构、材质及插件；同名 SDF model 只提供 root 出生位姿。没有 `robot.urdf` 时保留 SDF 定义机器人和旧 YAML 绑定的兼容入口。两种方式都不能在 runtime 重复场景几何、初始位姿、步长或目标速率。完整规则见 [模型组合与插件迁移](模型组合与插件迁移.md)。
+`wheel_car_4w_sim/config/runtime.yaml` 中 robot.urdf 留空，由案例 launch 动态传入组合 `simulation.urdf.xacro`，并保留碰撞、地形和 `entity_bindings`。组合模型提供完整机器人结构、材质及插件；同名 SDF model 只提供 root 出生位姿。没有 `robot.urdf` 时保留 SDF 定义机器人和旧 YAML 绑定的兼容入口。两种方式都不能在 runtime 重复场景几何、初始位姿、步长或目标速率。完整规则见 [模型组合与插件迁移](模型组合与插件迁移.md)。
 
 完整参数、默认值及通用入口与车型入口的区别见 [启动与节点参数](../api/启动与节点参数.md)。
 
@@ -108,7 +108,7 @@ rate_hz: 30.0
 
 类型、分辨率、帧率、视场和噪声参数见 [相机配置参考](../api/配置文件.md#cameras)。
 
-所有启用相机合计不超过 16,588,800 像素，这是独立于碰撞预算的图像缓冲限制，不是 GPU 帧率承诺。分辨率、频率和模型复杂度增加会降低实际 RTF。参数在启动时读取；当前不支持 `ros2 param set` 在线更改采样率、分辨率或增删相机。编辑模型实例配置后启动新会话；用 `runtime:=/绝对路径/my_runtime.yaml` 指向自己的组合模型，`cameras` 留空则保留逐台 enabled 设置。
+所有启用相机合计不超过 16,588,800 像素，这是独立于碰撞预算的图像缓冲限制，不是 GPU 帧率承诺。分辨率、频率和模型复杂度增加会降低实际 RTF。参数在启动时读取；当前不支持 `ros2 param set` 在线更改采样率、分辨率或增删相机。编辑模型实例配置后启动新会话；用 `runtime:=/绝对路径/my_runtime.yaml robot_urdf:=/绝对路径/simulation.urdf.xacro` 传入运行参数与组合模型，`cameras` 留空则保留逐台 enabled 设置。
 
 需要彩色加深度时，把类与参数文件一起替换为 `litesim3d_rgbd_camera/RgbdCamera` 和对应包配置；只需要深度时使用 `litesim3d_depth_camera/DepthCamera`。`cameras:=true` 只开启已声明的标准相机，不切换类型。旧 YAML 的 cameras 列表和 type 字段继续用于没有 sensor 扩展的兼容模型；两处同时声明会报冲突。
 

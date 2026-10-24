@@ -110,6 +110,7 @@ uint64_t Config::timeoutPhaseNs() const {
   return uint64_t(std::llround(timeout * 1e9)) % step_ns;
 }
 void Config::validate() const {
+  require(control_mode == "twist" || control_mode == "ros2_control", "control_mode: expected twist or ros2_control");
   require(step_ns > 0 && step_ns <= 100000000, "step_size: must be in (0, 0.1] seconds");
   require(std::isfinite(odom_rate) && odom_rate > 0 && odom_rate <= 1000, "odom_rate: invalid");
   require(std::isfinite(timeout) && timeout > 0, "command_timeout: invalid");
@@ -189,7 +190,7 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
     cfg.resources = Json::object();
     cfg.resources[std::filesystem::absolute(file).string()] = sha256(file);
     if (auto s = n["simulation"]) {
-      keys(s, {"step_size", "seed", "odom_rate", "command_timeout", "real_time_factor", "threads", "history_limit", "journal_limit", "collision_budget_enabled"},
+      keys(s, {"step_size", "seed", "odom_rate", "command_timeout", "real_time_factor", "threads", "history_limit", "journal_limit", "collision_budget_enabled", "control_mode"},
            "simulation");
       cfg.collision_budget_enabled = get(s, "collision_budget_enabled", false);
       control->collision_budget_enabled = cfg.collision_budget_enabled;
@@ -199,6 +200,7 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
       cfg.seed = get<uint64_t>(s, "seed", 42);
       cfg.odom_rate = get(s, "odom_rate", 50.0);
       cfg.timeout = get(s, "command_timeout", 0.5);
+      cfg.control_mode = get(s, "control_mode", std::string("twist"));
       cfg.real_time_factor = get(s, "real_time_factor", 1.0);
       cfg.threads = get<unsigned>(s, "threads", 1);
       cfg.history_limit = get<size_t>(s, "history_limit", 8192);

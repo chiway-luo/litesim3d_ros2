@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<robot name="omni3" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find omni3_sim)/urdf/robot.urdf.xacro"/>
+  <ros2_control name="LiteSimSystem" type="system">
+    <hardware>
+      <plugin>litesim3d_ros2_control/LiteSimSystem</plugin>
+      <!-- 两个内部话题须与仿真 remap 后的话题一致，可自行加机器人命名空间。 -->
+      <param name="command_topic">/sim/joint_commands</param>
+      <param name="state_topic">/sim/joint_feedback</param>
+      <param name="feedback_timeout">2.0</param>
+      <param name="activation_timeout">30.0</param>
+    </hardware>
+    <joint name="wheel_0_joint">
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wheel_1_joint">
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wheel_2_joint">
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+</robot>

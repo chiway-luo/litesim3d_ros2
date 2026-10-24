@@ -14,7 +14,7 @@ target_include_directories(litesim3d_lidar_output_api INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(litesim3d_lidar_output_api INTERFACE litesim3d_core::litesim3d_core rclcpp::rclcpp)
 # Record the installed ROS/launch implementation independently of the core hash.
-set(bridge_sources src/lidar_outputs.cpp src/lidar_outputs.hpp include/litesim3d_ros2/lidar_output_plugin.hpp src/sim_node.cpp src/sim_world_node.cpp src/point_adapter.cpp
+set(bridge_sources src/joint_control.hpp src/lidar_outputs.cpp src/lidar_outputs.hpp include/litesim3d_ros2/lidar_output_plugin.hpp src/sim_node.cpp src/sim_world_node.cpp src/point_adapter.cpp
   src/point_adapter.hpp src/service_responses.hpp src/sim_ouster_adapter.cpp src/sim_cloud_probe.cpp
   launch/demo.launch.py launch/world.launch.py scripts/sim_session)
 set(bridge_fingerprint "")

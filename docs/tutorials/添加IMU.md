@@ -11,11 +11,13 @@
 | 文件 | 作用 |
 | --- | --- |
 | [simulation.urdf.xacro](../examples/tutorial_robot/urdf/simulation.urdf.xacro) | include 原四轮组合模型，新增 link、fixed joint 和 IMU 声明 |
+| [robot.urdf.xacro](../examples/tutorial_robot/urdf/robot.urdf.xacro) | 机械与新增安装 link，单独给 RSP |
+| [sensor_mounts.xacro](../examples/tutorial_robot/urdf/sensor_mounts.xacro) | 两个模型共用的安装结构 |
 | [runtime.yaml](../examples/tutorial_robot/config/runtime.yaml) | 指向本目录的组合模型，设置仿真与 SDF 绑定 |
 
 本例不创建新 ROS 包，使用仓库中的独立资源目录；依赖的四轮模型和插件已由安装步骤提供。修改此目录不会改动安装空间中的标准模型。自己的正式模型可按[模型接入](../usage/模型接入.md)安装为独立包。
 
-## 1. 核对安装坐标
+## 1. 配置安装坐标
 
 打开随附 Xacro。`tutorial_imu_joint` 把新 link 固定到 `base_link`，平移为 `[0.1, 0, 0.15]` 米，旋转为零。坐标轴为 x 前、y 左、z 上。该 link 没有碰撞几何，不改变车体碰撞形状。
 
@@ -27,12 +29,12 @@
 
 <!-- tutorial-command: imu-launch -->
 ```bash
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py runtime:="$PWD/docs/examples/tutorial_robot/config/runtime.yaml" gui:=false rviz:=false cameras:=false lidar_profile:=vlp16 lidar_interface:=native
+ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py runtime:="$PWD/docs/examples/tutorial_robot/config/runtime.yaml" robot_urdf:="$PWD/docs/examples/tutorial_robot/urdf/simulation.urdf.xacro" rsp_model:="$PWD/docs/examples/tutorial_robot/urdf/robot.urdf.xacro" gui:=false rviz:=false cameras:=false lidar_profile:=vlp16 lidar_interface:=native
 ```
 
-`runtime` 使用绝对路径；其中 `robot.urdf` 的相对路径按 runtime 文件目录解析。SDF 办公场景仍由四轮车启动器提供。不要同时给这个组合模型填写旧 YAML 的 `imus` 列表。
+runtime、robot_urdf 和 rsp_model 显式传入路径；runtime 的 robot.urdf 留空。RSP 使用机械模型，仿真使用组合模型，新增固定安装由两个 Xacro 共同 include。原后轮资源不变，沿用案例 ros2_control 配置。SDF 办公场景仍由四轮车启动器提供。不要同时给这个组合模型填写旧 YAML 的 `imus` 列表。
 
-## 3. 验证新增数据和 TF
+## 3. 消费新增数据和 TF
 
 终端 B：
 
@@ -52,11 +54,11 @@ ros2 run tf2_ros tf2_echo base_link tutorial_imu_link
 
 TF 应给出约 `[0.1, 0, 0.15]` 的平移与零旋转。第二条持续显示，按 Ctrl+C 结束。自动教程检查也会核对该变换及静止比力。
 
-## 4. 修改一次并复验
+## 4. 调整采样频率
 
 在 Xacro 的 overrides 中将 `rate_hz: 100.0` 改为 `rate_hz: 50.0`，停止终端 A 的 launch 后重新启动，再运行第 3 步。参数在启动时读取。可以用 `ros2 topic hz /imu/tutorial` 观察接收频率，但它受实际 RTF 和接收端负载影响，不应把墙钟测量直接当作仿真频率验收。
 
-复验后恢复为 100 Hz，保留一个与教程检查一致的起点。
+修改后重新启动，使参数生效。
 
 ## 常见失败
 

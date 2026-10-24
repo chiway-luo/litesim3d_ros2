@@ -1,0 +1,30 @@
+# 兼容旧版直接 Twist 输入；默认案例使用 runtime.yaml 和 ros2_control。
+# SDF 提供固定环境、时钟步长和出生位姿；组合 Xacro 提供完整机器人与插件。
+schema_version: 1
+units: m_rad_s
+simulation:
+  seed: 42
+  odom_rate: 50.0
+  command_timeout: 0.5
+  threads: 2
+  history_limit: 8192
+  journal_limit: 4096
+  collision_budget_enabled: false
+robot:
+  id: wheel_car_4w
+  urdf: package://wheel_car_4w_description/urdf/simulation.urdf.xacro
+  base_link: base_link
+  # true：真实车体受阻，编码器和轮式里程计仍随驱动累计；false：停止驱动累计。
+  continue_on_collision: true
+  support_links: [rear_left_wheel_link, rear_right_wheel_link, front_left_wheel_link, front_right_wheel_link]
+  visual_collision_fallback: false
+  sensor_geometry: visual
+terrain:
+  enabled: true
+  max_slope_deg: 20.0
+  clearance_m: 0.0
+  continuity_m: 0.02
+entity_bindings:
+  ground:
+    support: true
+    reflectivity: 0.35

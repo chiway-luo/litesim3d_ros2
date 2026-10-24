@@ -1,0 +1,5 @@
+/**:
+  ros__parameters:
+    use_sim_time: true  # 与仿真关节状态采用相同时间。
+    publish_frequency: 200.0  # 活动关节 TF 的最大发布频率，Hz。
+    frame_prefix: ""  # 修改时同步仿真帧配置。

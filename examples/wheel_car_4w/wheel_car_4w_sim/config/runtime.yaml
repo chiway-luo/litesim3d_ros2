@@ -2,6 +2,7 @@
 schema_version: 1
 units: m_rad_s
 simulation:
+  control_mode: ros2_control  # 外部 controller_manager 接管；仿真不订阅 cmd_vel。
   seed: 42
   odom_rate: 50.0
   command_timeout: 0.5
@@ -11,7 +12,7 @@ simulation:
   collision_budget_enabled: false
 robot:
   id: wheel_car_4w
-  urdf: package://wheel_car_4w_description/urdf/simulation.urdf.xacro
+  urdf: ""  # launch 通过 robot_urdf 显式传入组合 Xacro。
   base_link: base_link
   # true：真实车体受阻，编码器和轮式里程计仍随驱动累计；false：停止驱动累计。
   continue_on_collision: true

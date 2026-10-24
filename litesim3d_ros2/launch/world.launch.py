@@ -1,5 +1,6 @@
 """One authoritative clock and a prefixed robot_state_publisher per robot."""
 from pathlib import Path
+import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -12,8 +13,8 @@ from launch_ros.actions import Node
 def resolve(uri, base):
     if uri.startswith('package://'):
         package, relative = uri[10:].split('/', 1)
-        return Path(get_package_share_directory(package)) / relative
-    return (base / uri.removeprefix('file://')).resolve()
+        return Path(os.path.join(get_package_share_directory(package), relative))
+    return Path(os.path.join(base, uri.removeprefix('file://'))).resolve()
 
 
 def required_exit(event, context):
@@ -44,8 +45,7 @@ def setup(context):
                             'cmd_mode': LaunchConfiguration('cmd_mode').perform(context),
                             'sensor_reliable': boolean(context, 'sensor_reliable'),
                             'publish_odom_tf': boolean(context, 'publish_odom_tf'),
-                            **({'external_odom_tf_robots': external} if external else {}),
-                            'startup_timeout': float(LaunchConfiguration('startup_timeout').perform(context))}])
+                            **({'external_odom_tf_robots': external} if external else {})}])
     nodes = [sim]
     for robot in world['robots']:
         nodes.append(Node(package='robot_state_publisher', executable='robot_state_publisher',
@@ -57,15 +57,14 @@ def setup(context):
 
 
 def generate_launch_description():
-    default = Path(get_package_share_directory('litesim3d_core'))/'config/m3_world.yaml'
+    default = os.path.join(get_package_share_directory('litesim3d_core'), 'config', 'm3_world.yaml')
     return LaunchDescription([
-        DeclareLaunchArgument('config', default_value=str(default)),
+        DeclareLaunchArgument('config', default_value=default),
         DeclareLaunchArgument('paused', default_value='false'),
         DeclareLaunchArgument('manifest', default_value=''),
         DeclareLaunchArgument('cmd_mode', default_value='twist'),
         DeclareLaunchArgument('sensor_reliable', default_value='false'),
         DeclareLaunchArgument('publish_odom_tf', default_value='true'),
         DeclareLaunchArgument('external_odom_tf_robots', default_value=''),
-        DeclareLaunchArgument('startup_timeout', default_value='15.0'),
         OpaqueFunction(function=setup),
     ])

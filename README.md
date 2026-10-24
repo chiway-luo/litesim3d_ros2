@@ -92,6 +92,8 @@ To open the 3D viewer, stop the launch and repeat step 2 with `gui:=true`. For i
 
 Measurement errors default to zero. To test algorithm robustness, use the per-sensor and wheel odometry [noise configuration](docs/usage/传感器配置.md).
 
+Ackermann and three/four-wheel ordinary omni examples also use external ros2_control; see the [controller and bringup tutorial](docs/tutorials/阿克曼与全向轮ros2_control.md).
+
 ## Documentation
 
 Use the [documentation index](docs/README.md) to choose a task. Detailed guides are currently in Chinese; the [Chinese README](README.zh-CN.md) follows the same quick-start path.
@@ -115,3 +117,5 @@ When reporting an issue, include the Ubuntu/ROS versions, repository revision, l
 ## License
 
 [Apache-2.0](LICENSE). Bundled third-party materials retain their own license notices.
+
+All existing vehicle examples now default to external ros2_control, including the four-wheel car and kinematic multicopter. See the [unified integration and third-party controller tutorial](docs/tutorials/全部模型与第三方算法ros2_control.md).

@@ -48,6 +48,16 @@ def resolve(uri, base):
     return result
 
 
+def ros_robot_description(urdf):
+    """Keep the prepared kinematics, but give RViz valid local resource URLs."""
+    root = ET.parse(urdf).getroot()
+    for element in root.findall(".//mesh") + root.findall(".//texture"):
+        filename = element.get("filename", "")
+        if Path(filename).is_absolute():
+            element.set("filename", Path(filename).as_uri())
+    return ET.tostring(root, encoding="unicode")
+
+
 def boolean(value, name):
     text = str(value).strip().lower()
     if text not in {"true", "false"}:
@@ -165,9 +175,10 @@ def apply_noise_config(data, root, filename, base):
             target.update(values)
 
 
-def prepare_config(source, directory, *, mappings=None, cameras="", lidar_profile="config", profiles_dir="", noise_config=""):
+def prepare_config(source, directory, *, robot_urdf="", mappings=None, cameras="", lidar_profile="config", profiles_dir="", noise_config=""):
     """Write resolved config and combined URDF; input files are never changed.
 
+    A launch-supplied robot_urdf takes precedence over the source YAML binding.
     Relative URDF resources belong to the top-level model directory. Includes
     should use $(find package) or package:// paths for portable resources.
     """
@@ -176,6 +187,8 @@ def prepare_config(source, directory, *, mappings=None, cameras="", lidar_profil
     data = load_yaml(source.read_text())
     if not isinstance(data, dict) or not isinstance(data.get("robot"), dict):
         raise ValueError("configuration must contain a robot mapping")
+    if robot_urdf:
+        data["robot"]["urdf"] = str(robot_urdf)
     mappings = {} if mappings is None else mappings
     if not isinstance(mappings, dict) or any(not isinstance(k, str) or isinstance(v, (dict, list)) for k, v in mappings.items()):
         raise ValueError("model_arguments must be a YAML mapping of scalar Xacro arguments")
@@ -291,13 +304,16 @@ def lidar_preview_topics(config, interface, xfer_format):
             values = merge(values, settings)
         for element in sensor.findall("overrides"):
             values = merge(values, load_yaml(element.text or "{}"))
+        values["name"] = sensor.get("name")
         lidars.append(values)
     result = {}
-    for lidar in lidars:
-        if lidar.get("scan_pattern") == "livox_mid360":
-            topic = "/" + lidar["topic"].lstrip("/")
-            result[topic] = "/livox/lidar/pointcloud" if xfer_format == 1 else "/livox/lidar"
-            result[topic + "/range_boundary"] = "/livox/lidar/range_boundary"
+    selected = [lidar for lidar in lidars
+                if lidar.get("scan_pattern") == "livox_mid360" and lidar.get("enabled", True)]
+    for lidar in selected:
+        topic = "/" + lidar["topic"].lstrip("/")
+        stem = "/livox/lidar" if len(selected) == 1 else "/livox/" + lidar["name"] + "/lidar"
+        result[topic] = stem + "/pointcloud" if xfer_format == 1 else stem
+        result[topic + "/range_boundary"] = stem + "/range_boundary"
     return result
 
 
@@ -306,6 +322,7 @@ def main():
     parser = argparse.ArgumentParser(description="Expand one model for LiteSim3D core, RSP and rendering")
     parser.add_argument("config", type=Path)
     parser.add_argument("output", type=Path, help="new or empty output directory")
+    parser.add_argument("--robot-urdf", default="", help="URDF/Xacro path; overrides robot.urdf without modifying the source YAML")
     parser.add_argument("--model-arguments", default="{}", help="YAML mapping of Xacro arguments")
     parser.add_argument("--cameras", choices=("true", "false"), default="")
     parser.add_argument("--lidar-profile", default="config")
@@ -320,7 +337,8 @@ def main():
     if output.exists() and any(output.iterdir()):
         parser.error("output directory must be empty")
     try:
-        prepared = prepare_config(args.config, output / "model", mappings=yaml.safe_load(args.model_arguments),
+        prepared = prepare_config(args.config, output / "model", robot_urdf=args.robot_urdf,
+                                  mappings=yaml.safe_load(args.model_arguments),
                                   cameras=args.cameras, lidar_profile=args.lidar_profile, profiles_dir=args.lidar_profiles_dir,
                                   noise_config=args.noise_config)
         result = {"config": str(prepared)}

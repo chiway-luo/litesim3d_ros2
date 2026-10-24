@@ -24,6 +24,8 @@
 
 `namespace:=robot` 使相对话题变为 `/robot/cmd_vel`、`/robot/points_raw` 等；`/clock`、`/sim/status`、服务和真值通道仍是绝对名称。单机 `robot.id` 决定真值路径，不自动跟随 namespace。
 
+`litesim3d_bringup/simulation.launch.py` 不启动 RSP。使用者自己的 RSP 发布 `robot_description`，仿真节点的描述重映射到 `sim/robot_description` 供诊断；直接运行仿真节点时仍使用表中的默认话题。公共 launch 提供 `joint_states_topic`、`tf_topic`、`tf_static_topic`、`robot_description_topic`，使用者同步设置 RSP 的 remap。仿真读取组合模型计算状态，不依赖 RSP 的模型话题或节点身份。
+
 原生点云表适用于 `lidar_interface=native` 或非 Mid-360 雷达。选择 auto/livox 的 Mid-360 使用下列独立输出，原配置的点云话题不再发布该雷达的数据，其他雷达和 IMU 不受影响。
 
 | 话题 | 类型 / 条件 | QoS |
@@ -39,9 +41,21 @@
 
 上表名称是相对话题；单机根命名空间下如 `/livox/lidar`，多机如 `/r0/livox/lidar`。Livox 的可靠性不由 sensor_reliable 改写。字段和单位见 [传感器数据](传感器数据.md)。
 
+## ros2_control 接入
+
+设置 runtime 的 `simulation.control_mode: ros2_control` 后，仿真关闭直接 `cmd_vel` 订阅和公共 `joint_states` 发布。使用者启动 controller_manager、`litesim3d_ros2_control/LiteSimSystem` 硬件插件及控制器，由 `joint_state_broadcaster` 发布实际状态给 RSP。仿真原始里程计改为相对话题 `sim/odometry`；控制器负责 `/odom` 时不会重复发布。TF 责任仍通过 `publish_odom_tf` / `external_odom_tf` 明确配置。
+
+| 相对话题 | 消息类型 | 方向与用途 |
+| --- | --- | --- |
+| `sim/joint_commands` | litesim3d_interfaces/msg/JointCommand | 硬件适配器 → 仿真；run_id、仿真时间戳、关节名、hold/position/velocity 与目标值 |
+| `sim/joint_feedback` | litesim3d_interfaces/msg/JointFeedback | 仿真 → 硬件适配器；run_id、运行有效标志和实际 JointState |
+| `sim/odometry` | nav_msgs/msg/Odometry | 仿真编码器里程计；控制器可另行计算自己的里程计 |
+
+内部指令/反馈都是 reliable、depth 1，可显式 remap；硬件端的 command_topic/state_topic 填 remap 后的名称。多机模式下这些话题带 `/<robot_id>/` 前缀。算法使用标准控制器接口，不需要直接发送内部消息。位置/速度限位、停用 hold、指令超时、反馈失联和会话变化的行为见 [硬件接口](../../litesim3d_ros2_control/README.md)；完整配置见 [统一控制教程](../tutorials/全部模型与第三方算法ros2_control.md)。
+
 ## 速度输入
 
-每个机器人只有一个 cmd_vel 输入类型，由 cmd_mode 选择。Twist/带时间戳 TwistStamped 的 linear 单位为 m/s，angular 为 rad/s，坐标均为配置的机体 base_link。
+在默认 twist 控制模式下，每个机器人只有一个 cmd_vel 输入类型，由 cmd_mode 选择。Twist/带时间戳 TwistStamped 的 linear 单位为 m/s，angular 为 rad/s，坐标均为配置的机体 base_link。
 
 | 运动模型 | 可用分量 | 约束 |
 | --- | --- | --- |
@@ -164,3 +178,7 @@ ros2 topic echo /sim/status --once
 这些通道服务于展示与诊断，scene_state 含世界真值，不接入估计算法。场景 JSON 与生产它的导入器版本一致，不承诺独立于版本的资源格式兼容。
 
 来源：[单机桥接](../../litesim3d_ros2/src/sim_node.cpp)、[多机桥接](../../litesim3d_ros2/src/sim_world_node.cpp)、[Livox 发布层](../../plugins/litesim3d_mid360/litesim3d_mid360/src/livox_outputs.cpp)。
+
+## 所有默认案例的控制入口
+
+四轮小车、阿克曼、三轮/四轮全向和无人机均默认使用 ros2_control。上方直接 Twist 输入和仿真发布 joint_states 的表格仅描述兼容 twist 模式；案例中的 /cmd_vel 实际由控制器订阅。无人机没有活动关节，所以没有 joint_states 广播器，仅由独立 RSP 发布固定安装 TF。私有反馈还包含机体位姿与速度，GPIO 命名和单位见 [硬件接口](../../litesim3d_ros2_control/README.md#无人机机体资源)。

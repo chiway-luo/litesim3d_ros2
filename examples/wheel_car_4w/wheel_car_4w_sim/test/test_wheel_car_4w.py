@@ -25,7 +25,7 @@ class Example(SimulationHarness):
     """Car-specific defaults; behavior lives in the installed support module."""
     def __init__(self, directory, **kwargs):
         super().__init__(directory, package="wheel_car_4w_sim",
-                         launch_file="wheel_car_4w.launch.py", **kwargs)
+                         launch_file="legacy_twist.launch.py", **kwargs)
 
 
 @pytest.fixture
@@ -149,7 +149,7 @@ def test_required_rsp_exit_propagates_failure(car):
 
 def test_invalid_launch_boolean_is_rejected(tmp_path):
     environment = {**os.environ, "ROS_LOG_DIR": str(tmp_path / "ros-logs")}
-    result = subprocess.run(["ros2", "launch", "wheel_car_4w_sim", "wheel_car_4w.launch.py",
+    result = subprocess.run(["ros2", "launch", "wheel_car_4w_sim", "legacy_twist.launch.py",
                               "paused:=yes"], cwd=tmp_path, env=environment,
                             capture_output=True, text=True, timeout=15)
     assert result.returncode != 0
@@ -366,7 +366,7 @@ def test_custom_profile_crops_fov_and_resolves_relative_config_paths(car):
 
 def test_unknown_profile_fails_without_starting_nodes(tmp_path):
     environment={**os.environ,"ROS_LOG_DIR":str(tmp_path/"ros-logs")}
-    result=subprocess.run(["ros2","launch","wheel_car_4w_sim","wheel_car_4w.launch.py",
+    result=subprocess.run(["ros2","launch","wheel_car_4w_sim","legacy_twist.launch.py",
                            "lidar_profile:=missing-model"],
                           cwd=tmp_path,env=environment,capture_output=True,text=True,timeout=15)
     assert result.returncode != 0

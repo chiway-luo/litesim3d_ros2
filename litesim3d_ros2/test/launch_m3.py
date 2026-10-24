@@ -1,6 +1,5 @@
 """Installed M3 shared-world launch and clean required-process shutdown."""
 import os
-from pathlib import Path
 import time
 import unittest
 from ament_index_python.packages import get_package_share_directory
@@ -20,8 +19,8 @@ from sensor_msgs.msg import PointCloud2
 def generate_test_description():
     os.environ.setdefault('ROS_DOMAIN_ID','4')
     os.environ['ROS_LOCALHOST_ONLY']='1'
-    path=Path(get_package_share_directory('litesim3d_ros2'))/'launch/world.launch.py'
-    demo=IncludeLaunchDescription(PythonLaunchDescriptionSource(str(path)))
+    path=os.path.join(get_package_share_directory('litesim3d_ros2'),'launch','world.launch.py')
+    demo=IncludeLaunchDescription(PythonLaunchDescriptionSource(path))
     # Instrumentation slows this four-lidar workload, including the in-flight
     # tick at shutdown. Keep production's 15 s startup / 5 s SIGINT budgets.
     timing=[]

@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 import yaml
-from litesim3d_bringup.model import prepare_config, resolve
+from litesim3d_bringup.model import prepare_config, resolve, ros_robot_description
 
 
 def fixture(tmp_path):
@@ -36,6 +36,57 @@ def test_expand_once_preserves_source_and_relative_resources(tmp_path):
     values = yaml.safe_load(Path(robot.find("./litesim3d/sensor/parameters").get("file")).read_text())
     assert values["lidar"]["pattern_file"] == str(source / "pattern.csv")
     assert before == {p.name:p.read_bytes() for p in source.iterdir()}
+
+
+@pytest.mark.parametrize("configured_urdf", ["", None, "outdated/missing.urdf"])
+def test_launch_supplied_model_preserves_yaml_and_model_relative_resources(tmp_path, monkeypatch, configured_urdf):
+    source, _ = fixture(tmp_path)
+    installed = source.rename(tmp_path / "安装 模型")
+    config_dir = tmp_path / "configuration"
+    config_dir.mkdir()
+    config = config_dir / "runtime.yaml"
+    config.write_text(yaml.safe_dump({"robot": {"urdf": configured_urdf}}))
+    before = config.read_bytes()
+    # Launch may run from any directory; model resources belong to its share.
+    monkeypatch.chdir(config_dir)
+    result = prepare_config(config, tmp_path / "prepared", robot_urdf=installed / "simulation.urdf.xacro",
+                            mappings={"height": .7})
+    generated = Path(yaml.safe_load(result.read_text())["robot"]["urdf"])
+    robot = ET.parse(generated).getroot()
+    assert generated.parent == tmp_path / "prepared"
+    assert {link.get("name") for link in robot.findall("link")} == {"base_link", "lidar_link"}
+    assert robot.find("joint/origin").get("xyz") == "0 0 0.7"
+    parameters = Path(robot.find("./litesim3d/sensor/parameters").get("file"))
+    assert yaml.safe_load(parameters.read_text())["lidar"]["pattern_file"] == str(installed / "pattern.csv")
+    assert config.read_bytes() == before
+
+
+def test_invalid_launch_model_does_not_fall_back_to_yaml(tmp_path):
+    _, config = fixture(tmp_path)
+    with pytest.raises(ValueError, match="resource not found"):
+        prepare_config(config, tmp_path / "prepared", robot_urdf=tmp_path / "missing.xacro")
+
+
+def test_ros_mesh_urls_preserve_spaces_unicode_and_kinematics(tmp_path):
+    source = tmp_path / "雷达 mesh"; source.mkdir()
+    mesh, texture = source / "mid 360.dae", source / "body.png"
+    mesh.touch(); texture.touch()
+    root = ET.fromstring('''<robot name="mesh_robot"><link name="base_link">
+      <visual><geometry><mesh/></geometry><material name="skin"><texture/></material></visual>
+      <collision><geometry><mesh/></geometry></collision></link><link name="sensor"/>
+      <joint name="mount" type="fixed"><parent link="base_link"/><child link="sensor"/>
+      <origin xyz="0.32 0 0.55" rpy="0 0.261799 0"/></joint></robot>''')
+    for node in root.findall(".//mesh"):
+        node.set("filename", str(mesh))
+    root.find(".//texture").set("filename", str(texture))
+    urdf = source / "robot.urdf"
+    ET.ElementTree(root).write(urdf)
+    before = urdf.read_bytes()
+    ros = ET.fromstring(ros_robot_description(urdf))
+    assert all(node.get("filename") == mesh.as_uri() for node in ros.findall(".//mesh"))
+    assert ros.find(".//texture").get("filename") == texture.as_uri()
+    assert ET.tostring(ros.find("joint")) == ET.tostring(root.find("joint"))
+    assert urdf.read_bytes() == before
 
 
 def test_profile_replaces_scan_fields_and_keeps_bindings(tmp_path):
@@ -166,3 +217,57 @@ def test_mid360_preview_follows_resolved_binding_without_touching_other_lidars(t
     assert lidar_preview_topics(prepared, 'native', 1) == {}
     native = prepare_config(config, tmp_path/'native')
     assert lidar_preview_topics(native, 'auto', 1) == {}
+
+
+@pytest.mark.parametrize("composed", [False, True])
+@pytest.mark.parametrize("xfer_format", [0, 1])
+def test_two_mid360_preview_topics_match_vendor_streams(tmp_path, composed, xfer_format):
+    from litesim3d_bringup.model import lidar_preview_topics
+    model = tmp_path / "robot.urdf"
+    model.write_text('<robot name="test"><link name="base_link"/></robot>')
+    bindings = [
+        {"name": name, "link": "base_link", "topic": name + "/raw", "scan_pattern": pattern}
+        for name, pattern in [("front", "livox_mid360"), ("rear", "livox_mid360"), ("roof", "spinning")]
+    ]
+    data = {"robot": {"urdf": str(model)}}
+    if composed:
+        root = ET.parse(model).getroot()
+        extension = ET.SubElement(root, "litesim3d", version="1")
+        for binding in bindings:
+            name = binding["name"]
+            sensor = ET.SubElement(extension, "sensor", name=name,
+                attrib={"class": "litesim3d_mid360/Mid360" if name != "roof" else "litesim3d_lidar/Lidar"})
+            # Names come from the declaration, never the parameter mapping.
+            ET.SubElement(sensor, "overrides").text = yaml.safe_dump(
+                {k: v for k, v in binding.items() if k != "name"})
+        disabled = ET.SubElement(extension, "sensor", name="disabled",
+            attrib={"class": "litesim3d_mid360/Mid360"})
+        ET.SubElement(disabled, "overrides").text = "link: base_link\ntopic: unused\nenabled: false"
+        ET.ElementTree(root).write(model)
+    else:
+        data["lidars"] = bindings
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.safe_dump(data))
+    expected = {}
+    for name in ("front", "rear"):
+        stem = "/livox/" + name + "/lidar"
+        expected["/" + name + "/raw"] = stem + ("/pointcloud" if xfer_format else "")
+        expected["/" + name + "/raw/range_boundary"] = stem + "/range_boundary"
+    assert lidar_preview_topics(config, "auto", xfer_format) == expected
+    assert lidar_preview_topics(config, "native", xfer_format) == {}
+
+
+def test_disabled_second_mid360_keeps_single_sensor_preview(tmp_path):
+    from litesim3d_bringup.model import lidar_preview_topics
+    model = tmp_path / "robot.urdf"
+    model.write_text('''<robot name="test"><link name="base_link"/>
+      <litesim3d version="1">
+        <sensor name="front" class="litesim3d_mid360/Mid360"><overrides>topic: front/raw</overrides></sensor>
+        <sensor name="rear" class="litesim3d_mid360/Mid360"><overrides>topic: rear/raw
+enabled: false</overrides></sensor>
+      </litesim3d></robot>''')
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.safe_dump({"robot": {"urdf": str(model)}}))
+    assert lidar_preview_topics(config, "livox", 1) == {
+        "/front/raw": "/livox/lidar/pointcloud",
+        "/front/raw/range_boundary": "/livox/lidar/range_boundary"}

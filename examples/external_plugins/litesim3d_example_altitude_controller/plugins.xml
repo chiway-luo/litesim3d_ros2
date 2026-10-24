@@ -1,0 +1,5 @@
+<library path="example_altitude_controller">
+  <class name="litesim3d_example_altitude_controller/AltitudeController" type="example::AltitudeController" base_class_type="controller_interface::ControllerInterface">
+    <description>Example proportional altitude controller using body GPIO feedback.</description>
+  </class>
+</library>

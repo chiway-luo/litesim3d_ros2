@@ -14,8 +14,8 @@ from launch_ros.actions import Node
 def resolve(uri, base):
     if uri.startswith("package://"):
         package, relative = uri[10:].split("/", 1)
-        return Path(get_package_share_directory(package)) / relative
-    return (base / uri.removeprefix('file://')).resolve()
+        return Path(os.path.join(get_package_share_directory(package), relative))
+    return Path(os.path.join(base, uri.removeprefix('file://'))).resolve()
 
 
 def required_exit(event, context):

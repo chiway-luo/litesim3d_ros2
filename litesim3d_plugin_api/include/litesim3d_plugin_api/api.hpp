@@ -95,6 +95,19 @@ public:
   virtual OdometryOutput step(const EncoderInput &) = 0;
   virtual void reset(const JointState &) = 0;
 };
+// Optional capability for joint-driven simulation. Kept separate so existing
+// ChassisPlugin implementations retain their ABI and Twist-only behavior.
+class JointDrivenChassis {
+public:
+  virtual ~JointDrivenChassis();
+  virtual std::set<std::string> drivenJoints() const = 0;
+  virtual Twist forward(const JointState &) const = 0;
+  // Wheels rolling with the accepted body motion, without command interfaces.
+  virtual std::set<std::string> passiveJoints() const { return {}; }
+  virtual std::map<std::string, double> passiveVelocities(const JointState &, const Twist &) const { return {}; }
+  // Additional mechanical bounds, intersected with the URDF limits.
+  virtual std::map<std::string, std::pair<double, double>> positionLimits() const { return {}; }
+};
 class SensorPlugin {
 public:
   virtual ~SensorPlugin();

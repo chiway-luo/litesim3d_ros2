@@ -6,6 +6,7 @@
 namespace litesim3d::plugins {
 ChassisPlugin::~ChassisPlugin() = default;
 OdometryPlugin::~OdometryPlugin() = default;
+JointDrivenChassis::~JointDrivenChassis() = default;
 SensorPlugin::~SensorPlugin() = default;
 struct Loader::Impl {
   pluginlib::ClassLoader<ChassisPlugin> chassis{"litesim3d_plugin_api", "litesim3d::plugins::ChassisPlugin"};

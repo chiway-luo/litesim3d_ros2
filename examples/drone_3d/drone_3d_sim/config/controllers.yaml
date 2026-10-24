@@ -1,0 +1,14 @@
+# 案例负责启动 controller_manager；公共仿真 launch 不读取本文件。
+/controller_manager:
+  ros__parameters:
+    use_sim_time: true  # 控制周期采用仿真时间。
+    update_rate: 100  # Hz。
+    body_velocity_controller:
+      type: litesim3d_ros2_control/BodyVelocityController
+/body_velocity_controller:
+  ros__parameters:
+    use_sim_time: true
+    body_name: body  # 对应 control.urdf.xacro 中 gpio 的 name。
+    command_timeout: 0.5  # 秒；指令停止后输出零速度。
+    max_linear_velocity: 2.0  # XYZ 速度向量的模长上限，m/s。
+    max_angular_velocity: 1.2  # 偏航角速度上限，rad/s。

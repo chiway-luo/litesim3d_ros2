@@ -125,3 +125,62 @@ TEST(Multicopter, VerticalClosingSpeedStopsBeforeMovingObstacleOverlap) {
   EXPECT_EQ(sim.scene().collision[0].motion->frozen_at,1U);
   EXPECT_GT(sim.contactCount(),0U);
 }
+
+TEST(MulticopterControl, BodyCommandsMatchLegacyMotionAndStopOnTimeout) {
+  auto legacy_config = flightConfig(); legacy_config.timeout = .1;
+  auto control_config = legacy_config; control_config.control_mode = "ros2_control";
+  Simulator legacy(legacy_config, body(), {}), control(control_config, body(), {});
+  legacy.pause(false); control.pause(false);
+  Command twist; twist.v = .3; twist.lateral = .2; twist.vertical = .4; twist.w = .2;
+  JointCommand command; command.body_velocity = plugins::Twist{.3, .2, .4, .2};
+  EXPECT_FALSE(control.command(twist)); EXPECT_FALSE(legacy.jointCommand(command));
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_TRUE(legacy.command(twist)); ASSERT_TRUE(control.jointCommand(command));
+    legacy.tick(); control.tick();
+    EXPECT_TRUE(legacy.snapshot().world_base.matrix().isApprox(control.snapshot().world_base.matrix(), 1e-12));
+  }
+  EXPECT_TRUE(control.manifest()["inputs"].back().contains("body_velocity"));
+  for (int i = 0; i < 100; ++i) control.tick();
+  EXPECT_NEAR(control.snapshot().linearVelocity().norm(), 0, 1e-12);
+  EXPECT_NEAR(control.snapshot().w, 0, 1e-12);
+  const auto stopped = control.snapshot().world_base;
+  for (int i = 0; i < 30; ++i) control.tick();
+  EXPECT_TRUE(stopped.matrix() == control.snapshot().world_base.matrix());
+}
+TEST(MulticopterControl, RejectsInvalidCommandsAndEmptyPacketHolds) {
+  auto c = flightConfig(); c.control_mode = "ros2_control"; Simulator sim(c, body(), {}); sim.pause(false);
+  JointCommand command; command.body_velocity = plugins::Twist{0, 0, .5, 0};
+  ASSERT_TRUE(sim.jointCommand(command)); sim.tick(); EXPECT_GT(sim.snapshot().vertical, 0);
+  command.body_velocity->vz = NAN; EXPECT_FALSE(sim.jointCommand(command));
+  command.body_velocity->vz = .5; command.stamp = sim.snapshot().stamp + 1; EXPECT_FALSE(sim.jointCommand(command));
+  command.stamp.reset(); command.joints["missing"] = {JointCommandMode::Velocity, 1}; EXPECT_FALSE(sim.jointCommand(command));
+  ASSERT_TRUE(sim.jointCommand(JointCommand{})); sim.tick(); EXPECT_DOUBLE_EQ(sim.snapshot().vertical, 0);
+  sim.fault("test"); EXPECT_FALSE(sim.jointCommand(JointCommand{}));
+}
+TEST(MulticopterControl, CollisionFeedbackReflectsAcceptedHeightAndVelocity) {
+  auto c = flightConfig(); c.control_mode = "ros2_control"; c.drive.max_v = 100;
+  Scene scene; scene.collision = {{"floor", "", Shape::box(Vec3(10,10,.002)), pose(Vec3(0,0,0))}};
+  Simulator sim(c, body(), scene); sim.pause(false);
+  JointCommand command; command.body_velocity = plugins::Twist{0, 0, -50, 0};
+  for (int i = 0; i < 20; ++i) { ASSERT_TRUE(sim.jointCommand(command)); sim.tick(); }
+  EXPECT_GT(sim.contactCount(), 0U); EXPECT_GT(sim.snapshot().world_base.translation().z(), .1);
+  EXPECT_LT(sim.snapshot().world_base.translation().z(), .11); EXPECT_DOUBLE_EQ(sim.snapshot().vertical, 0);
+}
+TEST(MulticopterControl, IndependentJointMovesWithBodyAndRespectsLimits) {
+  auto c = flightConfig(); c.control_mode = "ros2_control";
+  auto model = body();
+  Joint joint; joint.name = "gimbal"; joint.type = "revolute";
+  joint.parent = "base_link"; joint.child = "camera"; joint.axis = Vec3::UnitY();
+  joint.lower = -.5; joint.upper = .5; joint.velocity = .2;
+  model.links.insert(joint.child); model.joints[joint.name] = joint; model.order.push_back(joint.name);
+  Simulator sim(c, model, {}); sim.pause(false);
+  JointCommand command; command.body_velocity = plugins::Twist{0,0,.3,0};
+  command.joints["gimbal"] = {JointCommandMode::Position, .4};
+  for (int i = 0; i < 200; ++i) { ASSERT_TRUE(sim.jointCommand(command)); sim.tick(); }
+  EXPECT_NEAR(sim.snapshot().world_base.translation().z(), 1.3, 1e-10);
+  EXPECT_NEAR(sim.snapshot().joints.at("gimbal"), .2, 1e-10);
+  EXPECT_NEAR(sim.snapshot().joint_velocities.at("gimbal"), .2, 1e-10);
+  command.joints["gimbal"].value = .6; EXPECT_FALSE(sim.jointCommand(command));
+  ASSERT_TRUE(sim.jointCommand({})); sim.tick();
+  EXPECT_DOUBLE_EQ(sim.snapshot().joint_velocities.at("gimbal"), 0);
+}

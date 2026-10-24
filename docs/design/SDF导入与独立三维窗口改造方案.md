@@ -74,9 +74,12 @@ src/litesim3d_ros2/examples/wheel_car_4w/
 拟议路径解析如下，仅说明后续实现方式，本轮不修改安装规则或 launch：
 
 ```python
-resource_root = Path(get_package_share_directory("litesim_models"))
-model_path = resource_root / "models"
-world_path = resource_root / "worlds" / world_name
+import os
+from ament_index_python.packages import get_package_share_directory
+
+resource_root = get_package_share_directory("litesim_models")
+model_path = os.path.join(resource_root, "models")
+world_path = os.path.join(resource_root, "worlds", world_name)
 ```
 
 保留四轮车的启动入口，内部调用新增的通用 `sim.launch.py`。默认关闭碰撞预算的拟议用法：

@@ -14,7 +14,7 @@ from litesim3d_bringup.model import prepare_config
 
 @pytest.mark.parametrize('world,package,models_package,description_package,visual_min', [
     ('office.sdf','wheel_car_4w_sim','wheel_car_4w_models','wheel_car_4w_description',170),
-    ('drone_arena.sdf','drone_3d_sim','drone_3d_models',None,90)])
+    ('drone_arena.sdf','drone_3d_sim','drone_3d_models','drone_3d_sim',90)])
 @pytest.mark.parametrize('budget',[False,True])
 def test_complex_examples_import_from_installed_resources(tmp_path,world,package,models_package,description_package,visual_min,budget):
     # Relocate just this example's installed resources. Successful import must
@@ -22,18 +22,21 @@ def test_complex_examples_import_from_installed_resources(tmp_path,world,package
     assets=tmp_path/'assets'
     shutil.copytree(get_package_share_directory(models_package),assets)
     runtime=assets/'runtime.yaml'
-    shutil.copy(Path(get_package_share_directory(package))/'config/runtime.yaml',runtime)
-    runtime=prepare_config(runtime,assets/'prepared')
+    sim_share=Path(get_package_share_directory(package)).resolve()
+    robot_share=Path(get_package_share_directory(description_package)).resolve()
+    shutil.copy(sim_share/'config/runtime.yaml',runtime)
+    # Like the example launch, supply the composed model explicitly: runtime
+    # deliberately leaves robot.urdf empty for portable package lookup.
+    runtime=prepare_config(runtime,assets/'prepared',robot_urdf=str(robot_share/'urdf/simulation.urdf.xacro'))
     prepared=yaml.safe_load(runtime.read_text())
     parameter_files=set()
     if description_package:
-        robot_share=Path(get_package_share_directory(description_package)).resolve()
         model=ET.parse(prepared['robot']['urdf'])
         for plugin in model.findall('./litesim3d/*'):
             plugin_share=Path(get_package_share_directory(plugin.attrib['class'].split('/')[0])).resolve()
             for parameter in plugin.findall('parameters'):
                 path=Path(parameter.attrib['file']).resolve()
-                assert any(path.is_relative_to(base) for base in (assets.resolve(),robot_share,plugin_share))
+                assert any(path.is_relative_to(base) for base in (assets.resolve(),robot_share,sim_share,plugin_share))
                 parameter_files.add(path)
     output=tmp_path/'imported'
     tool=Path(get_package_prefix('litesim3d_assets'))/'lib/litesim3d_assets/sdf_import'

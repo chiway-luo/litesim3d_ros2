@@ -14,12 +14,11 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction, RegisterEventH
 from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
-from litesim3d_bringup.model import prepare_config, resolve, boolean, lidar_preview_topics
+from litesim3d_bringup.model import prepare_config, boolean, lidar_preview_topics
 
 
 def required_exit(event, context):
-    # A dead simulator/RSP must stop the bringup with a nonzero exit status.
+    # A dead simulator or renderer must stop the bringup with a nonzero exit status.
     # Ctrl+C on the whole launch is a normal, already-started shutdown.
     if not context.is_shutdown:
         raise RuntimeError(
@@ -35,12 +34,12 @@ def legacy_setup(context):
     argument = lambda name: LaunchConfiguration(name).perform(context)
     config = Path(argument("config")).expanduser().resolve()
     parameters = Path(argument("params")).expanduser().resolve()
-    data = yaml.safe_load(config.read_text())
     selection = argument("lidar_profile")
     document = yaml.safe_load(parameters.read_text())
-    allowed = {"/**", "/litesim3d", "/robot_state_publisher", "/rviz2"}
-    if not isinstance(document, dict) or set(document) - allowed:
-        raise ValueError("params must contain only /** and the three documented node sections")
+    if not isinstance(document, dict):
+        raise ValueError("params must be a ROS parameter YAML mapping")
+    # The caller may share this file with its own RSP or other nodes.
+    # Only the simulator and RViz sections are consumed here.
 
     def section(name):
         value = document.get(name, {"ros__parameters": {}})
@@ -55,12 +54,11 @@ def legacy_setup(context):
         return values
 
     sim_parameters = node_parameters("/litesim3d")
-    rsp_parameters = node_parameters("/robot_state_publisher")
     rviz_parameters = node_parameters("/rviz2")
     sim_parameters["config"] = str(config)
-    sim_parameters["lidar_interface"] = argument("lidar_interface")
-    sim_parameters["xfer_format"] = int(argument("xfer_format"))
-    sim_parameters["livox_lidar_id"] = int(argument("livox_lidar_id"))
+    for name, fallback, convert in (("lidar_interface", "auto", str), ("xfer_format", 1, int),
+                                    ("livox_lidar_id", 0, int)):
+        sim_parameters[name] = convert(argument(name) or sim_parameters.get(name, fallback))
     if context.launch_configurations.get("scene_description"):
         sim_parameters["scene_description"] = context.launch_configurations["scene_description"]
         sim_parameters["viewer_ready_file"] = context.launch_configurations.get("viewer_ready_file", "")
@@ -71,33 +69,32 @@ def legacy_setup(context):
     prefix = sim_parameters.get("frame_prefix", "")
     if not isinstance(prefix, str) or (prefix and (prefix.startswith("/") or not prefix.endswith("/"))):
         raise ValueError("frame_prefix must be empty or relative and end in '/'")
-    rsp_parameters["frame_prefix"] = prefix
     cleanup = []
     if not context.launch_configurations.get("model_prepared"):
         directory = tempfile.mkdtemp(prefix="litesim-model-")
         try:
-            config = prepare_config(config, directory, mappings=yaml.safe_load(argument("model_arguments")),
+            config = prepare_config(config, directory, robot_urdf=argument("robot_urdf"),
+                                    mappings=yaml.safe_load(argument("model_arguments")),
                                     lidar_profile=selection, profiles_dir=argument("lidar_profiles_dir"),
                                     noise_config=argument("noise_config"))
         except BaseException:
             shutil.rmtree(directory, ignore_errors=True)
             raise
-        data = yaml.safe_load(config.read_text())
         sim_parameters["config"] = str(config)
         cleanup.append(RegisterEventHandler(OnShutdown(on_shutdown=[
             OpaqueFunction(function=cleanup_directory, args=[directory])])))
-    # The exact expanded XML is also loaded by the core and scene importer.
-    urdf = resolve(data["robot"]["urdf"], config.parent)
-    rsp_parameters["robot_description"] = ParameterValue(urdf.read_text(), value_type=str)
-    rsp = Node(package="robot_state_publisher", executable="robot_state_publisher",
-               name=sim_parameters.get("robot_state_publisher_name", "robot_state_publisher"),
-               parameters=[rsp_parameters], output="screen")
+    context.launch_configurations["prepared_config"] = str(config)
+    actions = cleanup
     sim = Node(package="litesim3d_ros2", executable="sim_node", name="litesim3d",
-               parameters=[sim_parameters], output="screen")
-    actions = cleanup + [
-        RegisterEventHandler(OnProcessExit(target_action=rsp, on_exit=required_exit)),
+               parameters=[sim_parameters], output="screen",
+               remappings=[("joint_states", argument("joint_states_topic")),
+                           ("sim/joint_commands", argument("joint_commands_topic")),
+                           ("sim/joint_feedback", argument("joint_feedback_topic")),
+                           ("/tf", argument("tf_topic")),
+                           ("robot_description", "sim/robot_description")])
+    actions += [
         RegisterEventHandler(OnProcessExit(target_action=sim, on_exit=required_exit)),
-        rsp, sim,
+        sim,
     ]
     if boolean(argument("rviz"), "rviz"):
         # Copy only the RViz presentation settings to a temporary file, syncing
@@ -122,7 +119,10 @@ def legacy_setup(context):
             RegisterEventHandler(OnShutdown(on_shutdown=[
                 OpaqueFunction(function=remove_temporary_config, args=[rviz_file])])),
             Node(package="rviz2", executable="rviz2", name="rviz2",
-                 arguments=["-d", rviz_file], parameters=[rviz_parameters], output="screen"),
+                 arguments=["-d", rviz_file], parameters=[rviz_parameters], output="screen",
+                 remappings=[("/tf", argument("tf_topic")),
+                             ("/tf_static", argument("tf_static_topic")),
+                             ("/robot_description", argument("robot_description_topic"))]),
         ])
     return actions
 
@@ -153,44 +153,45 @@ def setup(context):
         if not argument(name):
             raise ValueError(f"{name} is required in SDF mode")
     share = Path(argument("assets_root")).expanduser().resolve()
-    resource_path = os.pathsep.join(dict.fromkeys(filter(None, [str(share / "models"), str(share / "worlds"),
+    resource_path = os.pathsep.join(dict.fromkeys(filter(None, [os.path.join(share, "models"), os.path.join(share, "worlds"),
                                     *context.environment.get("GZ_SIM_RESOURCE_PATH", "").split(os.pathsep)])))
     world=Path(argument("world")).expanduser()
     if not world.is_absolute() and len(world.parts)==1:
-        world=share / "worlds" / world
+        world=Path(os.path.join(share, "worlds", world))
     environment = {**context.environment, "GZ_SIM_RESOURCE_PATH": resource_path}
     budget = boolean(argument("collision_budget_enabled"), "collision_budget_enabled")
     gui_enabled = boolean(argument("gui"), "gui")
-    directory = Path(tempfile.mkdtemp(prefix="litesim-sdf-"))
+    directory = tempfile.mkdtemp(prefix="litesim-sdf-")
     try:
-        runtime = prepare_config(Path(argument("runtime")).expanduser(), directory / "model",
+        runtime = prepare_config(Path(argument("runtime")).expanduser(), os.path.join(directory, "model"),
+                                 robot_urdf=argument("robot_urdf"),
                                  mappings=yaml.safe_load(argument("model_arguments")), cameras=argument("cameras"),
                                  lidar_profile=argument("lidar_profile"), profiles_dir=argument("lidar_profiles_dir"),
                                  noise_config=argument("noise_config"))
-        scene_directory = directory / "scene"
-        importer = Path(get_package_prefix("litesim3d_assets")) / "lib/litesim3d_assets/sdf_import"
-        command = [str(importer), str(world.resolve()),
-                   str(runtime), str(scene_directory), str(budget).lower()]
+        scene_directory = os.path.join(directory, "scene")
+        importer = os.path.join(get_package_prefix("litesim3d_assets"), "lib", "litesim3d_assets", "sdf_import")
+        command = [importer, str(world.resolve()),
+                   str(runtime), scene_directory, str(budget).lower()]
         if argument("real_time_factor"):
             command.append(argument("real_time_factor"))
         result = subprocess.run(command, env=environment, text=True, capture_output=True, timeout=120)
         if result.returncode:
             raise RuntimeError(result.stderr.strip() or "SDF import failed")
         print("LiteSim SDF: " + result.stdout.strip())
-        context.launch_configurations["config"] = str(scene_directory / "runtime.yaml")
-        context.launch_configurations["scene_description"] = str(scene_directory / "scene.json")
+        context.launch_configurations["config"] = os.path.join(scene_directory, "runtime.yaml")
+        context.launch_configurations["scene_description"] = os.path.join(scene_directory, "scene.json")
         context.launch_configurations["model_prepared"] = "true"
-        ready = str(directory / "viewer.ready")
+        ready = os.path.join(directory, "viewer.ready")
         context.launch_configurations["viewer_ready_file"] = ready if gui_enabled else ""
         actions = [SetEnvironmentVariable("GZ_SIM_RESOURCE_PATH", resource_path),
                    RegisterEventHandler(OnShutdown(on_shutdown=[
-                       OpaqueFunction(function=cleanup_directory, args=[str(directory)])]))]
+                       OpaqueFunction(function=cleanup_directory, args=[directory])]))]
         actions += legacy_setup(context)
-        description = json.loads((scene_directory / "scene.json").read_text())
+        description = json.loads(Path(os.path.join(scene_directory, "scene.json")).read_text())
         cameras = [c for c in description.get("cameras", []) if c["enabled"]]
         if cameras:
             renderer = Node(package="litesim3d_gui", executable="camera_node", name="litesim_camera_renderer",
-                            parameters=[{"scene_description": str(scene_directory / "scene.json")}], output="screen")
+                            parameters=[{"scene_description": os.path.join(scene_directory, "scene.json")}], output="screen")
             actions += [RegisterEventHandler(OnProcessExit(target_action=renderer, on_exit=required_exit)), renderer]
             if boolean(argument("camera_view"), "camera_view"):
                 for camera in cameras:
@@ -200,28 +201,35 @@ def setup(context):
                         }], output="screen"))
         if gui_enabled:
             if sys.platform == "darwin":
-                metal = Path(get_package_prefix("litesim3d_gui")) / "lib/litesim3d_gui/ogre2"
-                if (metal / "RenderSystem_Metal.dylib").is_file():
-                    actions.append(SetEnvironmentVariable("OGRE2_RESOURCE_PATH", str(metal)))
+                metal = os.path.join(get_package_prefix("litesim3d_gui"), "lib", "litesim3d_gui", "ogre2")
+                if os.path.isfile(os.path.join(metal, "RenderSystem_Metal.dylib")):
+                    actions.append(SetEnvironmentVariable("OGRE2_RESOURCE_PATH", metal))
             viewer = Node(package="litesim3d_gui", executable="viewer", name="litesim_viewer",
-                          parameters=[{"scene_description": str(scene_directory / "scene.json"), "ready_file": ready}],
+                          parameters=[{"scene_description": os.path.join(scene_directory, "scene.json"), "ready_file": ready}],
                           output="screen")
             actions += [RegisterEventHandler(OnProcessExit(target_action=viewer,
                         on_exit=lambda event, ctx: viewer_exit(event, ctx, ready))), viewer]
         return actions
     except BaseException:
-        cleanup_directory(context, str(directory))
+        cleanup_directory(context, directory)
         raise
 
 
 def generate_launch_description():
-    bridge = Path(get_package_share_directory("litesim3d_ros2"))
+    bridge = get_package_share_directory("litesim3d_ros2")
     return LaunchDescription([
         DeclareLaunchArgument("assets_root", default_value="", description="Installed model share directory; required in SDF mode"),
         DeclareLaunchArgument("world", default_value="", description="SDF filename under assets_root/worlds or absolute path"),
         DeclareLaunchArgument("runtime", default_value="", description="SDF sensor and drive bindings YAML"),
+        DeclareLaunchArgument("robot_urdf", default_value="", description="URDF/Xacro path supplied by robot bringup; overrides runtime/config robot.urdf"),
         DeclareLaunchArgument("model_arguments", default_value="{}", description="YAML mapping of Xacro arguments"),
         DeclareLaunchArgument("params", description="ROS parameter YAML"),
+        DeclareLaunchArgument("joint_states_topic", default_value="joint_states", description="Simulator joint-state output; connect the caller's RSP to this topic"),
+        DeclareLaunchArgument("joint_commands_topic", default_value="sim/joint_commands", description="ros2_control hardware command input"),
+        DeclareLaunchArgument("joint_feedback_topic", default_value="sim/joint_feedback", description="ros2_control actual joint feedback output"),
+        DeclareLaunchArgument("tf_topic", default_value="/tf", description="Odometry TF output and duplicate-publisher monitor; also used by RViz"),
+        DeclareLaunchArgument("tf_static_topic", default_value="/tf_static", description="RViz static TF input; caller remaps its RSP separately"),
+        DeclareLaunchArgument("robot_description_topic", default_value="/robot_description", description="RViz model input supplied by the caller"),
         DeclareLaunchArgument("gui", default_value="true", description="Read-only 3D window"),
         DeclareLaunchArgument("cameras", default_value="", description="Empty uses runtime; true/false overrides cameras"),
         DeclareLaunchArgument("camera_view", default_value="false"),
@@ -230,12 +238,12 @@ def generate_launch_description():
         DeclareLaunchArgument("config", default_value="", description="Optional legacy YAML; empty selects SDF mode"),
         DeclareLaunchArgument("lidar_profile", default_value="config"),
         DeclareLaunchArgument("noise_config", default_value="", description="Optional per-sensor and wheel odometry errors YAML"),
-        DeclareLaunchArgument("lidar_interface", default_value="auto", description="auto selects official output only for Mid-360; native keeps xyzirt_v1"),
-        DeclareLaunchArgument("xfer_format", default_value="1", description="Mid-360: 1 CustomMsg, 0 Livox PointCloud2"),
-        DeclareLaunchArgument("livox_lidar_id", default_value="0"),
+        DeclareLaunchArgument("lidar_interface", default_value="", description="Empty uses params (fallback auto); native/auto/livox overrides params"),
+        DeclareLaunchArgument("xfer_format", default_value="", description="Empty uses params (fallback 1); 1 CustomMsg, 0 Livox PointCloud2"),
+        DeclareLaunchArgument("livox_lidar_id", default_value="", description="Empty uses params (fallback 0)"),
         DeclareLaunchArgument("lidar_profiles_dir", default_value="", description="Directory for named lidar profiles"),
         DeclareLaunchArgument("rviz", default_value="false"),
-        DeclareLaunchArgument("rviz_config", default_value=str(bridge / "rviz/demo.rviz")),
+        DeclareLaunchArgument("rviz_config", default_value=os.path.join(bridge, "rviz", "demo.rviz")),
         DeclareLaunchArgument("paused", default_value="", description="Empty uses params; true/false overrides start_paused"),
         DeclareLaunchArgument("manifest", default_value="", description="Optional output JSON path"),
         OpaqueFunction(function=setup),

@@ -212,3 +212,177 @@ TEST(CorePlugins, UrdfPluginTagsLoadPackageParameterFilesAndRejectYamlConflicts)
   std::ofstream(directory / "conflict.yaml") << conflict;
   EXPECT_THROW(Config::load(directory / "conflict.yaml", scene), std::runtime_error);
 }
+
+TEST(JointControl, WheelFeedbackDrivesBodyAndIndependentTimeout) {
+  auto config = diffConfig(false); config.control_mode = "ros2_control"; config.timeout = .05;
+  Simulator sim(config, diffModel(), {});
+  EXPECT_FALSE(sim.command({1, 0}));
+  JointCommand command;
+  command.joints = {{"left_wheel_joint", {JointCommandMode::Velocity, 2}},
+                    {"right_wheel_joint", {JointCommandMode::Velocity, 4}}};
+  ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 5);
+  EXPECT_NEAR(sim.snapshot().joints.at("left_wheel_joint"), .1, 1e-10);
+  EXPECT_NEAR(sim.snapshot().joints.at("right_wheel_joint"), .2, 1e-10);
+  EXPECT_NEAR(sim.snapshot().v, .3, 1e-10);
+  EXPECT_NEAR(sim.snapshot().w, .4, 1e-10);
+  EXPECT_NEAR(sim.snapshot().world_base.translation().x(), .75 * std::sin(.02), 1e-10);
+  const auto stopped_at = sim.snapshot().joints;
+  advance(sim, 10);
+  EXPECT_EQ(sim.snapshot().joints, stopped_at);
+  EXPECT_EQ(sim.snapshot().v, 0);
+  EXPECT_TRUE(sim.diagnostics().at("command_timeout"));
+}
+TEST(JointControl, PositionAndVelocityLimitsAndAtomicRejection) {
+  auto config = diffConfig(false); config.control_mode = "ros2_control";
+  auto model = diffModel();
+  model.joints.at("left_wheel_joint").velocity = 2;
+  model.joints.at("right_wheel_joint").velocity = 2;
+  Simulator sim(config, model, {});
+  JointCommand command;
+  command.joints = {{"left_wheel_joint", {JointCommandMode::Position, .1}},
+                    {"right_wheel_joint", {JointCommandMode::Velocity, 1000}}};
+  ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 10);
+  EXPECT_NEAR(sim.snapshot().joints.at("left_wheel_joint"), .1, 1e-10);
+  EXPECT_NEAR(sim.snapshot().joints.at("right_wheel_joint"), .2, 1e-10);
+  EXPECT_NEAR(sim.snapshot().joint_velocities.at("left_wheel_joint"), 0, 1e-10);
+  EXPECT_NEAR(sim.snapshot().joint_velocities.at("right_wheel_joint"), 2, 1e-10);
+  command.joints["missing"] = {JointCommandMode::Velocity, 1};
+  EXPECT_FALSE(sim.jointCommand(command));
+  command.joints.erase("missing"); command.stamp = sim.snapshot().stamp + 1;
+  EXPECT_FALSE(sim.jointCommand(command));
+  command.stamp.reset(); command.joints.at("left_wheel_joint").value = NAN;
+  EXPECT_FALSE(sim.jointCommand(command));
+  ASSERT_TRUE(sim.jointCommand({})); advance(sim, 1);
+  EXPECT_EQ(sim.snapshot().joint_velocities.at("right_wheel_joint"), 0);
+  Simulator legacy(diffConfig(false), diffModel(), {});
+  EXPECT_FALSE(legacy.jointCommand({}));
+}
+TEST(JointControl, PositionTargetUsesAcceptedGeometryAndMimicFeedback) {
+  auto config = diffConfig(false); config.control_mode = "ros2_control";
+  auto model = diffModel();
+  Joint joint; joint.name = "slide"; joint.type = "prismatic";
+  joint.parent = "base_link"; joint.child = "slider"; joint.axis = Vec3::UnitX();
+  joint.lower = 0; joint.upper = .4; joint.velocity = .2;
+  model.links.insert(joint.child); model.joints[joint.name] = joint; model.order.push_back(joint.name);
+  model.collision.push_back({"robot", joint.child, Shape::box({.1, .1, .1}), pose({.4, 0, .4})});
+  Joint follower = joint; follower.name = "follower"; follower.child = "follower_link";
+  follower.mimic = "slide"; follower.multiplier = .5;
+  model.links.insert(follower.child); model.joints[follower.name] = follower; model.order.push_back(follower.name);
+  Scene scene; scene.collision.push_back({"obstacle", "", Shape::box({.1, .2, 1}), pose({.6, 0, .5})}); scene.rebuild();
+  Simulator sim(config, model, scene);
+  JointCommand command; command.joints["slide"] = {JointCommandMode::Position, .4};
+  ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 20);
+  EXPECT_NEAR(sim.snapshot().joints.at("slide"), .04, 1e-9);
+  EXPECT_NEAR(sim.snapshot().joint_velocities.at("follower"), .1, 1e-9);
+  EXPECT_NEAR(model.fk(sim.snapshot().joints).at("slider").translation().x(), .04, 1e-9);
+  advance(sim, 100);
+  EXPECT_GT(sim.contactCount(), 0u);
+  EXPECT_NEAR(sim.snapshot().joints.at("slide"), .1, 2e-5);
+  EXPECT_NEAR(sim.snapshot().joints.at("follower"), .05, 1e-5);
+  command.joints["slide"].value = .5;
+  EXPECT_FALSE(sim.jointCommand(command));
+  command.joints.clear(); command.joints["follower"] = {JointCommandMode::Position, 0};
+  EXPECT_FALSE(sim.jointCommand(command));
+}
+TEST(JointControl, WheelCollisionFeedbackAndMissingChassis) {
+  for (bool keep_driving : {false, true}) {
+    auto config = diffConfig(keep_driving); config.control_mode = "ros2_control";
+    Simulator sim(config, diffModel(), wall());
+    JointCommand command;
+    command.joints = {{"left_wheel_joint", {JointCommandMode::Velocity, 10}},
+                      {"right_wheel_joint", {JointCommandMode::Velocity, 10}}};
+    ASSERT_TRUE(sim.jointCommand(command)); advance(sim, 200);
+    EXPECT_NEAR(sim.snapshot().world_base.translation().x(), .75, 2e-5);
+    EXPECT_NEAR(sim.snapshot().joints.at("left_wheel_joint"), keep_driving ? 20 : 7.5, 2e-4);
+    EXPECT_NEAR(sim.snapshot().odom_base.translation().x(), keep_driving ? 2 : .75, 2e-5);
+  }
+  Config config; config.control_mode = "ros2_control";
+  EXPECT_THROW(Simulator(config, diffModel(), {}), std::runtime_error);
+}
+
+TEST(JointControl, OmniBodyMotionFromWheelRatesAndTimeout) {
+  for (int n : {3, 4}) for (const auto &target : {Vec3(.2, 0, 0), Vec3(0, .3, 0),
+                                                Vec3(0, 0, .4), Vec3(.2, -.1, .3)}) {
+    auto c = configuration("litesim3d_omni" + std::to_string(n) + "_drive", "Omni" + std::to_string(n) + "Drive",
+                           "litesim3d_omni_odometry", "OmniOdometry", false);
+    c.control_mode = "ros2_control"; c.timeout = 2;
+    JointCommand cmd;
+    for (const auto &w : c.plugins[0].parameters.at("wheels")) {
+      const double a = w.at("rolling_angle_rad"), x = w.at("x_m"), y = w.at("y_m"), r = w.at("radius_m");
+      cmd.joints[w.at("joint").get<std::string>()] = {JointCommandMode::Velocity,
+          (std::cos(a)*target.x() + std::sin(a)*target.y() + (x*std::sin(a)-y*std::cos(a))*target.z())/r};
+    }
+    Simulator sim(c, omniModel(n), {}); ASSERT_TRUE(sim.jointCommand(cmd)); advance(sim, 100);
+    const auto &s = sim.snapshot();
+    EXPECT_NEAR(s.v, target.x(), 1e-10); EXPECT_NEAR(s.lateral, target.y(), 1e-10); EXPECT_NEAR(s.w, target.z(), 1e-10);
+    EXPECT_LT((s.world_base.matrix()-s.odom_base.matrix()).norm(), 1e-9);
+    const double w = target.z();
+    const double x = w == 0 ? target.x() : (target.x()*std::sin(w)-target.y()*(1-std::cos(w)))/w;
+    const double y = w == 0 ? target.y() : (target.y()*std::sin(w)+target.x()*(1-std::cos(w)))/w;
+    EXPECT_NEAR(s.world_base.translation().x(), x, 1e-9); EXPECT_NEAR(s.world_base.translation().y(), y, 1e-9);
+    advance(sim, 120); EXPECT_EQ(s.v, 0); EXPECT_EQ(s.lateral, 0); EXPECT_EQ(s.w, 0);
+  }
+}
+TEST(JointControl, OmniLateralCollisionPreservesEncoderPolicy) {
+  for (int n : {3, 4}) for (bool slipping : {false, true}) {
+    auto c = configuration("litesim3d_omni" + std::to_string(n) + "_drive", "Omni" + std::to_string(n) + "Drive",
+                           "litesim3d_omni_odometry", "OmniOdometry", slipping);
+    c.control_mode = "ros2_control"; JointCommand cmd;
+    for (const auto &w : c.plugins[0].parameters.at("wheels"))
+      cmd.joints[w.at("joint").get<std::string>()] = {JointCommandMode::Velocity,
+          std::sin(w.at("rolling_angle_rad").get<double>())/w.at("radius_m").get<double>()};
+    Simulator sim(c, omniModel(n), wall(true)); ASSERT_TRUE(sim.jointCommand(cmd)); advance(sim, 200);
+    const auto &s = sim.snapshot(); EXPECT_GT(sim.contactCount(), 0u); EXPECT_EQ(s.lateral, 0);
+    EXPECT_NEAR(s.odom_base.translation().y(), slipping ? 2 : s.world_base.translation().y(), 1e-8);
+    EXPECT_NEAR(s.odom_lateral, slipping ? 1 : 0, 1e-9);
+  }
+}
+TEST(JointControl, AckermannSteeringLimitsReverseAndPassiveWheelFeedback) {
+  auto c = configuration("litesim3d_ackermann_drive", "AckermannDrive", "litesim3d_ackermann_odometry", "AckermannOdometry", false);
+  c.control_mode = "ros2_control";
+  auto model = ackModel(); model.joints.at("left_steering_joint").velocity = .5;
+  model.joints.at("right_steering_joint").velocity = .5;
+  Simulator sim(c, model, {});
+  JointCommand cmd; cmd.joints = {{"rear_left_wheel_joint", {JointCommandMode::Velocity, 3}},
+      {"rear_right_wheel_joint", {JointCommandMode::Velocity, 3}},
+      {"left_steering_joint", {JointCommandMode::Position, .3}},
+      {"right_steering_joint", {JointCommandMode::Position, .25}}};
+  ASSERT_TRUE(sim.jointCommand(cmd)); advance(sim, 20);
+  EXPECT_NEAR(sim.snapshot().joints.at("left_steering_joint"), .1, 1e-9);
+  advance(sim, 80); const auto before = sim.snapshot();
+  EXPECT_NEAR(before.joints.at("left_steering_joint"), .3, 1e-9);
+  EXPECT_GT(before.w, 0); EXPECT_GT(before.joints.at("front_left_wheel_joint"), 0);
+  EXPECT_LT((before.world_base.matrix()-before.odom_base.matrix()).norm(), 1e-9);
+  cmd.joints.at("rear_left_wheel_joint").value = -3; cmd.joints.at("rear_right_wheel_joint").value = -3;
+  ASSERT_TRUE(sim.jointCommand(cmd)); advance(sim, 20);
+  EXPECT_LT(sim.snapshot().v, 0); EXPECT_LT(sim.snapshot().w, 0);
+  EXPECT_LT(sim.snapshot().joints.at("front_left_wheel_joint"), before.joints.at("front_left_wheel_joint"));
+  cmd.joints.clear(); cmd.joints["left_steering_joint"] = {JointCommandMode::Velocity, 100};
+  ASSERT_TRUE(sim.jointCommand(cmd)); const auto stopped = sim.snapshot().world_base;
+  advance(sim, 100); EXPECT_NEAR(sim.snapshot().joints.at("left_steering_joint"), .6, 1e-9);
+  EXPECT_EQ(sim.snapshot().world_base.matrix(), stopped.matrix());
+  EXPECT_EQ(sim.snapshot().joint_velocities.at("front_left_wheel_joint"), 0);
+  cmd.joints["left_steering_joint"] = {JointCommandMode::Position, .65}; EXPECT_FALSE(sim.jointCommand(cmd));
+  cmd.joints.clear(); cmd.joints["front_left_wheel_joint"] = {JointCommandMode::Velocity, 1}; EXPECT_FALSE(sim.jointCommand(cmd));
+}
+TEST(JointControl, AckermannBlockedSteeringAndPassiveWheelsUseAcceptedMotion) {
+  for (bool slipping : {false, true}) {
+    auto c = configuration("litesim3d_ackermann_drive", "AckermannDrive", "litesim3d_ackermann_odometry", "AckermannOdometry", slipping);
+    c.control_mode = "ros2_control";
+    Scene scene; scene.collision = {{"steering_barrier", "", Shape::box({.5,.02,.5}), pose({.6,.27,.25})}};
+    scene.rebuild(); Simulator sim(c, ackModel(), scene);
+    JointCommand cmd; cmd.joints = {{"rear_left_wheel_joint", {JointCommandMode::Velocity, 1}},
+      {"rear_right_wheel_joint", {JointCommandMode::Velocity, 1}},
+      {"left_steering_joint", {JointCommandMode::Position, .6}},
+      {"right_steering_joint", {JointCommandMode::Position, .5}}};
+    ASSERT_TRUE(sim.jointCommand(cmd)); advance(sim, 100);
+    const auto &s = sim.snapshot(); EXPECT_GT(sim.contactCount(), 0u);
+    EXPECT_LT(s.joints.at("left_steering_joint"), .6);
+    EXPECT_EQ(s.joint_velocities.at("front_left_wheel_joint"), 0);
+    double curvature = 0;
+    for (const auto &pair : {std::make_pair("left_steering_joint", .2), std::make_pair("right_steering_joint", -.2)}) {
+      const double t = std::tan(s.joints.at(pair.first)); curvature += .5*t/(.6+pair.second*t);
+    }
+    EXPECT_NEAR(s.odom_w, slipping ? .1*curvature : 0, 1e-9);
+  }
+}

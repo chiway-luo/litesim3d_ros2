@@ -170,6 +170,7 @@ bool Simulator::command(const Command &cmd) {
     last_error_ = reason;
     return false;
   };
+  if (config_.control_mode != "twist") return reject("Twist input is disabled in ros2_control mode");
   if (state_ == State::Fault || state_ == State::Exited)
     return reject("command rejected in terminal state");
   for (double x : {cmd.v, cmd.w, cmd.lateral, cmd.vertical, cmd.roll_rate, cmd.pitch_rate})
@@ -188,6 +189,67 @@ bool Simulator::command(const Command &cmd) {
     ++coalesced_;
   pending_ = cmd;
   return true;
+}
+bool Simulator::jointCommand(const JointCommand &cmd) {
+  auto reject = [&](const std::string &reason) {
+    ++rejected_; last_error_ = reason; return false;
+  };
+  if (config_.control_mode != "ros2_control") return reject("joint commands require ros2_control mode");
+  if (cmd.body_velocity) {
+    if (!body_control_) return reject("body velocity requires the kinematic multicopter");
+    for (double value : {cmd.body_velocity->vx, cmd.body_velocity->vy, cmd.body_velocity->vz, cmd.body_velocity->wz})
+      if (!std::isfinite(value)) return reject("non-finite body velocity");
+  }
+  if (state_ == State::Fault || state_ == State::Exited) return reject("command rejected in terminal state");
+  if (cmd.stamp && (*cmd.stamp > current_.stamp ||
+      current_.stamp - *cmd.stamp > uint64_t(config_.timeout * 1e9)))
+    return reject("stale or future joint command timestamp");
+  for (const auto &[name, target] : cmd.joints) {
+    const auto it = model_.joints.find(name);
+    if (it == model_.joints.end() || it->second.type == "fixed" || !it->second.mimic.empty())
+      return reject("joint command requires independent movable joint: " + name);
+    if (passive_joints_.count(name)) return reject("passive wheel has no command interface: " + name);
+    if (!std::isfinite(target.value)) return reject("non-finite joint command: " + name);
+    if (target.mode != JointCommandMode::Hold && target.mode != JointCommandMode::Position &&
+        target.mode != JointCommandMode::Velocity) return reject("unknown joint command mode");
+    if (target.mode == JointCommandMode::Position &&
+        (target.value < it->second.lower || target.value > it->second.upper))
+      return reject("position command exceeds URDF limits: " + name);
+    const auto bounds = joint_position_limits_.find(name);
+    if (target.mode == JointCommandMode::Position && bounds != joint_position_limits_.end() &&
+        (target.value < bounds->second.first || target.value > bounds->second.second))
+      return reject("position command exceeds chassis limits: " + name);
+  }
+  if (pending_joints_) ++coalesced_;
+  pending_joints_ = cmd;
+  return true;
+}
+plugins::DriveStep Simulator::prepareJointMotion(double dt) const {
+  plugins::DriveStep output;
+  plugins::JointState predicted{current_.joints, {}};
+  for (const auto &[name, joint] : model_.joints) {
+    if (joint.type == "fixed" || !joint.mimic.empty() || passive_joints_.count(name)) continue;
+    const double position = current_.joints.at(name);
+    double velocity = 0;
+    const auto target = joint_target_.joints.find(name);
+    if (target != joint_target_.joints.end()) {
+      if (target->second.mode == JointCommandMode::Position)
+        velocity = (target->second.value - position) / dt;
+      else if (target->second.mode == JointCommandMode::Velocity) velocity = target->second.value;
+    }
+    velocity = std::clamp(velocity, -joint.velocity, joint.velocity);
+    const auto bounds = joint_position_limits_.find(name);
+    const double lower = bounds == joint_position_limits_.end() ? joint.lower : bounds->second.first;
+    const double upper = bounds == joint_position_limits_.end() ? joint.upper : bounds->second.second;
+    const double next = std::clamp(position + velocity * dt, lower, upper);
+    velocity = (next - position) / dt;
+    predicted.position[name] = next;
+    predicted.velocity[name] = output.joint_velocity[name] = velocity;
+    if (driven_joints_.count(name)) output.wheel_delta[name] = next - position;
+    else output.steering_position[name] = next;
+  }
+  if (joint_chassis_) output.average = output.velocity = joint_chassis_->forward(predicted);
+  return output;
 }
 void Simulator::pause(bool paused) {
   require(state_ != State::Fault && state_ != State::Exited,
@@ -393,6 +455,24 @@ void Simulator::move(double dt, uint64_t end_stamp) {
 void Simulator::beginStep() {
   started_ = true;
   require(step_ < 1000000000000ULL, "simulation step budget exceeded");
+  if (pending_joints_) {
+    joint_target_ = std::move(*pending_joints_);
+    pending_joints_.reset();
+    if (body_control_) {
+      const auto body = joint_target_.body_velocity.value_or(plugins::Twist{});
+      target_ = Command{};
+      target_.v = body.vx; target_.lateral = body.vy; target_.vertical = body.vz; target_.w = body.wz;
+    }
+    accepted_stamp_ = current_.stamp;
+    timed_out_ = false;
+    Json targets = Json::object();
+    for (const auto &[name, target] : joint_target_.joints)
+      targets[name] = {{"mode", uint8_t(target.mode)}, {"value", target.value}};
+    inputs_.push_back({{"sequence", sequence_++}, {"step", step_ + 1},
+                       {"accepted_time_ns", accepted_stamp_}, {"joints", targets}});
+    if (body_control_) inputs_.back()["body_velocity"] = {target_.v, target_.lateral, target_.vertical, target_.w};
+    if (inputs_.size() > config_.journal_limit) { inputs_.erase(inputs_.begin()); ++evicted_inputs_; }
+  }
   if (pending_) {
     target_ = *pending_;
     pending_.reset();
@@ -435,6 +515,7 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
   const uint64_t deadline = accepted_stamp_ + uint64_t(std::llround(config_.timeout * 1e9));
   if (current_.stamp >= deadline) {
     target_ = Command{};
+    joint_target_ = JointCommand{};
     timed_out_ = true;
   }
   const double dt = double(next - current_.stamp) * 1e-9;
@@ -444,7 +525,7 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
     plugins::ChassisInput input{next - current_.stamp,
         {target_.v, target_.lateral, target_.vertical, target_.w}, plugin_drive_velocity_,
         {current_.joints, current_.joint_velocities}};
-    auto output = chassis_plugin_->step(input);
+    auto output = joint_chassis_ ? prepareJointMotion(dt) : chassis_plugin_->step(input);
     for (const auto *twist : {&output.average, &output.velocity})
       for (double value : {twist->vx, twist->vy, twist->vz, twist->wz})
         require(std::isfinite(value), "chassis plugin returned non-finite velocity");
@@ -486,7 +567,8 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
     const Vec3 mid = d.unlimited_acceleration ? next_velocity : Vec3((old + next_velocity) / 2);
     current_.v = mid.x(); current_.lateral = mid.y(); current_.vertical = mid.z();
     current_.w = d.unlimited_acceleration ? new_w : (old_w + new_w) / 2;
-    return {old_v, old_w, next_velocity.x(), new_w, current_.world_base, old, next_velocity, {}};
+    return {old_v, old_w, next_velocity.x(), new_w, current_.world_base, old, next_velocity,
+            body_control_ ? prepareJointMotion(dt) : plugins::DriveStep{}};
   }
   if (d.model == "ackermann") {
     const double turn_limit = std::abs(new_v) * std::tan(d.max_steering) / d.wheelbase;
@@ -502,11 +584,26 @@ Simulator::MotionStep Simulator::prepareMotion(uint64_t next) {
   return {old_v, old_w, new_v, new_w, old_pose, Vec3::Zero(), Vec3::Zero(), {}};
 }
 std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &motion) {
-  const auto &[old_v, old_w, new_v, new_w, old_pose, old_linear, new_linear, plugin_drive] = motion;
+  auto [old_v, old_w, new_v, new_w, old_pose, old_linear, new_linear, plugin_drive] = motion;
   const double dt = double(next - current_.stamp) * 1e-9;
   const uint64_t dt_ns = next - current_.stamp;
   const plugins::JointState previous_encoders{current_.joints, current_.joint_velocities};
-  if (chassis_plugin_) moveSteering(plugin_drive.steering_position);
+  if (chassis_plugin_ || body_control_) moveSteering(plugin_drive.steering_position);
+  if (joint_chassis_) {
+    // Use collision-accepted steering, never the requested (possibly blocked) angle.
+    const plugins::JointState accepted{current_.joints, plugin_drive.joint_velocity};
+    plugin_drive.average = plugin_drive.velocity = joint_chassis_->forward(accepted);
+    current_.v = new_v = plugin_drive.velocity.vx;
+    current_.w = new_w = plugin_drive.velocity.wz;
+    current_.lateral = plugin_drive.velocity.vy; current_.vertical = plugin_drive.velocity.vz;
+    new_linear = {current_.v, current_.lateral, current_.vertical};
+  }
+  if (body_control_) {
+    current_.joints = model_.positions(current_.joints);
+    current_.joint_velocities = plugin_drive.joint_velocity;
+    for (const auto &[name, value] : plugin_drive.steering_position)
+      current_.joint_velocities[name] = (current_.joints.at(name) - previous_encoders.position.at(name)) / dt;
+  }
   const auto &d = config_.drive;
   const double integrated_v = current_.v, integrated_w = current_.w;
   move(dt, next);
@@ -522,8 +619,23 @@ std::optional<Event> Simulator::advanceMotion(uint64_t next, const MotionStep &m
   if (chassis_plugin_) {
     const double fraction = drive_blocked_ ? accepted_motion_fraction_ : 1;
     for (const auto &[name, delta] : plugin_drive.wheel_delta) current_.joints[name] += delta * fraction;
+    if (joint_chassis_) {
+      const auto rates = joint_chassis_->passiveVelocities(
+          {current_.joints, plugin_drive.joint_velocity}, plugin_drive.average);
+      require(rates.size() == passive_joints_.size(), "passive wheel feedback size mismatch");
+      for (const auto &[name, rate] : rates) {
+        require(passive_joints_.count(name) && std::isfinite(rate), "invalid passive wheel feedback: " + name);
+        // Passive wheels follow actual travel, even when driven wheels keep slipping.
+        current_.joints[name] += rate * dt * accepted_motion_fraction_;
+        plugin_drive.joint_velocity[name] = motion_blocked_ ? 0 : rate;
+      }
+    }
     current_.joints = model_.positions(current_.joints);
     current_.joint_velocities = plugin_drive.joint_velocity;
+    // Feedback reflects accepted articulated motion, including blocked targets.
+    if (joint_chassis_)
+      for (const auto &[name, value] : plugin_drive.steering_position)
+        current_.joint_velocities[name] = (current_.joints.at(name) - previous_encoders.position.at(name)) / dt;
     if (drive_blocked_) for (auto &[name, velocity] : current_.joint_velocities) velocity = 0;
     plugin_drive_velocity_ = drive_blocked_ ? plugins::Twist{} : plugin_drive.velocity;
     const auto output = odometry_plugin_->step({dt_ns, previous_encoders, {current_.joints, current_.joint_velocities}});
@@ -738,6 +850,8 @@ void Simulator::setPose(const Pose &initial) {
   drive_v_ = drive_w_ = 0;
   motion_blocked_ = drive_blocked_ = false;
   pending_.reset();
+  pending_joints_.reset();
+  joint_target_ = JointCommand{};
   history_.clear();
   history_.push_back({current_.stamp, current_.world_base});
   kinematics_ = Kinematics{};
@@ -746,6 +860,8 @@ void Simulator::fault(const std::string &reason) {
   state_ = State::Fault;
   last_error_ = reason;
   pending_.reset();
+  pending_joints_.reset();
+  joint_target_ = JointCommand{};
   current_.v = 0;
   current_.w = 0;
   current_.lateral = current_.vertical = 0;
@@ -753,6 +869,8 @@ void Simulator::fault(const std::string &reason) {
 void Simulator::exit() {
   state_ = State::Exited;
   pending_.reset();
+  pending_joints_.reset();
+  joint_target_ = JointCommand{};
 }
 Json Simulator::diagnostics() const {
   return {{"run_id", run_id},
@@ -762,7 +880,7 @@ Json Simulator::diagnostics() const {
           {"time_ns", current_.stamp},
           {"rejected_commands", rejected_},
           {"coalesced_commands", coalesced_},
-          {"pending_command", pending_.has_value()},
+          {"pending_command", pending_.has_value() || pending_joints_.has_value()},
           {"command_timeout", timed_out_},
           {"contact_count", contact_count_},
           {"retained_contacts", contacts_.size()},
@@ -827,6 +945,7 @@ Json Simulator::manifest(const std::string &reason) const {
   resolved["step_ns"] = config_.step_ns;
   resolved["odom_rate"] = config_.odom_rate;
   resolved["command_timeout"] = config_.timeout;
+  resolved["control_mode"] = config_.control_mode;
   resolved["real_time_factor"] = config_.real_time_factor;
   resolved["seed"] = config_.seed;
   resolved["threads"] = config_.threads;

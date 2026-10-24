@@ -1,5 +1,11 @@
 # 测试文档
 
+阿克曼 TF 数量断言的后续调查、端点诊断与完整回归见 [阿克曼 TF 断言诊断](阿克曼TF断言诊断.md)。该记录包含启动失败后的 RSP 残留复现、进程组清理修复和从头执行的完整回归。
+
+2026-10-23 的全部现有运动模型、独立第三方控制器及相机联调见 [全部模型 ros2_control 验证](全部模型ros2_control验证.md)。
+
+2026-10-23 的阿克曼、三轮与四轮普通全向 ros2_control 联调见 [多底盘 ros2_control 验证](多底盘ros2_control验证.md)。
+
 当前内置 RViz 视图不加载 `/scene` 场景图层，保留启动集成与点云显示。`scripts/test_desktop.sh` 验证 RViz、独立窗口及 RGB/Depth/RGB-D 实际渲染，包含相机误差与固定种子复现；`scripts/test_plugins.sh` 验证传感器/里程计计算契约。
 
 2026-10-20 的实际渲染、误差统计和 RViz 截图见[测量误差、相机渲染与 RViz 验证](测量误差与相机RViz验证.md)。
@@ -110,7 +116,7 @@ source "$(python3 scripts/paths.py install)/setup.bash"
 | 文档检查器负例 | `python3 -m unittest discover -s scripts/checks -p test_documentation_checks.py` | 验证错误锚点和错误 Shell 能被拒绝 |
 | 入门教程 | `python3 scripts/checks/check_documented_tutorials.py` | 执行教程原文命令，验证单机控制、IMU/TF 和消费节点负例 |
 | 系统时钟跳变诊断 | `python3 scripts/checks/check_clock_stability.py --duration 60` | 只读观察系统时间相对单调时钟的跳变；用于排查 DDS 旧帧，不检查仿真 `/clock` |
-| 完整功能回归 | `bash scripts/test_m3.sh` | 内核、M1/M2/M3 ROS、100 次会话重置、报告门禁负例、四轮示例、无人机、SDF 场景、单机/多机 launch |
+| 完整功能回归 | `bash scripts/test_m3.sh` | 内核、插件契约、控制配置与硬件、M1/M2/M3 ROS、100 次会话重置、报告门禁负例、全部运动案例、bringup、SDF 场景、单机/多机 launch |
 | M1 / M2 子集 | `bash scripts/test_m1.sh` / `bash scripts/test_m2.sh` | 按阶段选择测试，非完整新版本验收 |
 | 逐包独立发布检查 | `python3 scripts/checks/check_release_packages.py --work-dir /tmp/litesim-release-check` | 每次只有当前包源码，依赖来自已安装前缀，并执行该包测试 |
 | 安装后独立运行 | `python3 scripts/checks/check_m3_install.py` | 新目录构建、隐藏源码副本后验证安装资源和节点 |

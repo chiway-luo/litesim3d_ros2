@@ -1,0 +1,5 @@
+/**:
+  ros__parameters:
+    use_sim_time: true  # 与仿真 /clock 一致。
+    frame_prefix: ""  # 自定义前缀时，与仿真 frame_prefix 同步配置。
+    publish_frequency: 200.0  # 活动关节 TF 的最大发布频率，Hz。

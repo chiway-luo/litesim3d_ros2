@@ -12,3 +12,7 @@
 | [外部里程计插件](external_plugins/README.md) | 独立安装、加载和替换插件 |
 
 调整配置前先查[逐插件参数](../docs/api/plugins/README.md)；新增自己的模型按[模型接入](../docs/usage/模型接入.md)组织资源。
+
+阿克曼与三轮/四轮普通全向案例默认使用外部 ros2_control，配置和算法接管步骤见 [教程](../docs/tutorials/阿克曼与全向轮ros2_control.md)。
+
+全部现有车型的默认入口均已配置 ros2_control；四轮车、无人机及独立第三方定高算法见 [全部模型与第三方算法](../docs/tutorials/全部模型与第三方算法ros2_control.md)。麦克纳姆不在当前仓库模型范围内。

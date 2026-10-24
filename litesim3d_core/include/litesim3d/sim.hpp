@@ -275,6 +275,7 @@ Pose integrate(const Pose &initial, double v, double w, double dt);
 // Level, velocity-controlled multicopter: body XYZ translation and yaw.
 Pose integrateFlight(const Pose &initial, const Vec3 &velocity, double yaw_rate, double dt);
 struct Config {
+  std::string control_mode = "twist";
   uint64_t step_ns = 5000000, seed = 42;
   bool collision_budget_enabled = false;
   double odom_rate = 50, timeout = 0.5, real_time_factor = 1;
@@ -306,6 +307,16 @@ struct Command {
   double v = 0, w = 0, lateral = 0, vertical = 0, roll_rate = 0, pitch_rate = 0;
   std::optional<uint64_t> stamp;
   std::string frame;
+};
+enum class JointCommandMode : uint8_t { Hold = 0, Position = 1, Velocity = 2 };
+struct JointTarget {
+  JointCommandMode mode = JointCommandMode::Hold;
+  double value = 0;
+};
+struct JointCommand {
+  std::map<std::string, JointTarget> joints;
+  std::optional<uint64_t> stamp;
+  std::optional<plugins::Twist> body_velocity; // Kinematic multicopter only; base frame.
 };
 struct Snapshot {
   uint64_t stamp = 1;
@@ -344,6 +355,7 @@ public:
   State state() const { return state_; }
   uint64_t stepIndex() const { return step_; }
   bool command(const Command &cmd);
+  bool jointCommand(const JointCommand &cmd);
   void pause(bool paused);
   std::vector<Event> tick();
   StepResult singleStep(const std::string &request_id, uint32_t count, std::vector<Event> &output);
@@ -373,6 +385,7 @@ private:
   void beginStep();
   uint64_t nextEvent(uint64_t end) const;
   MotionStep prepareMotion(uint64_t next);
+  plugins::DriveStep prepareJointMotion(double dt) const;
   std::optional<Event> advanceMotion(uint64_t next, const MotionStep &motion);
   void finishStep();
   std::vector<Vec3> supportPoints() const;
@@ -406,6 +419,12 @@ private:
   bool started_ = false, timed_out_ = false;
   Command target_;
   std::optional<Command> pending_;
+  JointCommand joint_target_;
+  std::optional<JointCommand> pending_joints_;
+  plugins::JointDrivenChassis *joint_chassis_ = nullptr;
+  bool body_control_ = false;
+  std::set<std::string> driven_joints_, passive_joints_;
+  std::map<std::string, std::pair<double, double>> joint_position_limits_;
   std::vector<uint64_t> lidar_indices_;
   std::vector<uint64_t> imu_indices_;
   std::vector<uint64_t> camera_indices_;
@@ -436,6 +455,7 @@ public:
   size_t size() const { return robots_.size(); }
   const Simulator &robot(size_t index) const { return *robots_.at(index); }
   bool command(size_t index, const Command &command);
+  bool jointCommand(size_t index, const JointCommand &command);
   void pause(bool paused);
   void fault(const std::string &reason);
   void exit();

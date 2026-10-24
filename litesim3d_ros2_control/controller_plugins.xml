@@ -1,0 +1,8 @@
+<library path="litesim3d_omni_controller">
+  <class name="litesim3d_ros2_control/OmniDriveController" type="litesim3d_ros2_control::OmniDriveController" base_class_type="controller_interface::ControllerInterface">
+    <description>Twist to wheel velocity controller for three or four ordinary omni wheels.</description>
+  </class>
+  <class name="litesim3d_ros2_control/BodyVelocityController" type="litesim3d_ros2_control::BodyVelocityController" base_class_type="controller_interface::ControllerInterface">
+    <description>XYZ body velocity and yaw controller for the kinematic multicopter GPIO resource.</description>
+  </class>
+</library>

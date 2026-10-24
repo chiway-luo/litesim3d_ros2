@@ -1,20 +1,8 @@
 /**:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: true  # RSP、控制器和传感器使用仿真时钟。
 /litesim3d:
   ros__parameters:
-    frame_prefix: ''
-    cmd_mode: twist
-    sensor_reliable: false
-    publish_odom_tf: true
-    external_odom_tf: false
-    wait_for_robot_state_publisher: true
-    robot_state_publisher_name: robot_state_publisher
-    startup_timeout: 15.0
-    start_paused: false
-/robot_state_publisher:
-  ros__parameters:
-    publish_frequency: 200.0
-/rviz2:
-  ros__parameters:
-    use_sim_time: true
+    publish_odom_tf: true  # 本案例由仿真理想里程计发布 odom→base_link。
+    external_odom_tf: false  # 未启用其他里程计 TF 来源。
+    start_paused: false  # 启动后推进仿真；可通过 launch paused:=true 覆盖。

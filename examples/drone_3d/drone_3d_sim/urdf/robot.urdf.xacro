@@ -1,0 +1,350 @@
+<?xml version="1.0"?>
+<!-- 与原 quadrotor/model.sdf 相同的机械几何；RSP 单独展开此文件。 -->
+<robot name="quadrotor">
+  <link name="base_link">
+    <visual name="body">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.42 0.28 0.16" />
+      </geometry>
+      <material name="material_body">
+        <color rgba="0.12 0.37 0.55 1" />
+      </material>
+    </visual>
+    <visual name="battery">
+      <origin xyz="0 0 0.12" rpy="0 0 0" />
+      <geometry>
+        <box size="0.26 0.18 0.1" />
+      </geometry>
+      <material name="material_battery">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_-0.32_-0.32_arm">
+      <origin xyz="-0.16 -0.16 0" rpy="0 0 -2.3561945" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+      <material name="material_motor_-0.32_-0.32_arm">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_-0.32_-0.32">
+      <origin xyz="-0.32 -0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+      <material name="material_motor_-0.32_-0.32">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_-0.32_-0.32_rotor">
+      <origin xyz="-0.32 -0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+      <material name="material_motor_-0.32_-0.32_rotor">
+        <color rgba="0.25 0.29 0.32 1" />
+      </material>
+    </visual>
+    <visual name="motor_-0.32_0.32_arm">
+      <origin xyz="-0.16 0.16 0" rpy="0 0 2.3561945" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+      <material name="material_motor_-0.32_0.32_arm">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_-0.32_0.32">
+      <origin xyz="-0.32 0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+      <material name="material_motor_-0.32_0.32">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_-0.32_0.32_rotor">
+      <origin xyz="-0.32 0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+      <material name="material_motor_-0.32_0.32_rotor">
+        <color rgba="0.25 0.29 0.32 1" />
+      </material>
+    </visual>
+    <visual name="motor_0.32_-0.32_arm">
+      <origin xyz="0.16 -0.16 0" rpy="0 0 -0.78539816" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+      <material name="material_motor_0.32_-0.32_arm">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_0.32_-0.32">
+      <origin xyz="0.32 -0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+      <material name="material_motor_0.32_-0.32">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_0.32_-0.32_rotor">
+      <origin xyz="0.32 -0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+      <material name="material_motor_0.32_-0.32_rotor">
+        <color rgba="0.25 0.29 0.32 1" />
+      </material>
+    </visual>
+    <visual name="motor_0.32_0.32_arm">
+      <origin xyz="0.16 0.16 0" rpy="0 0 0.78539816" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+      <material name="material_motor_0.32_0.32_arm">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_0.32_0.32">
+      <origin xyz="0.32 0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+      <material name="material_motor_0.32_0.32">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="motor_0.32_0.32_rotor">
+      <origin xyz="0.32 0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+      <material name="material_motor_0.32_0.32_rotor">
+        <color rgba="0.25 0.29 0.32 1" />
+      </material>
+    </visual>
+    <visual name="skid-0.2">
+      <origin xyz="0 -0.2 -0.22" rpy="0 0 0" />
+      <geometry>
+        <box size="0.52 0.035 0.035" />
+      </geometry>
+      <material name="material_skid-0.2">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="leg-0.18_-0.2">
+      <origin xyz="-0.18 -0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+      <material name="material_leg-0.18_-0.2">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="leg0.18_-0.2">
+      <origin xyz="0.18 -0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+      <material name="material_leg0.18_-0.2">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="skid0.2">
+      <origin xyz="0 0.2 -0.22" rpy="0 0 0" />
+      <geometry>
+        <box size="0.52 0.035 0.035" />
+      </geometry>
+      <material name="material_skid0.2">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="leg-0.18_0.2">
+      <origin xyz="-0.18 0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+      <material name="material_leg-0.18_0.2">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <visual name="leg0.18_0.2">
+      <origin xyz="0.18 0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+      <material name="material_leg0.18_0.2">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <collision name="body">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.42 0.28 0.16" />
+      </geometry>
+    </collision>
+    <collision name="motor_-0.32_-0.32_arm">
+      <origin xyz="-0.16 -0.16 0" rpy="0 0 -2.3561945" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+    </collision>
+    <collision name="motor_-0.32_-0.32">
+      <origin xyz="-0.32 -0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+    </collision>
+    <collision name="motor_-0.32_-0.32_rotor">
+      <origin xyz="-0.32 -0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+    </collision>
+    <collision name="motor_-0.32_0.32_arm">
+      <origin xyz="-0.16 0.16 0" rpy="0 0 2.3561945" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+    </collision>
+    <collision name="motor_-0.32_0.32">
+      <origin xyz="-0.32 0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+    </collision>
+    <collision name="motor_-0.32_0.32_rotor">
+      <origin xyz="-0.32 0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+    </collision>
+    <collision name="motor_0.32_-0.32_arm">
+      <origin xyz="0.16 -0.16 0" rpy="0 0 -0.78539816" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+    </collision>
+    <collision name="motor_0.32_-0.32">
+      <origin xyz="0.32 -0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+    </collision>
+    <collision name="motor_0.32_-0.32_rotor">
+      <origin xyz="0.32 -0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+    </collision>
+    <collision name="motor_0.32_0.32_arm">
+      <origin xyz="0.16 0.16 0" rpy="0 0 0.78539816" />
+      <geometry>
+        <box size="0.46 0.06 0.055" />
+      </geometry>
+    </collision>
+    <collision name="motor_0.32_0.32">
+      <origin xyz="0.32 0.32 0.055" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.06" length="0.12" />
+      </geometry>
+    </collision>
+    <collision name="motor_0.32_0.32_rotor">
+      <origin xyz="0.32 0.32 0.13" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.18" length="0.018" />
+      </geometry>
+    </collision>
+    <collision name="skid-0.2">
+      <origin xyz="0 -0.2 -0.22" rpy="0 0 0" />
+      <geometry>
+        <box size="0.52 0.035 0.035" />
+      </geometry>
+    </collision>
+    <collision name="leg-0.18_-0.2">
+      <origin xyz="-0.18 -0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+    </collision>
+    <collision name="leg0.18_-0.2">
+      <origin xyz="0.18 -0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+    </collision>
+    <collision name="skid0.2">
+      <origin xyz="0 0.2 -0.22" rpy="0 0 0" />
+      <geometry>
+        <box size="0.52 0.035 0.035" />
+      </geometry>
+    </collision>
+    <collision name="leg-0.18_0.2">
+      <origin xyz="-0.18 0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+    </collision>
+    <collision name="leg0.18_0.2">
+      <origin xyz="0.18 0.2 -0.13" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.18" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="lidar_link">
+    <visual name="lidar">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.07" length="0.08" />
+      </geometry>
+      <material name="material_lidar">
+        <color rgba="0.85 0.84 0.77 1" />
+      </material>
+    </visual>
+    <collision name="lidar">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.07" length="0.08" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="imu_link" />
+  <link name="camera_optical_frame">
+    <visual name="camera">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.08 0.06" />
+      </geometry>
+      <material name="material_camera">
+        <color rgba="0.1 0.14 0.19 1" />
+      </material>
+    </visual>
+    <collision name="camera">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.08 0.06" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="lidar_link_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="lidar_link" />
+    <origin xyz="0 0 0.25" rpy="0 0 0" />
+  </joint>
+  <joint name="imu_link_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="imu_link" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+  <joint name="camera_optical_frame_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="camera_optical_frame" />
+    <origin xyz="0.25 0 -0.03" rpy="-1.5707963 0 -1.5707963" />
+  </joint>
+</robot>

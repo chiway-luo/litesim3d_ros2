@@ -2,6 +2,7 @@
 schema_version: 1
 units: m_rad_s
 simulation:
+  control_mode: ros2_control  # 沿用四轮车的外部控制器。
   seed: 42
   odom_rate: 50.0
   command_timeout: 0.5
@@ -11,7 +12,7 @@ simulation:
   collision_budget_enabled: false
 robot:
   id: wheel_car_4w
-  urdf: ../urdf/simulation.urdf.xacro
+  urdf: ""  # launch 显式传入组合模型路径。
   base_link: base_link
   continue_on_collision: true
   support_links: [rear_left_wheel_link, rear_right_wheel_link, front_left_wheel_link, front_right_wheel_link]

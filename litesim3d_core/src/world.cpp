@@ -236,6 +236,9 @@ std::unique_ptr<World> World::load(const std::filesystem::path &file) {
 bool World::command(size_t index, const Command &command) {
   return robots_.at(index)->command(command);
 }
+bool World::jointCommand(size_t index, const JointCommand &command) {
+  return robots_.at(index)->jointCommand(command);
+}
 void World::pause(bool paused) {
   for (auto &r : robots_)
     r->pause(paused);

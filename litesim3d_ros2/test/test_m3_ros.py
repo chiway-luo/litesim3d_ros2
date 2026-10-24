@@ -24,7 +24,7 @@ def executable(name):
     return str(Path(get_package_prefix('litesim3d_ros2'))/'lib/litesim3d_ros2'/name)
 
 
-def start_world(h, count, *, ready=True, command_timeout=100.0, range_boundary=False, mid360=False, **settings):
+def start_world(h, count, *, ready=True, command_timeout=100.0, range_boundary=False, mid360=False, rsp=True, **settings):
     m2_config(h)
     h.config['entities'] = []
     h.config['simulation']['command_timeout'] = command_timeout
@@ -51,8 +51,9 @@ def start_world(h, count, *, ready=True, command_timeout=100.0, range_boundary=F
         params.write_text(yaml.safe_dump({'/**':{'ros__parameters':{
             'robot_description':urdf.read_text(), 'frame_prefix':name+'/',
             'use_sim_time':True, 'publish_frequency':200.0}}}))
-        h.process(name+'-rsp', [str(Path(get_package_prefix('robot_state_publisher'))/'lib/robot_state_publisher/robot_state_publisher'),
-                               '--ros-args', '--params-file', str(params), '-r', '__ns:=/'+name])
+        if rsp:
+            h.process(name+'-rsp', [str(Path(get_package_prefix('robot_state_publisher'))/'lib/robot_state_publisher/robot_state_publisher'),
+                                   '--ros-args', '--params-file', str(params), '-r', '__ns:=/'+name])
         h.subscribe(name+'-odom', Odometry, '/'+name+'/odom')
         reliable = settings.get('sensor_reliable', False)
         h.subscribe(name+'-cloud', PointCloud2, '/'+name+'/points_raw', reliable=reliable)

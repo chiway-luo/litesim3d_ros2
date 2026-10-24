@@ -17,7 +17,7 @@ from litesim3d_test_support import SimulationHarness, stamp
 
 @pytest.fixture
 def drone(tmp_path):
-    rig = SimulationHarness(tmp_path, package='drone_3d_sim', launch_file='drone_3d.launch.py')
+    rig = SimulationHarness(tmp_path, package='drone_3d_sim', launch_file='legacy_twist.launch.py')
     rig.subscribe('truth', Odometry, '/sim/ground_truth/quadrotor/odom', 100)
     yield rig
     rig.close()
@@ -71,7 +71,7 @@ def test_flight_xyz_yaw_sensors_pause_and_watchdog(drone):
 
 
 def test_descent_stops_at_floor_with_budget_disabled(drone):
-    rig=drone;data=yaml.safe_load((rig.share/'config/runtime.yaml').read_text())
+    rig=drone;data=yaml.safe_load((rig.share/'config/runtime_twist.yaml').read_text())
     data['robot']['drive'].update(unlimited_acceleration=True,max_v=10)
     config=rig.directory/'descent.yaml';config.write_text(yaml.safe_dump(data))
     rig.start(runtime=str(config),paused='true',collision_budget_enabled='false')
@@ -86,7 +86,7 @@ def test_descent_stops_at_floor_with_budget_disabled(drone):
 
 @pytest.mark.skipif(os.environ.get('LWS_GUI_TESTS')!='1',reason='requires a desktop graphics backend')
 def test_rgbd_topics_follow_altitude_without_camera_window(drone):
-    rig=drone;data=yaml.safe_load((rig.share/'config/runtime.yaml').read_text())
+    rig=drone;data=yaml.safe_load((rig.share/'config/runtime_twist.yaml').read_text())
     data['cameras'][0].update(enabled=True,type='rgbd',width=160,height=120,rate_hz=10)
     data['robot']['drive']['unlimited_acceleration']=True
     config=rig.directory/'rgbd.yaml';config.write_text(yaml.safe_dump(data))

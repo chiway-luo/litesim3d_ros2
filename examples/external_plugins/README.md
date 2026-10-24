@@ -20,3 +20,7 @@ bash scripts/test_external_plugin.sh /tmp/litesim3d-external-test /tmp/litesim3d
 ```
 
 只改变配置和安装空间；无需给核心添加类名白名单、源文件或链接目标。主工程接口 ABI 变化时，外部插件需要针对同一版 API 重新编译；这不属于运行中热替换。
+
+## 外部 ros2_control 算法
+
+[定高控制器](litesim3d_example_altitude_controller/README.md) 是另一个独立包：只依赖标准 ControllerInterface，读取机体高度反馈、输出 XYZ / 偏航速度接口。它通过 controller_manager 与默认速度控制器交换资源，不替换里程计或传感器插件。

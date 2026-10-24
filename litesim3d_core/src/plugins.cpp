@@ -44,6 +44,37 @@ void Simulator::initializeMotionPlugins() {
     }
   }
   require(bool(chassis_plugin_) == bool(odometry_plugin_), "chassis and odometry plugins must be declared together");
+  if (config_.control_mode == "ros2_control") {
+    joint_chassis_ = dynamic_cast<plugins::JointDrivenChassis *>(chassis_plugin_.get());
+    body_control_ = !chassis_plugin_ && config_.drive.model == "multicopter";
+    require(joint_chassis_ || body_control_, "ros2_control requires JointDrivenChassis or the kinematic multicopter");
+    if (joint_chassis_) {
+      driven_joints_ = joint_chassis_->drivenJoints();
+      require(!driven_joints_.empty(), "joint-driven chassis returned no drive joints");
+      for (const auto &name : driven_joints_)
+        require(model_.joints.count(name) && model_.joints.at(name).type == "continuous" &&
+                model_.joints.at(name).mimic.empty(), "invalid joint-driven wheel: " + name);
+      passive_joints_ = joint_chassis_->passiveJoints();
+      for (const auto &name : passive_joints_)
+        require(model_.joints.count(name) && model_.joints.at(name).type == "continuous" &&
+                model_.joints.at(name).mimic.empty() && !driven_joints_.count(name),
+                "invalid passive wheel: " + name);
+      joint_position_limits_ = joint_chassis_->positionLimits();
+      for (auto &[name, bounds] : joint_position_limits_) {
+        require(model_.joints.count(name) && model_.joints.at(name).type == "revolute" &&
+                model_.joints.at(name).mimic.empty() && std::isfinite(bounds.first) &&
+                std::isfinite(bounds.second), "invalid joint position limits: " + name);
+        bounds.first = std::max(bounds.first, model_.joints.at(name).lower);
+        bounds.second = std::min(bounds.second, model_.joints.at(name).upper);
+        require(bounds.first <= current_.joints.at(name) && current_.joints.at(name) <= bounds.second,
+                "initial position outside chassis joint limits: " + name);
+      }
+    }
+    for (const auto &[name, joint] : model_.joints)
+      if (joint.type != "fixed" && joint.mimic.empty())
+        require(std::isfinite(joint.velocity) && joint.velocity > 0,
+                "ros2_control requires a finite positive URDF velocity limit: " + name);
+  }
   for (const auto &link : config_.drive.support_links)
     require(model_.links.count(link), "unknown support link: " + link);
   initializeSensorPlugins(init);
@@ -131,7 +162,7 @@ void Simulator::processCamera(size_t index, plugins::ImageFrame &image) {
 void Simulator::moveSteering(const std::map<std::string, double> &targets) {
   if (targets.empty()) return;
   const auto initial = current_.joints;
-  double angular_distance = 0, reach = 0, geometry_reach = 0;
+  double angular_distance = 0, linear_distance = 0, reach = 0, geometry_reach = 0;
   for (const auto &[name, joint] : model_.joints) reach += joint.origin.translation().norm();
   for (const auto &g : model_.collision)
     geometry_reach = std::max(geometry_reach, g.transform.translation().norm() +
@@ -140,12 +171,21 @@ void Simulator::moveSteering(const std::map<std::string, double> &targets) {
   for (const auto &[name, value] : targets) {
     require(model_.joints.count(name), "plugin returned unknown steering joint: " + name);
     const auto &joint = model_.joints.at(name);
-    require(joint.type == "revolute" && joint.mimic.empty(), "plugin steering target requires independent revolute joint: " + name);
+    require((joint.type == "revolute" || (config_.control_mode == "ros2_control" &&
+            (joint.type == "continuous" || joint.type == "prismatic"))) && joint.mimic.empty(),
+            "invalid independently controlled joint: " + name);
     require(std::isfinite(value) && value >= joint.lower && value <= joint.upper, "plugin steering target exceeds joint limits: " + name);
-    angular_distance += std::abs(value - initial.at(name));
+    if (joint.type == "prismatic") linear_distance += std::abs(value - initial.at(name));
+    else angular_distance += std::abs(value - initial.at(name));
   }
-  if (angular_distance < 1e-14) return;
-  const double speed_bound = 2 * reach * angular_distance;
+  if (angular_distance + linear_distance < 1e-14) return;
+  // Include prismatic reach and mimic amplification in the conservative sweep.
+  double amplification = 1;
+  for (const auto &[name, joint] : model_.joints) {
+    if (joint.type == "prismatic") reach += std::max(std::abs(joint.lower), std::abs(joint.upper));
+    if (!joint.mimic.empty()) amplification *= 1 + std::abs(joint.multiplier);
+  }
+  const double speed_bound = (2 * reach * angular_distance + linear_distance) * amplification;
   auto sample = [&](double fraction) {
     auto q = initial;
     for (const auto &[name, value] : targets) q[name] += fraction * (value - initial.at(name));
