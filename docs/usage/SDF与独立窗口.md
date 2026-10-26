@@ -44,9 +44,9 @@ examples/
 
 包使用 ament 分别安装到 `share/wheel_car_4w_models` 和 `share/drone_3d_models`；`get_package_share_directory()` 依据包名查询安装索引，不依赖源码位置。资源可以搬迁后重新构建或重新 source。以下参数表以小车为例；无人机默认 `assets_root` 为 `drone_3d_models` 的 share 路径，默认世界为 `drone_arena.sdf`。
 
-SDF 提供 world/include、几何、link/joint、初始位姿、材质和灯光。可选 `<gui><camera><pose>` 指定世界坐标系下的观察初始视角，仅影响查看器；不引入其他交互控件。`<physics>` 的 `max_step_size`、`real_time_factor` 提供积分步长及默认目标速率；这里只使用计时参数，仍是运动学内核，不执行 Ode/Bullet 刚体求解。
+SDF 提供 world/include、几何、link/joint、场景物体位姿、材质和灯光。机器人出生位姿从 `params` 指定的 ROS 参数文件加载，字段为 `initial_pose_override`。可选 `<gui><camera><pose>` 指定世界坐标系下的观察初始视角，仅影响查看器；不引入其他交互控件。`<physics>` 的 `max_step_size`、`real_time_factor` 提供积分步长及默认目标速率；这里只使用计时参数，仍是运动学内核，不执行 Ode/Bullet 刚体求解。
 
-`wheel_car_4w_sim/config/runtime.yaml` 中 robot.urdf 留空，由案例 launch 动态传入组合 `simulation.urdf.xacro`，并保留碰撞、地形和 `entity_bindings`。组合模型提供完整机器人结构、材质及插件；同名 SDF model 只提供 root 出生位姿。没有 `robot.urdf` 时保留 SDF 定义机器人和旧 YAML 绑定的兼容入口。两种方式都不能在 runtime 重复场景几何、初始位姿、步长或目标速率。完整规则见 [模型组合与插件迁移](模型组合与插件迁移.md)。
+`wheel_car_4w_sim/config/runtime.yaml` 中 robot.urdf 留空，由案例 launch 动态传入组合 `simulation.urdf.xacro`，并保留碰撞、地形和 `entity_bindings`。组合模型提供完整机器人结构、材质及插件；同名 SDF model 保留机器人身份及 root 默认位姿，供未设置出生参数的调用方使用。没有 `robot.urdf` 时保留 SDF 定义机器人和旧 YAML 绑定的兼容入口。两种方式都不能在 runtime 重复场景几何、初始位姿、步长或目标速率；出生位姿通过 ROS 参数 `initial_pose_override` 覆盖。完整规则见 [模型组合与插件迁移](模型组合与插件迁移.md)。
 
 完整参数、默认值及通用入口与车型入口的区别见 [启动与节点参数](../api/启动与节点参数.md)。
 
@@ -62,7 +62,7 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
 
 ## 导入资源前检查
 
-当前入口使用固定环境和一个受控机器人。先核对机器人 ID、资源文件、碰撞几何和材质；资源缺失或不支持的特性会在导入时报告具体原因。平面用所需范围的薄 box，原生 SDF 传感器转换为 LiteSim 声明；不能直接执行 Gazebo 动力学插件。
+当前入口使用固定环境和一个受控机器人。先核对机器人 ID、资源文件、碰撞几何和材质；资源缺失或不支持的特性会在导入时报告具体原因。平面用所需范围的薄 box，传感器须在组合模型或兼容 runtime 中声明，原生 SDF 传感器和 Gazebo 动力学插件不支持。
 
 完整格式、材质、网格与拒绝项见 [SDF 兼容范围](../api/坐标与模型约定.md#sdf-资源兼容范围)。文件解析成功不等于完成视觉或动力学验收。
 
@@ -77,8 +77,6 @@ real_time_factor 只设目标节拍；实际速度由场景、传感器和渲染
 开发与运行环境为 Ubuntu 22.04 + ROS 2 Humble。SDF 与图形模块依赖 libsdformat12、Gazebo Rendering 6、Qt 5 Widgets 和 Qt 5 SVG；依赖安装命令见[安装依赖](安装与构建.md#安装依赖)，构建方式见[安装与构建](安装与构建.md)。
 
 无需图形包时使用 `LWS_BUILD_GUI=0 bash scripts/build.sh`，运行时加 `gui:=false cameras:=false`。单独内核不启动 ROS 节点、不链接 Qt/Ogre；插件加载使用 pluginlib 及已安装插件。启用 RGB/深度相机需要图形包和可用的 Ogre2 图形环境，即使关闭所有窗口也需要渲染后端。图形功能的验证需对应具体平台和渲染环境，内核测试通过不代表图形功能已完成验证。
-
-完整证据与尚未验证项见 [SDF 实现验证](../testing/SDF实现验证.md)。
 
 ## 车载 RGB 与深度相机
 

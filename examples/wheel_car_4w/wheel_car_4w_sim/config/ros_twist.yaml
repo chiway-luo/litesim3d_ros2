@@ -17,9 +17,8 @@
     start_paused: false               # true 表示就绪后暂停；launch paused:= 可覆盖。
     manifest_path: ""                 # 可选绝对 JSON 路径；launch manifest:= 可覆盖。
     test_drop_frames: 0               # 故障注入参数 0..100；正常使用保持 0。
-    # 初值通常只改 simulation.yaml/robot.initial_pose。
-    # 可选四元数覆盖：[x,y,z,qx,qy,qz,qw]；未启用时省略，避免空数组类型歧义。
-    # initial_pose_override: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    # 出生位姿：世界坐标下 runtime.robot.base_link 的 [x, y, z, qx, qy, qz, qw]，位置单位 m。
+    initial_pose_override: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
 /robot_state_publisher:
   ros__parameters:

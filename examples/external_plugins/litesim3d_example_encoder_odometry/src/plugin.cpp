@@ -1,11 +1,22 @@
 #include <litesim3d_plugin_api/motion.hpp>
+#include <litesim3d_plugin_api/model_geometry.hpp>
 #include <pluginlib/class_list_macros.hpp>
 
 namespace litesim3d::plugins {
 // This example is deliberately independent of every provided implementation.
 // It depends only on the public API and has no simulator source dependency.
-class ExampleEncoderOdometry : public OdometryPlugin {
+class ExampleEncoderOdometry : public OdometryPlugin, public ModelParameters {
 public:
+  Json resolveModelParameters(const ModelGeometry &geometry, const Json &values) const override {
+    auto bindings = values;
+    bindings["left_joints"] = {values.at("left_joint")};
+    bindings["right_joints"] = {values.at("right_joint")};
+    const auto resolved = differentialGeometry(geometry, bindings);
+    auto result = values;
+    result["wheel_radius_m"] = resolved.at("wheel_radius_m");
+    result["wheel_separation_m"] = resolved.at("wheel_separation_m");
+    return result;
+  }
   Json defaults() const override {
     return {{"left_joint", nullptr}, {"right_joint", nullptr}, {"wheel_radius_m", nullptr},
             {"wheel_separation_m", nullptr}, {"distance_scale", 1.0}};

@@ -18,11 +18,9 @@
 /diff_drive_controller:
   ros__parameters:
     use_sim_time: true
-    # 与 description/config/geometry.yaml 的驱动关节、轮径和轮距保持一致。
+    # 绑定驱动关节；轮径和轮距由启动器从控制 URDF 自动填写。
     left_wheel_names: [rear_left_wheel_joint]
     right_wheel_names: [rear_right_wheel_joint]
-    wheel_radius: 0.12  # m，轮胎半径。
-    wheel_separation: 0.58  # m，左右轮中心线距离。
     wheels_per_side: 1  # 每侧一个独立后轮，前轮 mimic。
     position_feedback: true  # 由仿真实际轮角计算里程计。
     open_loop: false  # 使用状态反馈，不从速度指令直接推算里程计。

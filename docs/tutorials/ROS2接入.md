@@ -59,4 +59,4 @@ python3 docs/examples/ros_client.py --duration 3 --imu-topic imu/not_present --r
 | 暂停后控制/监测停止 | ROS 时间 timer 会随仿真暂停；运行时限和退出监测使用墙钟 |
 | 里程计/TF 跳变 | 检查 odom TF 是否由多个节点发布；外部估计器接管时明确关闭仿真发布者 |
 
-最后停止终端 A 的 launch。接下来可查看[算法接入与日常操作](../usage/接入与使用手册.md#接入自己的算法或控制器)、[多机器人](../usage/多机器人.md)或[插件开发](../development/插件开发.md)。
+最后停止终端 A 的 launch。接下来可查看[算法接入与日常操作](../usage/接入与使用手册.md#接入自己的算法或控制器)、[多机器人](../usage/多机器人.md)或[插件接口](../api/插件接口.md)。

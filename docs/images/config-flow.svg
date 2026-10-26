@@ -32,7 +32,7 @@
 <title>s</title>
 <path fill="#eef6fb" stroke="#457b9d" d="M159.54,-140.78C159.54,-140.78 12,-140.78 12,-140.78 6,-140.78 0,-134.78 0,-128.78 0,-128.78 0,-95 0,-95 0,-89 6,-83 12,-83 12,-83 159.54,-83 159.54,-83 165.54,-83 171.54,-89 171.54,-95 171.54,-95 171.54,-128.78 171.54,-128.78 171.54,-134.78 165.54,-140.78 159.54,-140.78"/>
 <text xml:space="preserve" text-anchor="middle" x="85.77" y="-118.84" font-family="PingFang SC" font-size="14.00">SDF 世界</text>
-<text xml:space="preserve" text-anchor="middle" x="85.77" y="-98.59" font-family="PingFang SC" font-size="14.00">场景 / 时钟 / 出生位姿</text>
+<text xml:space="preserve" text-anchor="middle" x="85.77" y="-98.59" font-family="PingFang SC" font-size="14.00">场景 / 时钟 / 默认位姿</text>
 </g>
 <!-- s&#45;&gt;p -->
 <g id="edge2" class="edge">

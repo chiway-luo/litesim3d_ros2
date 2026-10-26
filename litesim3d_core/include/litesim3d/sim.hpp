@@ -11,6 +11,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <litesim3d_plugin_api/declarations.hpp>
+#include <litesim3d_plugin_api/model_geometry.hpp>
 #include <optional>
 #include <random>
 #include <set>
@@ -154,6 +155,7 @@ struct Model {
                                         const std::map<std::string, double> &targets,
                                         double dt) const;
   std::map<std::string, Pose> fk(const std::map<std::string, double> &q) const;
+  plugins::ModelGeometry mechanicalGeometry(const std::string &base_link) const;
   std::vector<Geometry> placed(const std::vector<Geometry> &geometries, const Pose &world_base,
                                const std::string &base_link,
                                const std::map<std::string, double> &q) const;
@@ -282,6 +284,7 @@ struct Config {
   std::string robot_id = "robot_0", base_link = "base_link";
   Pose initial_pose = Pose::Identity();
   Drive drive;
+  std::set<std::string> inferred_drive_fields; // omitted legacy YAML geometry, resolved from URDF
   TerrainConfig terrain;
   OdomError odom_error;
   unsigned threads = 1;

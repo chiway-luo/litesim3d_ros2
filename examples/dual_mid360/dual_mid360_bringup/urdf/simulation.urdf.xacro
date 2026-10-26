@@ -4,16 +4,16 @@
   <xacro:include filename="$(find dual_mid360_description)/urdf/rover.urdf.xacro"/>
   <litesim3d version="1">
     <chassis name="drive" class="litesim3d_diff_drive/DifferentialDrive">
-      <!-- 先读插件默认值，再用 geometry.yaml 的 drive 段覆盖轮径、轮距和关节名。 -->
+      <!-- 先读插件默认值，再绑定驱动关节；尺寸由 URDF 自动提供。 -->
       <parameters file="package://litesim3d_diff_drive/config/parameters.yaml"/>
-      <parameters file="package://dual_mid360_description/config/geometry.yaml" section="drive"/>
+      <parameters file="package://dual_mid360_description/config/drive.yaml"/>
       <!-- 速度上限：max_linear_speed_mps 为 m/s，max_angular_speed_radps 为 rad/s。 -->
       <overrides>limits: {max_linear_speed_mps: 0.5, max_angular_speed_radps: 0.8}</overrides>
     </chassis>
     <odometry name="wheel_odometry" class="litesim3d_diff_odometry/DifferentialOdometry">
-      <!-- 编码器里程计与底盘共用同一 drive 段，保持轮径、轮距和驱动关节一致。 -->
+      <!-- 编码器里程计与底盘绑定同一组关节，并从 URDF 获取几何。 -->
       <parameters file="package://litesim3d_diff_odometry/config/parameters.yaml"/>
-      <parameters file="package://dual_mid360_description/config/geometry.yaml" section="drive"/>
+      <parameters file="package://dual_mid360_description/config/drive.yaml"/>
     </odometry>
     <!-- name 是独立传感器实例名；section 选择 sensors.yaml 中对应的参数段。 -->
     <sensor name="front_mid360" class="litesim3d_mid360/Mid360">

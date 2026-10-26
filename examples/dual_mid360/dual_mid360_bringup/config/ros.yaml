@@ -4,6 +4,8 @@
     use_sim_time: true  # 仿真节点和 RViz 使用 /clock 提供的仿真时间。
 /litesim3d:
   ros__parameters:
+    # 出生位姿：世界坐标下的 base_link，[x, y, z, qx, qy, qz, qw]，位置单位 m。
+    initial_pose_override: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     publish_odom_tf: false  # odom → base_link 交给 diff_drive_controller，关节 TF 交给 RSP。
     external_odom_tf: true  # 声明 odom TF 是否由外部节点负责；为 true 时必须关闭上项。
     start_paused: false  # false：启动后推进仿真；true：从暂停状态开始。

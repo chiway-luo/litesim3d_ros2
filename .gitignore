@@ -9,3 +9,6 @@ __pycache__/
 artifacts/
 evidence/
 .coverage*
+
+# Local development documents, drafts and documentation previews.
+/tmp/

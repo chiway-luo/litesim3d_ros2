@@ -1,23 +1,25 @@
 # 阿克曼 ros2_control 示例
 
-构建并 source 安装环境后执行：
+先完成[安装与构建](../../docs/usage/安装与构建.md)，两个终端加载同一安装环境和 ROS domain。
+
+终端 A：
 
 ```bash
 ros2 launch ackermann_sim ackermann.launch.py gui:=false
 ```
 
-另一个已 source 的终端发送车体速度：
+终端 B：
 
 ```bash
 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.4}, angular: {z: 0.2}}'
 ```
 
-默认由 标准 `ackermann_steering_controller` 接收速度并写入 LiteSimSystem 的关节接口；停止发布后 0.5 仿真秒停车。公共仿真 launch 不创建 RSP 或控制器，案例使用 `ld` 单独配置这些节点并显式传入参数文件。
+小车应按输入运动，`/odom` 和 `/joint_states` 持续更新。Ctrl+C 停止发布后，控制器默认在 0.5 仿真秒输入超时后停车；终端 A 按 Ctrl+C 结束仿真。
 
-`geometry.yaml` 是机械 Xacro、仿真底盘和编码器里程计共用的几何来源；`controllers.yaml` 的尺寸/数组须与其一致。`robot.urdf.xacro` 用于 RSP，`control.urdf.xacro` 声明控制硬件，`simulation.urdf.xacro` 声明仿真底盘和传感器插件；runtime 的模型路径留空，由 launch 动态定位。
+后轮接收速度，左右转向关节接收位置；前轮旋转仅提供反馈。转角范围 ±0.6 rad，不支持原地转向。
 
-本例使用仿真编码器里程计 `/odom` 和 odom TF；`joint_state_broadcaster` 是 `/joint_states` 的唯一发布者。碰撞后车体受阻，默认驱动轮和编码器里程计继续累计；`robot.continue_on_collision: false` 可停止驱动累计。阿克曼前轮旋转关节只提供状态，按实际行程被动滚动；转向关节范围为 ±0.6 rad。
+机械尺寸在 `urdf/mechanical.urdf.xacro` 中定义，`config/drive.yaml` 只绑定关节；仿真、里程计和控制器自动从完整 URDF 读取几何。`controllers.yaml` 配置控制设置，`runtime.yaml` 配置支撑和碰撞。出生位姿从 `config/ros.yaml` 的 `initial_pose_override` 加载；自定义文件用 `params:=绝对路径` 传入，格式见[初始位姿](../../docs/usage/接入与使用手册.md#初始位姿和运行中重置)。修改源码配置后重新构建并启动。
 
-省略 `gui:=false` 打开三维窗口；`rviz:=true` 打开 RViz；`cameras:=true` 开启前向 RGB，需要可用图形后端。world 提供固定地面、前墙和侧墙，车轮贴地；传感器跟随实际车体和关节。
+本例使用仿真编码器里程计 `/odom` 和 odom TF，joint_state_broadcaster 发布 `/joint_states`，RSP 发布内部 TF。默认碰撞时驱动轮仍可空转；`robot.continue_on_collision: false` 可停止驱动累计。
 
-完整的 world、URDF、控制器、launch 和第三方算法接管流程见 [阿克曼与全向轮接入 ros2_control](../../docs/tutorials/阿克曼与全向轮ros2_control.md)。
+省略 `gui:=false` 打开三维窗口，`rviz:=true` 开启 RViz；`cameras:=true` 启用相机，需要图形后端。完整配置和第三方算法接管见[阿克曼与全向轮教程](../../docs/tutorials/阿克曼与全向轮ros2_control.md)。

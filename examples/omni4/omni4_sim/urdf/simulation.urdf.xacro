@@ -5,11 +5,11 @@
   <litesim3d version="1">
     <chassis name="drive" class="litesim3d_omni4_drive/Omni4Drive">
       <parameters file="package://litesim3d_omni4_drive/config/parameters.yaml"/>
-      <parameters file="package://omni4_sim/config/geometry.yaml"/>
+      <parameters file="package://omni4_sim/config/drive.yaml"/>
     </chassis>
     <odometry name="wheel_odometry" class="litesim3d_omni_odometry/OmniOdometry">
       <parameters file="package://litesim3d_omni_odometry/config/parameters.yaml"/>
-      <parameters file="package://omni4_sim/config/geometry.yaml"/>
+      <parameters file="package://omni4_sim/config/drive.yaml"/>
     </odometry>
   </litesim3d>
 </robot>

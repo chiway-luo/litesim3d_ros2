@@ -267,6 +267,8 @@ Config Config::load(const std::filesystem::path &file, Scene &output, const std:
     if (auto q = r["initial_joints"])
       for (auto p : q)
         cfg.initial_joints[p.first.as<std::string>()] = p.second.as<double>();
+    for (const auto *field : {"wheel_radius", "wheel_separation"})
+      if (!r["drive"] || !r["drive"][field]) cfg.inferred_drive_fields.insert(field);
     if (auto d = r["drive"]) {
       keys(d,
            {"wheel_radius", "wheel_separation", "max_v", "max_w", "acceleration", "deceleration",

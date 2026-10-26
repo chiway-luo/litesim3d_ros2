@@ -368,6 +368,35 @@ std::map<std::string, Pose> Model::fk(const std::map<std::string, double> &q) co
   descend(root);
   return transforms;
 }
+plugins::ModelGeometry Model::mechanicalGeometry(const std::string &base_link) const {
+  require(links.count(base_link), "base_link is absent from URDF");
+  plugins::ModelGeometry result;
+  result.model.base_link = base_link;
+  result.model.links = links;
+  const auto neutral = fk({});
+  const Pose base_inverse = neutral.at(base_link).inverse();
+  for (const auto &[name, joint] : joints) {
+    plugins::JointDescription item;
+    item.type = joint.type; item.mimic = joint.mimic;
+    const Pose transform = base_inverse * neutral.at(joint.parent) * joint.origin;
+    item.position = transform.translation(); item.axis = transform.linear() * joint.axis;
+    item.lower = joint.lower; item.upper = joint.upper; item.max_velocity = joint.velocity;
+    for (const auto &[parent_name, parent] : joints)
+      if (parent.child == joint.parent) { item.parent_joint = parent_name; break; }
+    result.model.joints[name] = item;
+    if (joint.type != "continuous") continue;
+    double radius = 0;
+    bool valid = true;
+    for (const auto &g : collision) if (g.link == joint.child) {
+      if (g.shape->kind != Shape::Kind::Cylinder || g.transform.translation().norm() > 1e-9 ||
+          std::abs(g.transform.linear().col(2).dot(joint.axis)) < 1 - 1e-9 ||
+          (radius > 0 && std::abs(radius - g.shape->size.x()) > 1e-6)) valid = false;
+      else radius = g.shape->size.x();
+    }
+    if (valid && std::isfinite(radius) && radius > 0) result.wheel_radii[name] = radius;
+  }
+  return result;
+}
 std::vector<Geometry> Model::placed(const std::vector<Geometry> &source, const Pose &world_base,
                                     const std::string &base_link,
                                     const std::map<std::string, double> &q) const {

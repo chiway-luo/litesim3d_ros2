@@ -3,8 +3,7 @@ Changelog for package wheel_car_4w_models
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Prepared for the first planned 0.4.0 release. Entries consolidate development
-history; no earlier tagged releases or publication dates are implied. See the
-`repository development history <../../../CHANGELOG.rst>`_ for chronology and evidence.
+history; no earlier tagged releases or publication dates are implied.
 
 Forthcoming
 -----------

@@ -68,8 +68,9 @@ def generated(root=ROOT):
     index = [
         "# 标准插件参数", "",
         "按实例选择插件，参数在启动时读取；修改后重新启动，不支持运行中热切换。",
-        "数值默认值来自随包完整参数文件，并由插件契约测试与实现的 `defaults()` 校对。"
-        "标为必填的轮几何、关节、link 和 topic 没有缺省值，参数文件中的具体值只是示例。",
+        "数值默认值来自随包参数文件，并由插件契约测试与实现的 `defaults()` 校对。"
+        "标为必填的关节、link 和 topic 没有缺省值，文件中的绑定只是示例。"
+        "轮组几何和机械限位自动读取完整 URDF，不在 YAML 中重复配置。",
         "覆盖顺序、类生命周期和异常语义见[插件接口](../插件接口.md)。", "",
         "| 实现包 | 类别 | 参数参考 |", "| --- | --- | --- |",
     ]
@@ -94,6 +95,21 @@ def generated(root=ROOT):
             defaults_source = root / "litesim3d_plugin_api/src/motion.cpp"
         dependencies.append(defaults_source)
         required = set(re.findall(r'\{\s*"([^"]+)"\s*,\s*nullptr\s*\}', schema_code))
+        geometry_note = ""
+        if "resolveModelParameters(" in code:
+            dependencies.append(root / "litesim3d_plugin_api/src/model_geometry.cpp")
+            derived = {"wheel_radius_m", "wheel_separation_m", "wheelbase_m", "track_width_m"}
+            required -= derived
+            geometry_note = ("轮径来自轮 link 的居中共轴圆柱 collision；轮位与轴向来自完整 URDF 的关节树。"
+                             "启动时先解析模型几何，再校验完整参数。旧参数若与模型冲突会报错，不能用于补齐缺失的模型。")
+            if "ackermannGeometry(" in code:
+                geometry_note += (" `wheel_radius_m`、`wheelbase_m`、`track_width_m` 自动生成；"
+                                  "`max_steering_rad` 默认取两侧 URDF 转向限位的共同对称范围，"
+                                  "可显式指定更小的运行上限，但不能超过机械限位。")
+            elif "differentialGeometry(" in code:
+                geometry_note += " `wheel_radius_m`、`wheel_separation_m` 自动生成。"
+            else:
+                geometry_note += " `wheels[]` 只需 joint；x_m、y_m、rolling_angle_rad、radius_m 自动生成。"
         content = source.read_text()
         node = yaml.compose(content)
         rows = list(fields(node, content.splitlines()))
@@ -108,9 +124,10 @@ def generated(root=ROOT):
             "必填项没有默认值；请在机器人配置中提供实际值。可选项为实现缺省值，车型配置可以覆盖。", "",
             f"来源：[parameters.yaml](../../../{package.relative_to(root)}/config/parameters.yaml)、"
             f"[实现](../../../{package.relative_to(root)}/src/plugin.cpp)。", "",
-            "| 字段 | 类型 | 默认值 | 单位、范围与含义 |",
-            "| --- | --- | --- | --- |",
         ]
+        if geometry_note:
+            page += [geometry_note, ""]
+        page += ["| 字段 | 类型 | 默认值 | 单位、范围与含义 |", "| --- | --- | --- | --- |"]
         for name, kind, default, description in rows:
             page.append(f"| `{name}` | {kind} | {default} | {description.replace('|', '&#124;')} |")
         page += ["", "未知字段、错误类型、非法数值或缺失必填项会在加载阶段报错。"

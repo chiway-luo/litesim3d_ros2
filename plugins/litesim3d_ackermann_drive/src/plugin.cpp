@@ -1,12 +1,16 @@
 #include <litesim3d_plugin_api/motion.hpp>
+#include <litesim3d_plugin_api/model_geometry.hpp>
 #include <pluginlib/class_list_macros.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
 
 namespace litesim3d::plugins {
-class AckermannDrive : public ChassisPlugin, public JointDrivenChassis {
+class AckermannDrive : public ChassisPlugin, public JointDrivenChassis, public ModelParameters {
 public:
+  Json resolveModelParameters(const ModelGeometry &geometry, const Json &values) const override {
+    return ackermannGeometry(geometry, values);
+  }
   Json defaults() const override {
     return {{"wheel_radius_m", nullptr}, {"wheelbase_m", nullptr}, {"track_width_m", nullptr},
             {"rear_left_joint", nullptr}, {"rear_right_joint", nullptr},

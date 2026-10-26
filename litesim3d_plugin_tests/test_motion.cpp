@@ -1,4 +1,5 @@
 #include <litesim3d_plugin_api/motion.hpp>
+#include <litesim3d_plugin_api/model_geometry.hpp>
 #include <litesim3d_plugin_api/declarations.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <gtest/gtest.h>
@@ -28,9 +29,20 @@ Json json(const YAML::Node &node) {
   try { size_t end; double value = std::stod(text, &end); if (end == text.size()) return value; } catch (...) {}
   return text;
 }
-Json config(const std::string &cls) {
+lp::Initialization differential(bool four);
+lp::Initialization ackermann();
+lp::Initialization omnidirectional(int n);
+Json config(const std::string &cls, bool resolve = true) {
   const auto package = cls.substr(0, cls.find('/'));
-  return json(YAML::LoadFile(ament_index_cpp::get_package_share_directory(package) + "/config/parameters.yaml"));
+  auto p = json(YAML::LoadFile(ament_index_cpp::get_package_share_directory(package) + "/config/parameters.yaml"));
+  if (!resolve) return p;
+  // Direct plugin unit tests supply the geometry of their synthetic fixture.
+  const bool is_diff = cls == diff || cls == diff_odom, is_ack = cls == ack || cls == ack_odom;
+  lp::ModelGeometry g;
+  g.model = (is_diff ? differential(false) : is_ack ? ackermann() : omnidirectional(cls == omni(4) ? 4 : 3)).model;
+  for (const auto &[name, joint] : g.model.joints) if (joint.type == "continuous") g.wheel_radii[name] = .1;
+  if (is_ack) p["max_steering_rad"] = .6;  // Operational cap used by the existing motion tests.
+  return is_diff ? lp::differentialGeometry(g, p) : is_ack ? lp::ackermannGeometry(g, p) : lp::omniGeometry(g, p);
 }
 lp::JointDescription wheel(double x, double y, double angle = 0) {
   lp::JointDescription j; j.type = "continuous"; j.position = {x, y, .1};
@@ -91,13 +103,40 @@ void contract(const Json &schema, const Json &file, const std::string &path = ""
 }
 }
 
-TEST(PluginLoading, AllInstalledImplementationsAndCompleteDefaultFiles) {
+TEST(PluginLoading, AllInstalledImplementationsAndResolvedDefaultFiles) {
   lp::Loader loader;
   for (const auto &name : {diff, ack, omni(3), omni(4)}) {
     SCOPED_TRACE(name); auto plugin = loader.chassis(name); contract(plugin->defaults(), config(name));
   }
   for (const auto &name : {diff_odom, ack_odom, omni_odom}) {
     SCOPED_TRACE(name); auto plugin = loader.odometry(name); contract(plugin->defaults(), config(name));
+  }
+}
+TEST(PluginParameters, ModelCapabilityResolvesBothChassisAndOdometryFromBindingsOnly) {
+  lp::Loader loader;
+  for (const auto &name : {diff, diff_odom, ack, ack_odom, omni(3), omni(4), omni_odom}) {
+    SCOPED_TRACE(name);
+    const bool is_diff = name == diff || name == diff_odom, is_ack = name == ack || name == ack_odom;
+    lp::ModelGeometry g;
+    g.model = (is_diff ? differential() : is_ack ? ackermann() : omnidirectional(name == omni(4) ? 4 : 3)).model;
+    for (const auto &[joint, value] : g.model.joints) if (value.type == "continuous") g.wheel_radii[joint] = .17;
+    const auto p = config(name, false);
+    std::shared_ptr<lp::ChassisPlugin> chassis;
+    std::shared_ptr<lp::OdometryPlugin> odometry;
+    lp::ModelParameters *capability;
+    if (name == diff_odom || name == ack_odom || name == omni_odom) {
+      odometry = loader.odometry(name); capability = dynamic_cast<lp::ModelParameters *>(odometry.get());
+    } else {
+      chassis = loader.chassis(name); capability = dynamic_cast<lp::ModelParameters *>(chassis.get());
+    }
+    ASSERT_NE(capability, nullptr);
+    const auto resolved = capability->resolveModelParameters(g, p);
+    if (is_diff || is_ack) {
+      EXPECT_FALSE(p.contains("wheel_radius_m")); EXPECT_EQ(resolved.at("wheel_radius_m"), .17);
+    } else {
+      EXPECT_FALSE(p.at("wheels")[0].contains("radius_m")); EXPECT_EQ(resolved.at("wheels")[0].at("radius_m"), .17);
+    }
+    if (is_ack) EXPECT_EQ(resolved.at("max_steering_rad"), .7);
   }
 }
 TEST(PluginLoading, MissingClassAndWrongCategoryFailClearly) {

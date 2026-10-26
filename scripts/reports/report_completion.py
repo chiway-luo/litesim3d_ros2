@@ -92,7 +92,7 @@ def audit():
         for case in data.get('cases', []):
             historical.append({**case, 'historical_index': path})
     specs = re.findall(r'^\| (T-[A-Z0-9]{3}-\d{2}) .+；M[123]；',
-                       (ROOT/'docs/testing/测试用例与需求追踪.md').read_text(), re.M)
+                       resolve_reference('docs/testing/测试用例与需求追踪.md').read_text(), re.M)
     check('all 140 specification IDs exactly once', len(historical) == len(specs) == 140
           and set(specs) == {c['id'] for c in historical})
     check('all 36 requirements mapped', {r for c in historical for r in c['requirements']} == {f'REQ-{i:03}' for i in range(1, 37)})

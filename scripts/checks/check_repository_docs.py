@@ -29,7 +29,7 @@ def anchors(content):
 
 def check(root=ROOT):
     documents = sorted(root.glob('README*.md'))
-    for folder in ('docs', 'examples', 'litesim3d_core/resources'):
+    for folder in ('docs', 'examples', 'plugins', 'litesim3d_core/resources'):
         documents.extend(sorted((root / folder).rglob('*.md')))
     documents.extend(sorted(root.glob("litesim3d_*/README*.md")))
     documents = sorted(set(documents))
@@ -50,6 +50,8 @@ def check(root=ROOT):
             destination = (document.parent / local).resolve() if local else document
             if not destination.is_relative_to(root) or not destination.exists():
                 failures.append(f'{relative}: unavailable in clone: {local}')
+            elif destination.relative_to(root).as_posix().startswith("tmp/"):
+                failures.append(f'{relative}: local development material in public documentation: {local}')
             elif fragment and destination.suffix == ".md":
                 fragments += 1
                 if fragment not in anchors(destination.read_text()):

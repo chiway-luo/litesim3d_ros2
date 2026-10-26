@@ -29,8 +29,6 @@ robot:
   sensor_geometry: visual         # 机器人射线几何 visual/collision。
   sensor_overrides: {}             # 可按 link 覆盖，如 {base_link: collision}。
   drive:
-    wheel_radius: 0.12             # m，必须与 URDF 四轮半径一致。
-    wheel_separation: 0.58         # m，左右轮中心距离；不是车体宽度。
     left_joint: rear_left_wheel_joint
     right_joint: rear_right_wheel_joint
     support_links:                 # 四个轮子均允许正常地面支撑接触。
@@ -45,7 +43,6 @@ robot:
     angular_acceleration: 2.0      # 角加速度上限，rad/s²，>0。
     unlimited_acceleration: false # 调试时可取消加速度限幅，其他限值仍需合法。
     continue_on_collision: true   # 碰撞后车体停住，轮子和轮式里程计继续累计。
-    wheelbase: 0.48                # m，前后轮距；仅 Ackermann 模式参与转弯限制。
     max_steering_rad: 0.6          # (0, π/2)；仅 Ackermann 使用，不驱动转向关节。
 
 terrain:

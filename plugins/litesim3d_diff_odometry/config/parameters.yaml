@@ -1,7 +1,3 @@
-# 必填：普通驱动轮有效半径，m，必须 > 0；此处是示例值。
-wheel_radius_m: 0.1
-# 必填：左右轮组中心距离，m，必须 > 0；左轮 y=+轮距/2，右轮 y=-轮距/2。
-wheel_separation_m: 0.5
 # 必填：左侧独立 continuous 驱动关节；正轴为车体 +y，正转使车体向 +x。
 # 同侧独立多轮可列多个名称；URDF mimic 从轮不重复列入。
 left_joints: [left_wheel_joint]

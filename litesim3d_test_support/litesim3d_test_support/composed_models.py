@@ -212,8 +212,14 @@ def verify_control_handoff(directory, kind):
             steering.publish(Float64MultiArray(data=[.3, .25]))
             rates = [2.0, 2.0]
         else:
-            wheels = yaml.safe_load((h.share / "config/geometry.yaml").read_text())["wheels"]
-            rates = [.2 * math.sin(w["rolling_angle_rad"]) / w["radius_m"] for w in wheels]
+            import xacro
+            from litesim3d_bringup.controller_parameters import resolve_controller_parameters
+            control = resolve_controller_parameters(
+                yaml.safe_load((h.share / "config/controllers.yaml").read_text()),
+                xacro.process_file(str(h.share / "urdf/control.urdf.xacro")).toxml())
+            wheels = control["/omni_controller"]["ros__parameters"]
+            rates = [.2 * math.sin(angle) / radius
+                     for angle, radius in zip(wheels["wheel_angle"], wheels["wheel_radius"])]
         velocity.publish(Float64MultiArray(data=rates))
         h.until(lambda: (h.messages["truth"][-1].twist.twist.angular.z > .05 if kind == "ackermann"
                         else h.messages["truth"][-1].twist.twist.linear.y > .15))
@@ -239,25 +245,27 @@ def verify_controller_geometry(kind):
     from pathlib import Path
     import xacro
     share = Path(get_package_share_directory(kind + "_sim"))
-    geometry = yaml.safe_load((share / "config/geometry.yaml").read_text())
-    control = yaml.safe_load((share / "config/controllers.yaml").read_text())
-    xml = ET.fromstring(xacro.process_file(str(share / "urdf/control.urdf.xacro")).toxml())
+    from litesim3d_bringup.controller_parameters import resolve_controller_parameters
+    bindings = yaml.safe_load((share / "config/drive.yaml").read_text())
+    source = yaml.safe_load((share / "config/controllers.yaml").read_text())
+    description = xacro.process_file(str(share / "urdf/control.urdf.xacro")).toxml()
+    control = resolve_controller_parameters(source, description)
+    xml = ET.fromstring(description)
     interfaces = {j.get("name"): {i.get("name") for i in j.findall("command_interface")}
                   for j in xml.findall("./ros2_control/joint")}
     if kind == "ackermann":
-        g = geometry["common"]; c = control["/ackermann_controller"]["ros__parameters"]
+        g = bindings["common"]; c = control["/ackermann_controller"]["ros__parameters"]
         assert c["rear_wheels_names"] == [g["rear_right_joint"], g["rear_left_joint"]]
         assert c["front_wheels_names"] == [g["right_steering_joint"], g["left_steering_joint"]]
-        assert c["wheelbase"] == g["wheelbase_m"]
-        assert c["front_wheel_track"] == c["rear_wheel_track"] == g["track_width_m"]
-        assert c["front_wheels_radius"] == c["rear_wheels_radius"] == g["wheel_radius_m"]
-        for name in geometry["drive"].values(): assert not interfaces[name]
+        assert "wheelbase" not in source["/ackermann_controller"]["ros__parameters"]
+        assert c["wheelbase"] > 0 and c["front_wheel_track"] == c["rear_wheel_track"] > 0
+        assert c["front_wheels_radius"] == c["rear_wheels_radius"] > 0
+        for name in bindings["drive"].values(): assert not interfaces[name]
     else:
-        c = control["/omni_controller"]["ros__parameters"]; wheels = geometry["wheels"]
-        for key, source in [("wheel_joints", "joint"), ("wheel_x", "x_m"), ("wheel_y", "y_m"),
-                            ("wheel_radius", "radius_m"), ("wheel_angle", "rolling_angle_rad")]:
-            assert c[key] == [w[source] for w in wheels]
+        c = control["/omni_controller"]["ros__parameters"]
+        assert c["wheel_joints"] == [w["joint"] for w in bindings["wheels"]]
+        assert "wheel_x" not in source["/omni_controller"]["ros__parameters"]
         for name, limit in zip(c["wheel_joints"], c["max_wheel_velocity"]):
             joint = xml.find("./joint[@name='" + name + "']")
-            assert 0 < limit <= float(joint.find("limit").get("velocity"))
+            assert limit == float(joint.find("limit").get("velocity"))
             assert "velocity" in interfaces[name]

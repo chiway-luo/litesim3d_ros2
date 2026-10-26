@@ -5,12 +5,12 @@
   <litesim3d version="1">
     <chassis name="drive" class="litesim3d_ackermann_drive/AckermannDrive">
       <parameters file="package://litesim3d_ackermann_drive/config/parameters.yaml"/>
-      <parameters file="package://ackermann_sim/config/geometry.yaml" section="common"/>
-      <parameters file="package://ackermann_sim/config/geometry.yaml" section="drive"/>
+      <parameters file="package://ackermann_sim/config/drive.yaml" section="common"/>
+      <parameters file="package://ackermann_sim/config/drive.yaml" section="drive"/>
     </chassis>
     <odometry name="wheel_odometry" class="litesim3d_ackermann_odometry/AckermannOdometry">
       <parameters file="package://litesim3d_ackermann_odometry/config/parameters.yaml"/>
-      <parameters file="package://ackermann_sim/config/geometry.yaml" section="common"/>
+      <parameters file="package://ackermann_sim/config/drive.yaml" section="common"/>
     </odometry>
   </litesim3d>
 </robot>

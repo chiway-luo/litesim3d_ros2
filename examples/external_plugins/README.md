@@ -10,7 +10,7 @@ bash scripts/test_external_plugin.sh /tmp/litesim3d-external-test /tmp/litesim3d
 
 第二个参数换成已有主工程的安装前缀。脚本将示例源码复制到独立工作空间，仅编译示例包，source 新 overlay，再让原来的 `sim_headless` 根据组合 URDF 加载新类。它检查车体真实位移 1 m、外部插件里程计位移 1.25 m，以及核心可执行文件、核心共享库及 API 共享库 SHA-256 在独立构建前后不变。证据写入第一个参数指定的目录。
 
-该包的完整参数和中文说明位于 `config/parameters.yaml`。实际接入时在模型中替换 odometry 声明：
+该包的用户参数和中文说明位于 `config/parameters.yaml`；轮径和轮距由可选 `ModelParameters` 接口从完整 URDF 自动读取，配置只绑定左右轮关节。实际接入时在模型中替换 odometry 声明：
 
 ```xml
 <odometry name="wheel_odom" class="litesim3d_example_encoder_odometry/ExampleEncoderOdometry">

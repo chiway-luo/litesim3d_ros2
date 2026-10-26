@@ -3,8 +3,7 @@ Changelog for package litesim3d_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Prepared for the first planned 0.4.0 release. Entries consolidate development
-history; no earlier tagged releases or publication dates are implied. See the
-`repository development history <../CHANGELOG.rst>`_ for chronology and evidence.
+history; no earlier tagged releases or publication dates are implied.
 
 Forthcoming
 -----------
@@ -29,5 +28,3 @@ Forthcoming
 * Add static scene descriptions, live state/statistics snapshots, exact camera render requests and multicopter velocity support.
 * Fix wall-clock status publication during unpaced simulation and improve test callback fairness, startup readiness and shutdown observation under sensor load.
 * Set the maintainer contact to chiwayfpv@gmail.com and provide the repository Apache-2.0 license; retain existing third-party notices.
-
-References: `Source 1 <../docs/testing/近期修复与验证.md>`_, `Source 2 <../docs/testing/SDF实现验证.md>`_, `Source 3 <../docs/testing/无人机与办公场景验证.md>`_.

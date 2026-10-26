@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot name="ackermann" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:property name="g" value="${xacro.load_yaml('$(find ackermann_sim)/config/geometry.yaml')['common']}"/>
-  <xacro:property name="d" value="${xacro.load_yaml('$(find ackermann_sim)/config/geometry.yaml')['drive']}"/>
+  <!-- 机械尺寸和转向限位在模型内定义；运行参数从展开后的 URDF 读取。 -->
+  <xacro:property name="g" value="${dict(wheel_radius_m=0.1, wheelbase_m=0.6, track_width_m=0.4, max_steering_rad=0.6)}"/>
   <material name="body"><color rgba="0.1 0.4 0.7 1"/></material>
   <material name="rubber"><color rgba="0.08 0.08 0.09 1"/></material>
   <material name="spoke"><color rgba="0.95 0.65 0.1 1"/></material>

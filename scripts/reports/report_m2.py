@@ -33,7 +33,7 @@ def main():
     for file in ['coverage/ros.xml','coverage/updated.xml','reset-100-final.xml']:
         for case in suite(file):ros[case.attrib['name']]=(case,file)
     records=[]
-    specs=(ROOT/'docs/testing/测试用例与需求追踪.md').read_text()
+    specs=resolve_reference('docs/testing/测试用例与需求追踪.md').read_text()
     required=re.findall(r'^\| (T-[A-Z0-9]{3}-\d{2}) ([^|]+)\| ([^|]+；M2；[^|]+)\|',specs,re.M)
     def evidence_status(core_prefixes=(),ros_names=(),json_paths=(),extra=None):
         runs=[];statuses=[]

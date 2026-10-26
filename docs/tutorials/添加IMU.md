@@ -52,13 +52,11 @@ ros2 topic echo /imu/tutorial --once --qos-reliability best_effort
 ros2 run tf2_ros tf2_echo base_link tutorial_imu_link
 ```
 
-TF 应给出约 `[0.1, 0, 0.15]` 的平移与零旋转。第二条持续显示，按 Ctrl+C 结束。自动教程检查也会核对该变换及静止比力。
+TF 应给出约 `[0.1, 0, 0.15]` 的平移与零旋转。第二条持续显示，按 Ctrl+C 结束。
 
 ## 4. 调整采样频率
 
 在 Xacro 的 overrides 中将 `rate_hz: 100.0` 改为 `rate_hz: 50.0`，停止终端 A 的 launch 后重新启动，再运行第 3 步。参数在启动时读取。可以用 `ros2 topic hz /imu/tutorial` 观察接收频率，但它受实际 RTF 和接收端负载影响，不应把墙钟测量直接当作仿真频率验收。
-
-修改后重新启动，使参数生效。
 
 ## 常见失败
 

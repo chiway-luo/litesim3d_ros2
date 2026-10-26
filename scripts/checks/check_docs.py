@@ -35,7 +35,7 @@ def main():
             if local:
                 links += 1
                 check(f"link {path.name}: {local}", (path.parent / local).exists())
-    specs = (ROOT / "docs/testing/测试用例与需求追踪.md").read_text()
+    specs = resolve_reference("docs/testing/测试用例与需求追踪.md").read_text()
     ids = re.findall(r"^\| (T-[A-Z0-9]{3}-\d{2}) .+；M[123]；", specs, re.M)
     check("140 unique specification IDs", len(ids) == len(set(ids)) == 140)
     index = json.loads((OUT / "test-index.json").read_text())

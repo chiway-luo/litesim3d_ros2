@@ -1,0 +1,5 @@
+# 普通全向轮的独立关节绑定；轮心、滚动方向和半径从 URDF 自动读取。
+wheels:
+  - joint: wheel_0_joint
+  - joint: wheel_1_joint
+  - joint: wheel_2_joint

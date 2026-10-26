@@ -3,8 +3,7 @@ Changelog for package litesim3d_assets
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Prepared for the first planned 0.4.0 release. Entries consolidate development
-history; no earlier tagged releases or publication dates are implied. See the
-`repository development history <../CHANGELOG.rst>`_ for chronology and evidence.
+history; no earlier tagged releases or publication dates are implied.
 
 Forthcoming
 -----------
@@ -16,4 +15,4 @@ Forthcoming
 * Update resource fixtures and installed-asset checks for the separate wheel_car_4w_models and drone_3d_models packages.
 * Set the maintainer contact to chiwayfpv@gmail.com and provide the repository Apache-2.0 license; retain existing third-party notices.
 
-References: `Source 1 <../docs/testing/SDF实现验证.md>`_, `Source 2 <../docs/testing/无人机与办公场景验证.md>`_, `Source 3 <test/test_sdf_import.py>`_.
+References: `Source 3 <test/test_sdf_import.py>`_.

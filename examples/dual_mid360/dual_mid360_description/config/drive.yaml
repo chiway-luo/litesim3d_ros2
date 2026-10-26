@@ -1,0 +1,3 @@
+# 只指定独立驱动关节；轮径和轮距从完整 URDF 自动读取。
+left_joints: [front_left_wheel_joint, rear_left_wheel_joint]
+right_joints: [front_right_wheel_joint, rear_right_wheel_joint]

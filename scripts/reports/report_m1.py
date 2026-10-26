@@ -55,7 +55,7 @@ def main():
     runtime_total = sum(len(c) for c in runtime_cases.values())
     runtime_pass = sum(c["status"] == "PASS" for cases in runtime_cases.values() for c in cases)
     specs = []
-    for line in (ROOT / "docs/testing/测试用例与需求追踪.md").read_text().splitlines():
+    for line in resolve_reference("docs/testing/测试用例与需求追踪.md").read_text().splitlines():
         if line.startswith("| T-") and "；M1；" in line:
             parts = [p.strip() for p in line.strip("|").split("|")]
             ident, title = parts[0].split(" ", 1)

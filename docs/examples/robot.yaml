@@ -15,8 +15,6 @@ robot:
   motion_model: differential_drive
   initial_pose: {xyz: [0, 0, 0], rpy: [0, 0, 0]}
   drive:
-    wheel_radius: 0.1
-    wheel_separation: 0.5
     left_joint: left_wheel_joint
     right_joint: right_wheel_joint
     support_links: [left_wheel, right_wheel]

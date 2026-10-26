@@ -1,4 +1,5 @@
 #include <litesim3d_plugin_api/declarations.hpp>
+#include <litesim3d_plugin_api/model_geometry.hpp>
 #include <iostream>
 
 int main(int argc, char **argv) {
@@ -13,10 +14,16 @@ int main(int argc, char **argv) {
     for (const auto &side : {std::string("left"), std::string("right")}) {
       const std::string name = side + "_wheel_joint";
       JointDescription wheel; wheel.type = "continuous";
+      wheel.axis = Eigen::Vector3d::UnitY();
       wheel.position = {0, side == "left" ? .25 : -.25, .1};
       init.model.joints[name] = wheel; before.position[name] = 0; before.velocity[name] = 0;
     }
     auto params = readParameterFile(argv[2]);
+    if (auto *capability = dynamic_cast<ModelParameters *>(plugin.get())) {
+      ModelGeometry geometry; geometry.model = init.model;
+      for (const auto &[name, joint] : init.model.joints) geometry.wheel_radii[name] = .1;
+      params = capability->resolveModelParameters(geometry, params);
+    }
     const auto schema = plugin->defaults();
     require(schema.size() == params.size(), "external parameter file must cover every parameter");
     for (const auto &[key, value] : schema.items()) {

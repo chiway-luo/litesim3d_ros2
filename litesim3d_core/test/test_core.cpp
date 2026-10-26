@@ -1085,14 +1085,15 @@ TEST(COR08, FullConfigAndInvalidBindings) {
   EXPECT_EQ(loaded.lidars[0].filter, "links");
   EXPECT_EQ(loaded.pose_covariance[0], .1);
   EXPECT_EQ(loaded.initial_joints.at("left_wheel_joint"), .2);
+  EXPECT_EQ(loaded.inferred_drive_fields, (std::set<std::string>{"wheel_radius", "wheel_separation"}));
   for (const auto &bad : std::vector<std::string>{
            replace(original, "rings: 32", "rings: 31"), replace(original, "snapshot", "unknown_scan"),
            replace(original, "xyzirt_v1", "bad"), replace(original, "m_rad_s", "millimeter"),
            replace(original, "seed: 42", "seed: 42\n  seed: 43"),
            replace(original, "base_link: base_link", "base_link: absent"),
            replace(original, "link: lidar_link", "link: absent"),
-           replace(original, "wheel_radius: 0.1", "wheel_radius: 0.2"),
-           replace(original, "wheel_separation: 0.5", "wheel_separation: 0.6"),
+           replace(original, "  drive:", "  drive:\n    wheel_radius: 0.2"),
+           replace(original, "  drive:", "  drive:\n    wheel_separation: 0.6"),
            replace(original, "support_links: [left_wheel, right_wheel]",
                    "support_links: [absent]")}) {
     auto p = temporary(bad, ".yaml");

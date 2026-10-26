@@ -6,12 +6,12 @@
   <litesim3d version="1">
     <chassis name="drive" class="litesim3d_diff_drive/DifferentialDrive">
       <parameters file="package://litesim3d_diff_drive/config/parameters.yaml"/>
-      <parameters file="package://wheel_car_4w_description/config/geometry.yaml"/>
+      <parameters file="package://wheel_car_4w_description/config/drive.yaml"/>
       <parameters file="package://wheel_car_4w_description/config/motion.yaml"/>
     </chassis>
     <odometry name="wheel_odometry" class="litesim3d_diff_odometry/DifferentialOdometry">
       <parameters file="package://litesim3d_diff_odometry/config/parameters.yaml"/>
-      <parameters file="package://wheel_car_4w_description/config/geometry.yaml"/>
+      <parameters file="package://wheel_car_4w_description/config/drive.yaml"/>
     </odometry>
   </litesim3d>
 </robot>

@@ -21,12 +21,6 @@
     rear_wheels_names: [rear_right_wheel_joint, rear_left_wheel_joint]
     front_wheels_names: [right_steering_joint, left_steering_joint]
     front_steering: true  # 前轮转向、后轮驱动。
-    # 下列尺寸与 geometry.yaml 保持一致，单位 m。
-    wheelbase: 0.6
-    front_wheel_track: 0.4
-    rear_wheel_track: 0.4
-    front_wheels_radius: 0.1
-    rear_wheels_radius: 0.1
     position_feedback: true  # 后轮读取实际累计转角，转向读取实际角度。
     open_loop: false  # 里程计读取反馈，不把速度指令当作运动结果。
     use_stamped_vel: false  # reference_unstamped 接收 Twist，由 launch remap 至 /cmd_vel。

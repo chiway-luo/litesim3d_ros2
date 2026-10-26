@@ -15,7 +15,6 @@ from urllib.parse import quote, unquote
 ROOT = Path(__file__).resolve().parents[2]
 SLUGS = {
     "docs/README.md": "index",
-    "docs/版本与验证状态.md": "versions",
     "docs/tutorials/README.md": "tutorials/index",
     "docs/tutorials/双MID360从零搭建.md": "tutorials/dual-mid360-from-scratch",
     "docs/tutorials/阿克曼与全向轮ros2_control.md": "tutorials/ackermann-omni-control",
@@ -48,8 +47,6 @@ SLUGS = {
     "docs/api/C++核心接口.md": "reference/core-api",
     "docs/api/plugins/README.md": "reference/plugins/index",
     "docs/concepts/运行与坐标.md": "concepts/runtime",
-    "docs/development/插件开发.md": "development/plugins",
-    "docs/development/文档维护.md": "development/documentation",
 }
 
 
@@ -113,8 +110,7 @@ def main():
 
     all_markdown = sorted({*ROOT.glob("README*.md"), *(ROOT / "docs").rglob("*.md"),
                            *(ROOT / "examples").rglob("*.md")})
-    current_folders = ("docs/tutorials/", "docs/usage/", "docs/api/", "docs/concepts/",
-                       "docs/development/")
+    current_folders = ("docs/tutorials/", "docs/usage/", "docs/api/", "docs/concepts/")
     unmapped = [path.relative_to(ROOT).as_posix() for path in all_markdown
                 if path.relative_to(ROOT).as_posix().startswith(current_folders)
                 and path.relative_to(ROOT).as_posix() not in mapping]
@@ -132,14 +128,14 @@ def main():
     dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)) if git.returncode == 0 else True
     version = (ROOT / "VERSION").read_text().strip()
     info = {"version": version, "revision": revision, "dirty": dirty,
-            "label": f"{version} 开发文档 · {revision}" + (" · 本地修改" if dirty else ""),
+            "label": f"{version} · {revision}" + (" · 本地修改" if dirty else ""),
             "chinese_search": importlib.util.find_spec("jieba") is not None}
     (source / "build-info.json").write_text(json.dumps(info, ensure_ascii=False))
     shutil.copyfile(ROOT / "sphinx-docs/conf.py", source / "conf.py")
     (source / "_static").mkdir()
     shutil.copyfile(ROOT / "sphinx-docs/docs.css", source / "_static/docs.css")
     trees = {"index": ["tutorials/index", "manual/index", "reference/index", "examples/index",
-                        "versions", "concepts/runtime", "development/plugins", "development/documentation"],
+                        "concepts/runtime"],
              "tutorials/index": [], "manual/index": [], "reference/index": [], "reference/plugins/index": [],
              "examples/index": [], "examples/wheel_car_4w/index": [], "examples/drone_3d/index": []}
     for docname in mapping.values():
@@ -194,6 +190,8 @@ def main():
             if not path.is_relative_to(ROOT) or not path.exists():
                 raise ValueError(f"{relative}: unavailable link {url}")
             rel = path.relative_to(ROOT).as_posix()
+            if rel.startswith("tmp/"):
+                raise ValueError(f"{relative}: local development material cannot be published: {url}")
             if rel in mapping:
                 result = relative_link(source / (mapping[rel] + ".md"), target)
                 if fragment:

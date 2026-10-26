@@ -1,9 +1,13 @@
 #include <litesim3d_plugin_api/motion.hpp>
+#include <litesim3d_plugin_api/model_geometry.hpp>
 #include <pluginlib/class_list_macros.hpp>
 
 namespace litesim3d::plugins {
-class DifferentialOdometry : public OdometryPlugin {
+class DifferentialOdometry : public OdometryPlugin, public ModelParameters {
 public:
+  Json resolveModelParameters(const ModelGeometry &geometry, const Json &values) const override {
+    return differentialGeometry(geometry, values);
+  }
   Json defaults() const override {
     return {{"wheel_radius_m", nullptr}, {"wheel_separation_m", nullptr},
             {"left_joints", nullptr}, {"right_joints", nullptr}, {"noise", EncoderIntegrator::defaults()}};

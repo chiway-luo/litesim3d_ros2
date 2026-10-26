@@ -10,6 +10,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from litesim3d_bringup.controller_parameters import UrdfControllerParameters
 
 
 def required_exit(event, context):
@@ -33,6 +34,8 @@ def generate_launch_description():
 
     # worlds/ 下的场景文件名；改为 minimal.sdf 可使用最小场景模板。
     ld.add_action(DeclareLaunchArgument("world", default_value="workshop.sdf"))
+    # 出生位姿等仿真节点参数从 ROS YAML 加载；支持替换为自己的参数文件。
+    ld.add_action(DeclareLaunchArgument("params", default_value=ros_params))
     # 是否打开 LiteSim 三维窗口；无桌面环境可设为 false。
     ld.add_action(DeclareLaunchArgument("gui", default_value="true", choices=["true", "false"]))
     # 是否打开 RViz；与三维窗口开关相互独立。
@@ -82,7 +85,7 @@ def generate_launch_description():
             "world": LaunchConfiguration("world"),  # 当前选择的 SDF 场景文件。
             "runtime": runtime_file,  # 显式传入 runtime.yaml；源文件中的 robot.urdf 保持空。
             "robot_urdf": simulation_xacro,  # 公共入口展开组合模型并写入临时运行配置。
-            "params": ros_params,  # 显式传入仿真 ROS 参数文件，普通参数在文件中调整。
+            "params": LaunchConfiguration("params"),  # 加载出生位姿及其他仿真节点参数。
             "rviz_config": rviz_config,  # 显式传入 RViz 配置文件。
         }.items(),
     )
@@ -97,7 +100,7 @@ def generate_launch_description():
                    "--timeout", LaunchConfiguration("controller_startup_timeout"), "--"],
         # 保留管理器默认名；避免全局 __node remap 把动态加载的控制器也改名。
         output="screen",
-        parameters=[controller_params, {
+        parameters=[UrdfControllerParameters(controller_params, control_description), {
             "robot_description": ParameterValue(control_description, value_type=str),
         }],
         remappings=[

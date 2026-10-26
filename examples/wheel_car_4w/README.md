@@ -1,159 +1,100 @@
-# wheel_car_4w：四轮小车完整仿真示例
+# 四轮小车仿真
 
-本示例在一个 launch 中启动 **四轮小车模型、三维雷达、IMU、里程计、场景、ROS 2 接口和独立三维查看窗口**。默认地图为 28 × 22 米办公区，包含工位、会议室、接待区、走廊和机房；不设屋顶，方便观察。`world:=warehouse.sdf` 保留原小型测试场景。首次使用先按仓库 [README](../../README.md) 安装依赖并构建。
+在办公场景中运行四轮差速小车，提供雷达、IMU、里程计、ros2_control 和可选三维窗口。先完成[安装与构建](../../docs/usage/安装与构建.md)。
 
-## 1. 目录与职责
+## 启动和控制
 
-```text
-examples/wheel_car_4w/
-├── README.md
-├── wheel_car_4w_models/                    # SDF 世界、模型、网格和贴图资源包
-├── wheel_car_4w_description/          # 独立模型包
-│   ├── package.xml
-│   ├── CMakeLists.txt
-│   ├── urdf/wheel_car_4w.urdf         # 原始机械文件，保持不变，可独立 RViz
-│   ├── urdf/robot.urdf.xacro          # 机械与 sensor_mounts，单独给 RSP
-│   ├── urdf/sensors.xacro             # 传感器插件声明
-│   ├── urdf/simulation.urdf.xacro     # 组合机械、传感器、底盘与里程计
-│   └── config/                      # 共享几何（构建提取）及实例覆盖
-└── wheel_car_4w_sim/                  # 独立仿真启动包
-    ├── package.xml
-    ├── CMakeLists.txt
-    ├── config/
-    │   ├── runtime.yaml              # 组合模型路径、碰撞策略及地形绑定
-    │   ├── simulation.yaml           # 保留旧 URDF/YAML 回归入口
-    │   ├── ros.yaml                  # 仿真 QoS、TF、暂停参数
-    │   ├── rsp.yaml                  # 独立 RSP 参数
-    │   ├── controllers.yaml          # ros2_control 参数
-    │   └── runtime_twist.yaml        # 旧直接 Twist 模式
-    │   └── lidars/                   # vlp16、mid360、mid40，带厂家来源与建模说明
-    ├── launch/wheel_car_4w.launch.py  # 默认 ros2_control 启动入口
-    ├── rviz/wheel_car_4w.rviz         # 模型、点云、环境、TF、轨迹
-    └── test/test_wheel_car_4w.py      # 安装态核心/ROS/启动故障与可选 GUI 测试
-```
-
-仿真包复用 `litesim3d_core`、`litesim3d_ros2` 和 `litesim3d_interfaces`。wheel_car_4w_models 提供默认 SDF 资源，description 保留原始 URDF 并提供仿真组合 Xacro；三个示例包都经 ament 安装，运行时使用 package 资源索引，启动终端不必处于源码目录。
-
-## 2. 构建后，一条 launch 启动
-
-终端 A 激活 Humble 环境、进入 clone 的源码仓库根目录后执行；后文相同：
+终端 A，从源码仓库根目录执行：
 
 ```bash
-evidence_dir="$(python3 scripts/paths.py evidence)"
-mkdir -p "$evidence_dir"
+source /opt/ros/humble/setup.bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70
-export ROS_LOCALHOST_ONLY=1
-export ROS_LOG_DIR="${evidence_dir}/wheel-car-4w/manual-logs"
-mkdir -p "$ROS_LOG_DIR"
+export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```
 
-默认由案例启动 RSP、controller_manager、diff_drive_controller、joint_state_broadcaster、仿真和独立三维查看器，**不需要再手工启动模型发布器或单独的传感器节点**。默认 16 线×512 列、10 Hz rolling 激光、零测距噪声，200 Hz raw IMU，50 Hz odom，5 ms 积分步长。机械多线、球面带非重复扫描和圆形花瓣扫描的切换及真实规格参考，见 [雷达配置说明](雷达配置说明.md)。
+默认打开三维窗口，启动 RSP、controller_manager、diff_drive_controller 和 joint_state_broadcaster。场景为 28 × 22 m 办公区；相机与 RViz 默认关闭。
 
-桌面不可用或只测算法时关闭查看器：
-
-```bash
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false
-```
-
-默认办公区包含多个房间、走廊、桌椅、隔断、沙发、机柜和带贴图的箱体。小车车头的红色标记朝 +x；轮毂色条便于观察四轮转动。按完整 launch 所在终端的 Ctrl+C 退出；RSP/仿真子进程意外退出会使 launch 清理其他进程并以非零状态结束。
-
-独立窗口只允许左键旋转、中键或右键平移、滚轮缩放；无模型选择和仿真控制入口。底部自动显示实际 RTF、目标倍率、FPS 和碰撞预算状态。关闭窗口后仿真继续，可用 `ros2 run litesim3d_gui viewer` 重连。需要点云/TF 图层时显式加 `rviz:=true`。
-
-车载相机已支持 `rgb`、`depth`、`rgbd`，组合模型的 sensors.xacro 声明相机类及参数；修改其覆盖参数可设置分辨率、帧率、视场角和近远裁剪面。示例相机默认关闭，类型默认 `rgb`；用 `cameras:=true` 开启 640×480 / 15 Hz 普通彩色相机，通过 ROS 2 话题输出，不弹出摄像头窗口：
+终端 B 加载相同环境和 domain，发送速度：
 
 ```bash
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py cameras:=true
-```
-
-普通相机只输出 `/camera/front/color/image_raw` 及对应 `camera_info`，不创建深度渲染目标或深度话题。需要彩色加深度时将相机 class 和参数文件改为 litesim3d_rgbd_camera/RgbdCamera 对应配置，额外输出 `/camera/front/depth/image_raw` 及对应 `camera_info`；litesim3d_depth_camera/DepthCamera 则仅输出深度。深度是 `32FC1` 米制光轴距离，RGB-D 两通道同帧对齐。图像预览默认关闭；仅手动加 `camera_view:=true` 时打开。`gui:=false` 关闭三维窗口，不停止相机渲染和话题发布。参数当前启动时生效，修改后重新启动。具体字段、光学坐标与平台限制见 [相机使用说明](../../docs/usage/SDF与独立窗口.md#车载-rgb-与深度相机)。
-
-同一个 domain 只运行一个仿真时钟；开始本例前关闭此前启动的单机/world 仿真。
-
-## 3. 让车动起来
-
-终端 B 先激活相同 Humble 环境并进入源码仓库根目录（Zsh 将 `setup.bash` 改为 `setup.zsh`）：
-
-```bash
-evidence_dir="$(python3 scripts/paths.py evidence)"
-mkdir -p "$evidence_dir"
+source /opt/ros/humble/setup.bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70
-export ROS_LOCALHOST_ONLY=1
-export ROS_LOG_DIR="${evidence_dir}/wheel-car-4w/manual-logs"
-```
-
-持续发前进/左转指令：
-
-```bash
+export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
   '{linear: {x: 0.3}, angular: {z: 0.2}}'
 ```
 
-正 x 向前，正 z 角速度为俯视逆时针。停止发布后，默认 0.5 秒**仿真时间**超时，按减速度停车。也可显式发送零速度：
+正 x 向前，正 z 角速度为俯视逆时针。Ctrl+C 停止发布后，小车按控制器限值减速；默认输入超时为 0.5 仿真秒。可显式停车并查看反馈：
 
 ```bash
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
-  '{linear: {x: 0.0}, angular: {z: 0.0}}'
-```
-
-查看数据：
-
-```bash
-ros2 topic echo /sim/status --once
-ros2 topic echo /joint_states --once
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.0}, angular: {z: 0.0}}'
+ros2 topic echo /odom --once
 ros2 topic echo /points_raw --once --field header --qos-reliability best_effort
-ros2 topic echo /imu/data_raw --once --qos-reliability best_effort
 ```
 
-默认接口：
+完整通信与位移检查见[启动与控制](../../docs/tutorials/启动与控制.md)。终端 A 按 Ctrl+C 结束仿真；仅关闭三维窗口时仿真继续。同一 domain 每次运行一个世界。
 
-| 话题 | 内容 |
+## 选择场景、雷达和窗口
+
+每次停止旧 launch，再按需添加参数：
+
+| 参数 | 用途 |
 | --- | --- |
-| `/cmd_vel` | Twist，使用 linear.x / angular.z |
-| `/points_raw` | 16×512 PointCloud2，xyz/intensity/ring/time，24 字节，frame=lidar_link |
-| `/points_raw/range_boundary` | 没有命中物体的方向对应最大量程辅助点；RViz淡蓝色，不能当成实际障碍 |
-| `/imu/data_raw` | raw IMU，frame=imu_link，无姿态估计 |
-| `/odom` | 局部里程计，pose 在 odom，twist 在 base_link |
-| `/joint_states` | 四个轮关节的位置/速度，前后同侧一致 |
-| `/robot_description` | 完整 URDF，transient local |
-| `/clock`、`/tf`、`/tf_static` | 仿真时间和坐标关系 |
-| `/scene`、`/trajectory` | 环境和局部轨迹可视化 |
-| `/sim/ground_truth/wheel_car_4w/odom`、`contacts` | 独立真值/碰撞评测通道 |
+| `gui:=false` | 关闭三维窗口 |
+| `rviz:=true` | 查看机器人、点云、TF 和轨迹 |
+| `world:=warehouse.sdf` | 使用小型仓库；默认 `office.sdf` |
+| `lidar_profile:=vlp16` / `mid360` / `mid40` | 切换[雷达预设](雷达配置说明.md)；默认 `config` |
+| `lidar_interface:=native` | 使用原生 PointCloud2 |
+| `cameras:=true` | 开启默认 640 × 480、15 Hz RGB 相机 |
+| `camera_view:=true` | 打开已启用相机的图像预览 |
+| `real_time_factor:=0.5` | 目标半速；0 表示不限速 |
+| `noise_config:=绝对路径` | 按传感器实例注入[测量误差](../../docs/usage/传感器配置.md) |
+| `controllers:=绝对路径` | 使用自己的控制器参数 |
 
-rolling 点云中的 time 是相对 header 的秒偏移，尚未去畸变。无回波为 NaN。算法订阅点云/IMU 默认使用 SensorDataQoS；所有算法设置 `use_sim_time=true`。
+相机即使在 `gui:=false` 时也需要可用的 Ogre2 渲染环境。深度/RGB-D 类型、光学坐标和输出话题见[相机说明](../../docs/usage/SDF与独立窗口.md#车载-rgb-与深度相机)。
 
-## 4. 四轮模型和 TF 约定
+全部参数及默认值见[启动参数](../../docs/api/启动与节点参数.md)，也可查询：
 
-| 几何/传感器 | 数值 |
-| --- | --- |
-| 车体 | 0.74×0.48×0.18 m，中心 z=0.25 m |
-| 四个轮子 | 半径 0.12 m、宽 0.07 m |
-| 左右轮中心距 | 0.58 m |
-| 前后轮中心距 | 0.48 m |
-| 轮心 | x=±0.24、y=±0.29、z=0.12 m |
-| lidar_link 相对 base_link | `[0.12, 0, 0.49]` m，零安装旋转 |
-| imu_link 相对 base_link | `[-0.08, 0, 0.36]` m，零安装旋转 |
-
-后轮关节 `rear_left_wheel_joint`、`rear_right_wheel_joint` 代表两侧独立驱动；前轮用 URDF mimic 按 1:1 跟随同侧后轮。小车整体采用**同侧等速的差速等效运动学**；不模拟四个独立电机、轮胎侧滑力、悬架或真实 Ackermann 转向机构。四个轮子的碰撞体都参与支撑和障碍检查。
-
-障碍物固定在初始位姿，碰撞不会推动、旋转或弹开它们。场景 link 使用显式 collision；缺失时由该 link 的 visual 补齐碰撞几何。
-
-本例的 `config/runtime.yaml`（默认 SDF + 插件入口）启用：
-
-```yaml
-robot:
-  continue_on_collision: true
+```bash
+ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py --show-args
 ```
 
-旧 `simulation.yaml` 兼容入口使用 `robot.drive.continue_on_collision`。
+## 修改模型和配置
 
-启用后，车体被障碍挡住，但驱动轮及前轮 mimic 继续转动，`/joint_states`、`/odom`、`odom → base_footprint` TF 和里程计路径继续按轮速累计。激光、相机、IMU 和 `/sim/ground_truth/wheel_car_4w/odom` 使用真实受阻状态。`/odom` 是从轮速积分的平面里程计，即使 `odom.mode: ideal` 也会因顶住障碍而偏离真值；外部激光/视觉里程计算法根据实际传感器数据自行估计。
+| 文件 | 内容 |
+| --- | --- |
+| [office.sdf](wheel_car_4w_models/worlds/office.sdf) | 场景、灯光、步长与目标速率 |
+| [wheel_car_4w.urdf](wheel_car_4w_description/urdf/wheel_car_4w.urdf) | 机械结构、轮子几何和关节限位 |
+| [robot.urdf.xacro](wheel_car_4w_description/urdf/robot.urdf.xacro) | RSP 使用的机械模型与传感器安装 |
+| [simulation.urdf.xacro](wheel_car_4w_description/urdf/simulation.urdf.xacro) | 仿真插件组合入口 |
+| [drive.yaml](wheel_car_4w_description/config/drive.yaml) | 独立后轮的左右绑定，尺寸由 URDF 自动读取 |
+| [sensors.yaml](wheel_car_4w_description/config/sensors.yaml) / [sensors.xacro](wheel_car_4w_description/urdf/sensors.xacro) | 传感器参数 / 插件声明 |
+| [runtime.yaml](wheel_car_4w_sim/config/runtime.yaml) | 地形、支撑轮、控制模式与碰撞策略 |
+| [ros.yaml](wheel_car_4w_sim/config/ros.yaml) / [rsp.yaml](wheel_car_4w_sim/config/rsp.yaml) | 出生位姿与仿真节点参数 / RSP 参数 |
+| [controllers.yaml](wheel_car_4w_sim/config/controllers.yaml) / [control.urdf.xacro](wheel_car_4w_sim/urdf/control.urdf.xacro) | 控制器参数 / 硬件接口 |
 
-设为 `false` 则碰撞时轮子一起停止，恢复原有行为。内核缺省值为 `false`，本小车示例显式设为 `true`。限速、加减速、零速度指令、命令超时和暂停仍生效，倒车可离开障碍；无支撑、不可通行台阶等地形错误仍停止驱动。该参数只接受轮式模型，不适用于无人机。修改后重新构建并启动新会话，重置会清除轮式里程计漂移。
+修改源码资源后重新构建并启动。自定义模型用 `robot_urdf`、`rsp_model` 分别传给仿真和 RSP；两份模型中的关节与安装外参须一致。自定义场景用 `assets_root`、`world`，运行参数用 `runtime`、`params`。出生位姿在 ROS 参数文件的 `initial_pose_override` 中设置，用 `params:=绝对路径` 加载；格式见[初始位姿](../../docs/usage/接入与使用手册.md#初始位姿和运行中重置)。参数仅在启动时读取。
 
-模型 root 是没有几何/惯性的 `base_footprint`，base_link 与它固定重合，均位于车体中心的地面投影。TF 链为：
+算法默认向 diff_drive_controller 的 `/cmd_vel` 发送 Twist。改为 TwistStamped 时，在 controllers.yaml 设 `use_stamped_vel: true`，并把 launch 中控制器输入 remap 从 `cmd_vel_unstamped` 改为 `cmd_vel`；使用仿真时间。仿真节点的 `cmd_mode` 不改变控制器输入类型。
+
+独立轮速接管见[统一控制教程](../../docs/tutorials/全部模型与第三方算法ros2_control.md)。旧 URDF/YAML 直接 Twist 入口使用 `legacy_twist.launch.py`，其配置见[兼容说明](../../docs/usage/兼容配置.md)。
+
+## 数据与坐标
+
+| 话题 | 默认内容 |
+| --- | --- |
+| `/points_raw` | 16 线 × 512 列、10 Hz rolling PointCloud2，frame=`lidar_link` |
+| `/points_raw/range_boundary` | 最远量程辅助点，不代表障碍物回波 |
+| `/imu/data_raw` | 200 Hz raw IMU，frame=`imu_link` |
+| `/odom` | 50 Hz 编码器里程计，pose 在 odom，twist 在 base_link |
+| `/joint_states` | 实际轮角/轮速，前轮 mimic 同侧后轮 |
+| `/clock`、`/tf`、`/tf_static`、`/robot_description` | 仿真时间、坐标与模型 |
+| `/sim/ground_truth/wheel_car_4w/odom` | 世界位姿真值，用于独立评测 |
+
+点云 `time` 是相对 header 的秒偏移，rolling 云尚未去畸变；无回波点为 NaN。算法设置 `use_sim_time: true`，点云和 IMU 使用 SensorDataQoS。数据格式见[传感器数据](../../docs/api/传感器数据.md)。
+
+轮半径 0.12 m、左右轮距 0.58 m。后轮独立驱动，前轮按 1:1 mimic 同侧后轮；模型采用差速等效运动学。底盘、里程计和控制器均从完整 URDF 读取几何，`drive.yaml` 不重复填写尺寸。
 
 ```text
 odom -> base_footprint -> base_link -> 四个 wheel_link
@@ -162,122 +103,18 @@ odom -> base_footprint -> base_link -> 四个 wheel_link
                                  └-> camera_link -> camera_optical_frame
 ```
 
-`odom -> base_footprint` 由仿真发布；其余边由 RSP 发布。不能同时再发 `odom -> base_link`，否则会让 base_link 出现两个父节点。IMU 静止、水平时 z 比力约为 +9.81 m/s²，不是零；orientation_covariance[0]=-1。
+仿真发布 `odom → base_footprint`，RSP 发布内部 TF。不要再发布 `odom → base_link`。水平静止时 raw IMU 的 z 比力约 +9.81 m/s²，未提供姿态估计。
 
-组合模型四轮关节的轴都是底盘 +y，碰撞为居中共轴圆柱；后轮 link 必须保持叶节点。轮径、轮距从未改动的机械 URDF 在构建时提取到共享 geometry.yaml，底盘和里程计读取同一值。新机器人若修改机械尺寸，应维护自己的模型并重新构建，不能只修改里程计侧的尺寸。
+默认 `robot.continue_on_collision: true`：车体被障碍挡住时，驱动轮和编码器里程计仍可累计；雷达、相机、IMU 和真值使用受阻后的实际状态。设为 false 时只累计碰撞前运动。障碍物固定，不模拟轮胎受力或悬架。
 
-## 5. 修改参数
+## 暂停与单步
 
-默认 SDF 模式使用以下文件：
-
-- [office.sdf](wheel_car_4w_models/worlds/office.sdf)：场景模型、初始位姿、灯光、步长和默认目标速率。
-- [simulation.urdf.xacro](wheel_car_4w_description/urdf/simulation.urdf.xacro)：默认机器人结构与插件；原 SDF 机器人模型仅在未指定 robot.urdf 的兼容路径中使用。
-- [sensors.xacro](wheel_car_4w_description/urdf/sensors.xacro)：传感器挂载、插件、参数引用。
-- [runtime.yaml](wheel_car_4w_sim/config/runtime.yaml)：组合模型路径、碰撞策略和地形支持。
-- [ros.yaml](wheel_car_4w_sim/config/ros.yaml)：命令类型、QoS、TF、暂停和 RSP 参数。
-
-修改已安装资源的源码后重新构建；或指定自己的资源根及 runtime。资源职责、贴图兼容矩阵和碰撞预算见 [SDF 与独立窗口](../../docs/usage/SDF与独立窗口.md)。
+启动时加 `paused:=true`；控制器等待仿真时间推进，需在启动超时前恢复或单步。已运行的仿真可以先暂停，再推进 20 步：
 
 ```bash
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
-  assets_root:="$PWD/examples/wheel_car_4w/wheel_car_4w_models" \
-  runtime:="$PWD/examples/wheel_car_4w/wheel_car_4w_sim/config/runtime.yaml"
-```
-
-旧 `simulation.yaml` 和 URDF 保留用于回归，通过 `legacy_twist.launch.py config:=路径` 使用旧入口。参数在启动时读取，无热加载。
-
-| 想改什么 | 改哪个字段 |
-| --- | --- |
-| 最大速度/转速 | controllers.yaml 的 linear.x / angular.z 速度限制；关节仍受 URDF velocity 约束 |
-| 加速和停车快慢 | controllers.yaml 的 linear.x / angular.z 加速度限制 |
-| 初始位置/航向 | world SDF 中对应 include/model 的 pose，单位米/弧度 |
-| 雷达频率/点数 | sensors.yaml 的 lidar.rate_hz / columns / vertical_angles_deg；环数由角度数组推导 |
-| 雷达安装位置 | 本例复用原始机械 URDF 的 lidar_mount_joint；新增传感器在 sensors.xacro 定义 |
-| 测距误差 | range_bias_m / range_sigma_m / dropout |
-| 最大量程边界显示 | publish_range_boundary；默认开启，距离由max_range_m决定；辅助点与实际回波分话题 |
-| IMU 误差 | accel_bias / gyro_bias / accel_sigma / gyro_sigma |
-| 非理想里程计 | odometry 插件的 noise，设置 scale_error/bias/sigma；不改变真实运动 |
-| 场景障碍 | SDF include/model；尺寸和 pose 按米/弧度 |
-| 障碍物运动 | 当前所有环境障碍固定；旧 motion 字段拒绝非零速度 |
-| 算法要求 reliable | ros.yaml 中 sensor_reliable=true |
-| 算法发 TwistStamped | 控制器 use_stamped_vel=true，并将其 cmd_vel remap 到算法话题；时间戳用 /clock |
-| 外部估计器接管 odom TF | publish_odom_tf=false、external_odom_tf=true；输出到 URDF root |
-| TF 前缀 | frame_prefix，如 car/；同步配置 ros.yaml、rsp.yaml 和控制器 frame 参数，话题仍可单独 remap |
-
-暂停单步校验大点云时，建议在 `ros.yaml` 中设置 `sensor_reliable: true`，通过 `params:=` 加载，并把算法订阅及 RViz 点云显示的 Reliability Policy 设为 Reliable。20,000 点的数据区为 480,000 字节；best effort 即使 DDS 已匹配也可能丢失整帧，暂停后不会自动补发。只修改发布端可靠性、保留 best effort 消费端，仍不能得到可靠传输。默认配置保留 best effort，适合允许丢帧的实时显示。
-
-默认 /cmd_vel 由 diff_drive_controller 订阅；仿真节点的 cmd_mode 不改变控制器输入类型。若算法发送 TwistStamped，将 controllers.yaml 的 use_stamped_vel 改为 true，并把 manager 的 remap 从 /diff_drive_controller/cmd_vel_unstamped 改为 /diff_drive_controller/cmd_vel。使用相同的仿真时间与 frame 约定。
-
-独立轮速接管、完整 control Xacro 和 launch 见 [统一教程](../../docs/tutorials/全部模型与第三方算法ros2_control.md)。此启动包面向一个小车实例；多机共享时钟的方法见总手册。
-
-### launch 参数
-
-| 参数 | 默认与用途 |
-| --- | --- |
-| assets_root / world | wheel_car_4w_models share / office.sdf |
-| runtime | 安装的 config/runtime.yaml |
-| noise_config | 空；按实例注入误差，见[传感器配置](../../docs/usage/传感器配置.md) |
-| model_arguments | {}；Xacro 参数映射，例如 {camera_enabled: true} |
-| gui | true；仅查看三维场景，false 无窗口 |
-| collision_budget_enabled | false；仅关闭预算，保留碰撞检测 |
-| real_time_factor | 空使用 SDF；0 不限速 |
-| config | 公共 launch 兼容参数；旧直接 Twist 配置使用 legacy_twist.launch.py，避免与默认控制器冲突 |
-| controllers | config/controllers.yaml；显式替换控制器参数文件 |
-| robot_urdf / rsp_model | 仿真组合 / RSP 机械 Xacro；新增固定传感器时同步修改 |
-| params | 安装的 config/ros.yaml |
-| lidar_profile | config；也可选 vlp16、mid360、mid40 或自定义预设YAML绝对路径，启动时生效 |
-| rviz | false；true 另开算法图层查看器 |
-| rviz_config | 安装的 rviz/wheel_car_4w.rviz；可提供自己的显示配置 |
-| paused | 空表示遵循 ros.yaml；true/false 显式覆盖 start_paused |
-| manifest | 空表示遵循 ros.yaml；非空覆盖为该运行清单文件，父目录须存在 |
-
-```bash
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py --show-args
-```
-
-launch 分别展开机械模型给 RSP、控制模型给 controller_manager，并给公共仿真 launch 传入组合 Xacro 和参数文件。RViz 显示配置使用临时副本，正常关闭时删除，安装模板保持不变。
-
-## 6. 暂停、单步和保存实验
-
-暂停启动并保存清单：
-
-```bash
-evidence_dir="$(python3 scripts/paths.py evidence)"
-mkdir -p "$evidence_dir"
-mkdir -p "${evidence_dir}/wheel-car-4w/manual"
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py \
-  paused:=true manifest:="${evidence_dir}/wheel-car-4w/manual/run.json"
-```
-
-另一个同环境终端：
-
-```bash
-ros2 service call /sim/step litesim3d_interfaces/srv/Step \
-  '{request_id: "car-step-001", steps: 20}'
-ros2 service call /sim/pause std_srvs/srv/SetBool '{data: false}'
 ros2 service call /sim/pause std_srvs/srv/SetBool '{data: true}'
+ros2 service call /sim/step litesim3d_interfaces/srv/Step '{request_id: "car-step-001", steps: 20}'
+ros2 service call /sim/pause std_srvs/srv/SetBool '{data: false}'
 ```
 
-20 步为 0.1 秒仿真时间。相同 ID 和相同步数重试只返回原结果，新一次推进换 ID。运行态不能单步。运行后想回初始状态可关闭并重启整个 launch；需要跨算法协调 reset 时改用总手册的 sim_session，以本例 simulation.yaml 为 config，不能和本 launch 同时运行。
-
-独立核心预检：
-
-```bash
-evidence_dir="$(python3 scripts/paths.py evidence)"
-mkdir -p "$evidence_dir"
-lws_prefix="$(ros2 pkg prefix litesim3d_core)"
-lws_config="$(ros2 pkg prefix wheel_car_4w_sim)/share/wheel_car_4w_sim/config/simulation.yaml"
-mkdir -p "${evidence_dir}/wheel-car-4w/manual"
-"$lws_prefix/bin/sim_headless" "$lws_config" 400 \
-  "${evidence_dir}/wheel-car-4w/manual/headless.json" 0.2 0.1 0
-```
-
-这运行 2 秒仿真，持续输入 0.2 m/s 和 0.1 rad/s；预期产生 20 帧雷达。不启动 ROS、RSP 或窗口。
-
-## 7. 后续接入
-
-- [雷达配置说明](雷达配置说明.md)：雷达预设、范围与精度语义。
-- [接入与使用手册](../../docs/usage/接入与使用手册.md)：启动、控制与算法接入。
-- [接口文档](../../docs/api/README.md)：消息/服务、参数和数据格式。
-- [记录与排障](../../docs/usage/记录与排障.md)：录包、回放与故障定位。
-- [四轮车与雷达测试](../../docs/testing/四轮车与雷达测试.md)：测试入口、结果与未验证范围。
+默认步长 5 ms，20 步推进 0.1 仿真秒。新操作换 request_id；相同 ID 和步数只返回原结果。回到起点时停止完整 launch 后重启；录包和排障见[记录与排障](../../docs/usage/记录与排障.md)。

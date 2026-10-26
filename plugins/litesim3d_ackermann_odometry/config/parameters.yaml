@@ -1,9 +1,3 @@
-# 必填：四轮统一有效半径，m，必须 > 0；以下均为示例几何。
-wheel_radius_m: 0.1
-# 必填：后轴到前轴距离，m，必须 > 0；base 原点必须位于后轴中点。
-wheelbase_m: 0.6
-# 必填：左右轮距，m，必须 > 0；左 y=+轮距/2，右 y=-轮距/2。
-track_width_m: 0.4
 # 必填：后左 continuous 驱动轮关节，位于 [0,+轮距/2]，中立轴 +y。
 rear_left_joint: rear_left_wheel_joint
 # 必填：后右 continuous 驱动轮关节，位于 [0,-轮距/2]，中立轴 +y。
@@ -12,9 +6,6 @@ rear_right_joint: rear_right_wheel_joint
 left_steering_joint: left_steering_joint
 # 必填：右 revolute 转向关节，约定同左侧；两侧转角按同一转弯中心分别计算。
 right_steering_joint: right_steering_joint
-# 单个实际前轮（含内轮）的转角绝对值上限，rad，(0,pi/2)；须落在 URDF 限位内。
-# 理想位置执行器在积分区间开始选定角度，不模拟舵机动力学；零速不能原地旋转。
-max_steering_rad: 0.6
 # 编码器解算后的速度误差；位姿按每个实际时间段积分，reset 重置随机序列。
 noise:
   # [x,y] 速度相对比例误差，无量纲，每项 > -1；0 理想，0.02 表示 +2%。

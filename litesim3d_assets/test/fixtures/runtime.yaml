@@ -20,8 +20,6 @@ robot:
   sensor_geometry: visual
   sensor_overrides: {}
   drive:
-    wheel_radius: 0.12
-    wheel_separation: 0.58
     left_joint: rear_left_wheel_joint
     right_joint: rear_right_wheel_joint
     support_links:
@@ -35,7 +33,6 @@ robot:
     deceleration: 1.0
     angular_acceleration: 2.0
     unlimited_acceleration: false
-    wheelbase: 0.48
     max_steering_rad: 0.6
 terrain:
   enabled: true

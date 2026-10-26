@@ -42,11 +42,14 @@ int main(int argc, char **argv) {
 | --- | --- |
 | `Config::load(file, scene, control={})` | 解析 YAML、资源及插件声明，填充 Scene；失败抛异常 |
 | `Model::load(file, options={})` | 已展开 URDF，返回关节树、几何与导入报告 |
+| `Model::mechanicalGeometry(base_link)` | 从已加载模型计算 base 下的中立关节位置、轴向、限位及可确定的圆柱轮径；返回 `plugins::ModelGeometry`，不接受第二份尺寸配置 |
 | `World::load(file)` | 世界 YAML，返回 unique_ptr，加载 1–4 台同构机器人 |
 | `resolveResource(uri, base)` | 按声明目录/包索引定位资源 |
 | `LoadControl` | byte_budget、triangle_budget、cancelled；checkpoint 检查预算/取消；fail_allocation_after 用于故障注入 |
 
 不要把失败加载后的部分输出当成可运行世界；宿主先构造候选对象，成功后再替换当前实例。预算并非通用进程 RSS 上限。
+
+安装后的 `bin/model_geometry expanded.urdf base_link` 提供同一读取逻辑的 JSON 输出。带 `--resolve` 时从标准输入接受请求数组，每项为 `{"kind":"differential|ackermann|omni","parameters":{...关节绑定...}}`，返回 `resolved` 参数数组。启动适配器使用该工具填充控制器参数；不修改 URDF 或源 YAML。轮子缺少可确定的圆柱 collision、模型无效或旧尺寸冲突时退出码非零。
 
 ## Simulator
 

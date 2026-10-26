@@ -15,6 +15,8 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>litesim3d_interfaces</exec_depend>
+  <exec_depend>litesim3d_bringup</exec_depend>
+  <exec_depend>xacro</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>rosgraph_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>

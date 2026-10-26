@@ -3,8 +3,7 @@ Changelog for package litesim3d_core
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Prepared for the first planned 0.4.0 release. Entries consolidate development
-history; no earlier tagged releases or publication dates are implied. See the
-`repository development history <../CHANGELOG.rst>`_ for chronology and evidence.
+history; no earlier tagged releases or publication dates are implied.
 
 Forthcoming
 -----------
@@ -19,4 +18,4 @@ Forthcoming
 * Add level-body multicopter translation and yaw kinematics, combined velocity/acceleration limits, command-timeout braking and three-dimensional collision constraints.
 * Set the maintainer contact to chiwayfpv@gmail.com and provide the repository Apache-2.0 license; retain existing third-party notices.
 
-References: `Source 1 <../docs/testing/M1基线.md>`_, `Source 2 <../docs/testing/M2基线.md>`_, `Source 3 <../docs/testing/M3基线.md>`_, `Source 4 <test/test_review_fixes.cpp>`_, `Source 5 <../docs/testing/无人机与办公场景验证.md>`_.
+References: `Source 4 <test/test_review_fixes.cpp>`_.

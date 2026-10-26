@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <robot name="dual_mid360" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- 独立 description：只有机械结构，不包含仿真插件。 -->
-  <xacro:property name="g" value="${xacro.load_yaml('$(find dual_mid360_description)/config/geometry.yaml')}"/>
-  <xacro:property name="radius" value="${g['drive']['wheel_radius_m']}"/>
-  <xacro:property name="track" value="${g['drive']['wheel_separation_m']}"/>
-  <xacro:property name="width" value="${g['wheel_width_m']}"/>
+  <xacro:property name="radius" value="${0.15}"/>
+  <xacro:property name="track" value="${0.62}"/>
+  <xacro:property name="width" value="${0.08}"/>
+  <xacro:property name="wheelbase" value="${0.56}"/>
   <material name="body_blue"><color rgba="0.08 0.29 0.43 1"/></material>
   <material name="rubber"><color rgba="0.045 0.052 0.06 1"/></material>
   <material name="metal"><color rgba="0.60 0.65 0.68 1"/></material>
@@ -54,13 +54,14 @@
     <joint name="${prefix}_wheel_joint" type="continuous"><parent link="base_link"/><child link="${prefix}_wheel_link"/>
       <origin xyz="${x} ${side*track/2} ${radius}"/><axis xyz="0 1 0"/><limit effort="30" velocity="10"/></joint>
   </xacro:macro>
-  <xacro:wheel prefix="front_left" x="${g['wheelbase_m']/2}" side="${1}"/>
-  <xacro:wheel prefix="front_right" x="${g['wheelbase_m']/2}" side="${-1}"/>
-  <xacro:wheel prefix="rear_left" x="${-g['wheelbase_m']/2}" side="${1}"/>
-  <xacro:wheel prefix="rear_right" x="${-g['wheelbase_m']/2}" side="${-1}"/>
+  <xacro:wheel prefix="front_left" x="${wheelbase/2}" side="${1}"/>
+  <xacro:wheel prefix="front_right" x="${wheelbase/2}" side="${-1}"/>
+  <xacro:wheel prefix="rear_left" x="${-wheelbase/2}" side="${1}"/>
+  <xacro:wheel prefix="rear_right" x="${-wheelbase/2}" side="${-1}"/>
 
   <xacro:macro name="mid360_mount" params="prefix x yaw marker">
-    <xacro:property name="pitch" value="${g['lidar_mount']['outward_pitch_deg']*pi/180}"/>
+    <!-- 安装关系只在机械模型内定义；仿真与 RSP 从展开后的 URDF 关节链读取位姿。 -->
+    <xacro:property name="pitch" value="${15*pi/180}"/>
     <xacro:property name="wedge_height" value="${0.10*fabs(tan(pitch))}"/>
     <!-- 向外的局部 +x 轴俯倾；后支架整体 yaw=pi，所以后雷达向车尾俯倾。 -->
     <xacro:box_part name="${prefix}_mount_foot" parent="base_link" xyz="${x} 0 0.395" rpy="0 0 ${yaw}"
@@ -93,6 +94,6 @@
     <joint name="${prefix}_mid360_joint" type="fixed"><parent link="${prefix}_mount_plate"/><child link="${prefix}_mid360_link"/>
       <origin xyz="0 0 0.051"/></joint>
   </xacro:macro>
-  <xacro:mid360_mount prefix="front" x="${g['lidar_mount']['front_x_m']}" yaw="0" marker="front_marker"/>
-  <xacro:mid360_mount prefix="rear" x="${g['lidar_mount']['rear_x_m']}" yaw="${pi}" marker="rear_marker"/>
+  <xacro:mid360_mount prefix="front" x="0.32" yaw="0" marker="front_marker"/>
+  <xacro:mid360_mount prefix="rear" x="-0.32" yaw="${pi}" marker="rear_marker"/>
 </robot>

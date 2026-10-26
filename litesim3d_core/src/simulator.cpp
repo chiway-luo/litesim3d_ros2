@@ -78,6 +78,14 @@ Simulator::Simulator(Config config, Model model, Scene scene)
   }
   auto transforms = model_.fk(current_.joints);
   if (!chassis_plugin_ && config_.drive.model != "multicopter") {
+    if (!config_.inferred_drive_fields.empty()) {
+      Json values = {{"left_joints", {config_.drive.left_joint}}, {"right_joints", {config_.drive.right_joint}}};
+      if (!config_.inferred_drive_fields.count("wheel_radius")) values["wheel_radius_m"] = config_.drive.wheel_radius;
+      if (!config_.inferred_drive_fields.count("wheel_separation")) values["wheel_separation_m"] = config_.drive.wheel_separation;
+      const auto derived = plugins::differentialGeometry(model_.mechanicalGeometry(config_.base_link), values);
+      config_.drive.wheel_radius = derived.at("wheel_radius_m");
+      config_.drive.wheel_separation = derived.at("wheel_separation_m");
+    }
     for (auto &name : {config_.drive.left_joint, config_.drive.right_joint}) {
       require(model_.joints.count(name), "wheel joint not found: " + name);
       const auto &j = model_.joints.at(name);

@@ -6,20 +6,8 @@ void Simulator::initializeMotionPlugins() {
   plugins::Initialization init;
   init.seed = config_.seed;
   init.model_directory = config_.urdf.parent_path();
-  init.model.base_link = config_.base_link;
-  init.model.links = model_.links;
-  const auto neutral = model_.fk({});
-  const Pose base_inverse = neutral.at(config_.base_link).inverse();
-  for (const auto &[name, joint] : model_.joints) {
-    plugins::JointDescription item;
-    item.type = joint.type; item.mimic = joint.mimic;
-    const Pose transform = base_inverse * neutral.at(joint.parent) * joint.origin;
-    item.position = transform.translation(); item.axis = transform.linear() * joint.axis;
-    item.lower = joint.lower; item.upper = joint.upper; item.max_velocity = joint.velocity;
-    for (const auto &[parent_name, parent] : model_.joints)
-      if (parent.child == joint.parent) { item.parent_joint = parent_name; break; }
-    init.model.joints[name] = item;
-  }
+  const auto geometry = model_.mechanicalGeometry(config_.base_link);
+  init.model = geometry.model;
   plugin_loader_ = std::make_unique<plugins::Loader>();
   std::set<std::string> names;
   for (auto &spec : config_.plugins) {
@@ -29,12 +17,16 @@ void Simulator::initializeMotionPlugins() {
       if (spec.category == "chassis") {
         require(!chassis_plugin_, "multiple chassis plugins");
         chassis_plugin_ = plugin_loader_->chassis(spec.class_name);
+        if (auto *derived = dynamic_cast<plugins::ModelParameters *>(chassis_plugin_.get()))
+          spec.parameters = derived->resolveModelParameters(geometry, spec.parameters);
         spec.parameters = plugins::parameters(chassis_plugin_->defaults(), spec.parameters);
         chassis_plugin_->initialize(init, spec.parameters);
         chassis_plugin_->reset({current_.joints, current_.joint_velocities});
       } else if (spec.category == "odometry") {
         require(!odometry_plugin_, "multiple odometry plugins");
         odometry_plugin_ = plugin_loader_->odometry(spec.class_name);
+        if (auto *derived = dynamic_cast<plugins::ModelParameters *>(odometry_plugin_.get()))
+          spec.parameters = derived->resolveModelParameters(geometry, spec.parameters);
         spec.parameters = plugins::parameters(odometry_plugin_->defaults(), spec.parameters);
         odometry_plugin_->initialize(init, spec.parameters);
         odometry_plugin_->reset({current_.joints, current_.joint_velocities});

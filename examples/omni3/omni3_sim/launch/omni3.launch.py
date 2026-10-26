@@ -10,6 +10,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
+from litesim3d_bringup.controller_parameters import UrdfControllerParameters
 
 
 def required_exit(event, context):
@@ -74,13 +75,14 @@ def generate_launch_description():
         simulation,
     ]))
 
+    control_description = xacro.process_file(control_xacro).toxml()
     manager = Node(
         package="litesim3d_ros2_control", executable="spawn_when_ready.py", output="screen",
         arguments=["--executable", "ros2_control_node",
                    "--timeout", LaunchConfiguration("controller_startup_timeout"), "--"],
         # 不设置全局 name remap，防止动态加载的控制器被一并改名。
-        parameters=[LaunchConfiguration("controllers"), {
-            "robot_description": ParameterValue(xacro.process_file(control_xacro).toxml(), value_type=str),
+        parameters=[UrdfControllerParameters(LaunchConfiguration("controllers"), control_description), {
+            "robot_description": ParameterValue(control_description, value_type=str),
         }],
         remappings=[
             ("/omni_controller/cmd_vel", "/cmd_vel"),

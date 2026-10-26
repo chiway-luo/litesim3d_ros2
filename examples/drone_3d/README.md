@@ -70,8 +70,8 @@ ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
 - [`controllers.yaml`](drone_3d_sim/config/controllers.yaml)：默认 BodyVelocityController 的算法输入超时和限速。
 - [`sensors.yaml`](drone_3d_sim/config/sensors.yaml)：传感器实例参数；类名在 simulation.urdf.xacro 中声明。
 - [`rsp.yaml`](drone_3d_sim/config/rsp.yaml)：独立 RSP 参数，机械模型单独展开。
-- [`ros.yaml`](drone_3d_sim/config/ros.yaml)：ROS 参数、QoS 和 TF。使用 `params:=/绝对路径/ros.yaml` 加载自定义文件。
-- [`drone_arena.sdf`](drone_3d_models/worlds/drone_arena.sdf)：地图、机器人初始位姿、步长、默认目标 RTF 和观察相机初始视角。
+- [`ros.yaml`](drone_3d_sim/config/ros.yaml)：出生位姿 `initial_pose_override`、ROS 参数、QoS 和 TF。默认值为 `[-8.0, -8.0, 1.2, 0.0, 0.0, 0.0, 1.0]`，顺序是 `[x,y,z,qx,qy,qz,qw]`。使用 `params:=/绝对路径/ros.yaml` 加载自定义文件。
+- [`drone_arena.sdf`](drone_3d_models/worlds/drone_arena.sdf)：地图、步长、默认目标 RTF 和观察相机初始视角。
 - [`robot.urdf.xacro`](drone_3d_sim/urdf/robot.urdf.xacro)：默认组合模型的机械结构、安装位置和 visual/collision；保留原 SDF 同样的几何。SDF model 用于兼容入口，默认模型由 launch 显式传入。
 - `terrain.enabled` 必须为 false，里程计目前只支持 `odom.mode: ideal`。所有配置在启动时读取，修改后重新启动。
 
@@ -85,4 +85,4 @@ ros2 launch drone_3d_sim drone_3d.launch.py cameras:=true
 
 独立 RSP、硬件 GPIO、参数文件和第三方定高控制器的构建、加载与切换见 [完整教程](../../docs/tutorials/全部模型与第三方算法ros2_control.md)。此模型没有活动关节，默认不启动 joint_state_broadcaster。旧直接 Twist 入口为 legacy_twist.launch.py。
 
-该示例复用公共仿真包的 SDF 启动流程，拥有独立 runtime、ROS 参数和模型资源包；不需要启动小车节点。修改地图可直接编辑 SDF，或修改并运行仓库内的 `scripts/fixtures/generate_example_worlds.py`，后者将办公区写入 `wheel_car_4w_models`，将四旋翼和飞行场地写入 `drone_3d_models`。
+修改地图时编辑本例的 SDF 世界，重新构建后启动。

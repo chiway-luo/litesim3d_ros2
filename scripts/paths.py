@@ -7,6 +7,7 @@ import re
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DEVELOPMENT_DOCS_DIR = REPO_ROOT / "tmp" / "development-docs"
 IN_WORKSPACE = REPO_ROOT.parent.name == "src"
 WORKSPACE_ROOT = REPO_ROOT.parent.parent if IN_WORKSPACE else REPO_ROOT.parent
 ARTIFACTS_DIR = Path(os.environ.get(
@@ -20,10 +21,14 @@ SOURCE_FOLDERS = ("litesim3d_core", "litesim3d_interfaces", "litesim3d_ros2",
 
 
 def relocated_document(path):
-    """Resolve pre-split document references retained in historical indexes."""
+    """Resolve historical document references into the local development archive."""
     path = Path(path)
+    if path.is_relative_to(REPO_ROOT):
+        archived = DEVELOPMENT_DOCS_DIR / path.relative_to(REPO_ROOT)
+        if archived.is_file():
+            return archived
     if path.parent == REPO_ROOT / "docs" and path.suffix == ".md":
-        matches = [REPO_ROOT / "docs" / folder / path.name
+        matches = [relocated_document(REPO_ROOT / "docs" / folder / path.name)
                    for folder in ("usage", "testing", "design")]
         return next((candidate for candidate in matches if candidate.is_file()), path)
     return path
@@ -68,6 +73,9 @@ def write_report(path, text):
     Source/document links remain clickable from the new report directory.
     """
     path = Path(path).resolve()
+    if path.is_relative_to(REPO_ROOT / "docs/testing"):
+        path = DEVELOPMENT_DOCS_DIR / path.relative_to(REPO_ROOT)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     def rewrite(match):
         label, target = match.groups()

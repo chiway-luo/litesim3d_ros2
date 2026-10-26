@@ -91,8 +91,6 @@ robot:
   motion_model: differential_drive
   initial_pose: {{xyz: [0, 0, 0], rpy: [0, 0, 0]}}
   drive:
-    wheel_radius: 0.1
-    wheel_separation: 0.5
     max_v: 1.0
     max_w: 2.0
     acceleration: 0.5

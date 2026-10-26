@@ -7,7 +7,11 @@ The caller owns its RSP name, namespace, mechanical model and parameters.
 Resolve the simulation URDF/Xacro with `get_package_share_directory()` and
 `os.path.join()`, then pass it as `robot_urdf`, together with explicit `runtime`
 and `params` file paths. The source YAML's `robot.urdf` may remain empty.
-LiDAR output settings come from `params`; nonempty launch arguments override them.
+The spawn pose comes from `/litesim3d/ros__parameters/initial_pose_override` in
+`params`: `[x, y, z, qx, qy, qz, qw]`, using floating-point values, metres and a
+nonzero quaternion. It is the absolute world pose of `runtime.robot.base_link`,
+replacing the imported pose. Omit the parameter to retain the SDF/YAML default.
+LiDAR output settings also come from `params`; nonempty launch arguments override them.
 
 Use `joint_states_topic`, `tf_topic`, `tf_static_topic` and
 `robot_description_topic` to connect the simulator/RViz to the caller's RSP.
