@@ -24,6 +24,7 @@ SLUGS = {
     "docs/tutorials/ROS2接入.md": "tutorials/ros-client",
     "docs/usage/README.md": "manual/index",
     "docs/usage/安装与构建.md": "manual/installation",
+    "docs/usage/容器运行.md": "manual/container",
     "docs/usage/接入与使用手册.md": "manual/operation",
     "docs/usage/模型接入.md": "manual/models",
     "docs/usage/模型组合与插件迁移.md": "manual/composition",

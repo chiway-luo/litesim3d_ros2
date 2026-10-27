@@ -1,0 +1,44 @@
+name: litesim3d
+
+x-simulator: &simulator
+  image: litesim3d:humble
+  pull_policy: never
+  build:
+    context: .
+    args:
+      BUILD_JOBS: "${LITESIM3D_BUILD_JOBS:-2}"
+  shm_size: 1gb
+  stop_grace_period: 45s
+
+services:
+  desktop:
+    <<: *simulator
+    ports:
+      - "127.0.0.1:${LITESIM3D_WEB_PORT:-6080}:6080"
+    healthcheck:
+      test: ["CMD", "supervisorctl", "-c", "/etc/litesim3d/supervisord.conf", "status"]
+      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  headless:
+    <<: *simulator
+    profiles: [headless]
+    command:
+      - ros2
+      - launch
+      - wheel_car_4w_sim
+      - wheel_car_4w.launch.py
+      - gui:=false
+      - rviz:=false
+      - cameras:=false
+      - lidar_profile:=vlp16
+      - lidar_interface:=native
+    stop_signal: SIGINT
+    healthcheck:
+      test: ["CMD", "litesim-env", "litesim-check", "--duration", "3", "--require-imu"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 3

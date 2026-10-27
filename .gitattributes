@@ -1,0 +1,9 @@
+# Keep container entrypoints executable after a Windows checkout.
+Dockerfile text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+docker/*.conf text eol=lf
+litesim3d_bringup/scripts/prepare_config text eol=lf
+litesim3d_gui/scripts/viewer text eol=lf
+litesim3d_gui/scripts/camera_node text eol=lf
+litesim3d_ros2/scripts/sim_session text eol=lf

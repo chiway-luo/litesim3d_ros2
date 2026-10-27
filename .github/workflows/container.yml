@@ -1,0 +1,38 @@
+name: Container smoke
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .gitattributes
+      - compose.yaml
+      - docker/**
+      - scripts/test_container.sh
+      - '**/package.xml'
+      - .github/workflows/container.yml
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the user image
+        run: docker compose build desktop
+      - name: Check simulation, desktop transport and shutdown
+        run: bash scripts/test_container.sh /tmp/litesim3d-container-evidence
+      - name: Upload container evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-${{ runner.arch }}
+          path: /tmp/litesim3d-container-evidence/
+          retention-days: 14

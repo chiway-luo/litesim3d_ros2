@@ -41,9 +41,11 @@ LiteSim 3D 是面向 ROS 2 模型接入、传感器处理和算法联调的 C++1
 
 Ubuntu 22.04 LTS、ROS 2 Humble、Bash、C++17、CMake ≥ 3.20、Python ≥ 3.10 和 colcon。三维窗口及相机另需 Qt 5、Gazebo Rendering 6 / Ogre2 和可用图形环境。
 
-先完成[安装依赖](docs/usage/安装与构建.md#安装依赖)，再执行下面的步骤。
+本机运行先完成[安装依赖](docs/usage/安装与构建.md#安装依赖)。使用[容器](docs/usage/容器运行.md)时，宿主机只需准备 Git 和 Docker。
 
 ## 快速开始
+
+没有 ROS 环境时，可在仓库根目录运行 `docker compose up --build desktop`，通过浏览器使用三维窗口。完整步骤见[容器运行](docs/usage/容器运行.md)。下面是本机安装方式。
 
 ### 1. 获取源码并构建
 
@@ -88,6 +90,7 @@ JSON 中 `success: true`、`checks.motion: true` 表示数据连通且里程计�
 
 | 要做什么 | 入口 |
 | --- | --- |
+| 无需本机 ROS 环境，使用浏览器体验 | [容器运行](docs/usage/容器运行.md) |
 | 安装依赖、选择构建方式 | [安装与构建](docs/usage/安装与构建.md) |
 | 用自己的 description 搭建仿真 | [双 MID-360 从零搭建](docs/tutorials/双MID360从零搭建.md) |
 | 接入 ros2_control 或第三方算法 | [统一控制教程](docs/tutorials/全部模型与第三方算法ros2_control.md) |

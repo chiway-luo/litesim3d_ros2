@@ -12,3 +12,6 @@ evidence/
 
 # Local development documents, drafts and documentation previews.
 /tmp/
+
+# Local Docker Compose overrides.
+/.env

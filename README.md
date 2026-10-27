@@ -41,9 +41,11 @@ The simulator uses kinematics and geometric constraints. It does not model conta
 
 Ubuntu 22.04 LTS, ROS 2 Humble, Bash, C++17, CMake ≥ 3.20, Python ≥ 3.10, and colcon. The viewer and cameras also require Qt 5, Gazebo Rendering 6 / Ogre2, and a working graphics environment.
 
-Complete [dependency installation](docs/usage/安装与构建.md#安装依赖) before continuing.
+For a native installation, complete [dependency installation](docs/usage/安装与构建.md#安装依赖). The [container option](docs/usage/容器运行.md) only requires Git and Docker on the host.
 
 ## Quick start
+
+Without a local ROS installation, run `docker compose up --build desktop` from the repository root and open [the browser desktop](http://localhost:6080/vnc.html?autoconnect=1&resize=scale). See the [container guide](docs/usage/容器运行.md) for setup and headless use. The steps below use a native installation.
 
 ### 1. Clone and build
 
@@ -90,6 +92,7 @@ Detailed guides are in Chinese. The [Chinese README](README.zh-CN.md) follows th
 
 | Task | Guide |
 | --- | --- |
+| Try the simulator in a browser without installing ROS | [Container guide](docs/usage/容器运行.md) |
 | Install dependencies and choose a build method | [Installation and build](docs/usage/安装与构建.md) |
 | Set up a robot from a description package | [Dual MID-360 tutorial](docs/tutorials/双MID360从零搭建.md) |
 | Connect ros2_control or a third-party algorithm | [Control integration](docs/tutorials/全部模型与第三方算法ros2_control.md) |
