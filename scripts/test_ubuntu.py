@@ -234,6 +234,7 @@ class Profile:
             self.env["LWS_QUALITY_HOST_PREFIX"] = str(self.runtime / "controller-host")
             if not self.stage("controller-runtime", [sys.executable, ROOT / "scripts/quality/asan_host.py",
                     "--compiler", clangxx, "--underlay", self.args.ros_prefix,
+                    "--project-prefix", self.prefix,
                     "--output", self.env["LWS_QUALITY_HOST_PREFIX"]], installed=False):
                 return False
         if self.name == "coverage":
