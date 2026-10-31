@@ -23,9 +23,9 @@ python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_CORE_
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout 300 --xml "$run_dir/plugins-runner.xml" --log "$run_dir/plugins.log" -- \
   ctest --test-dir "$(dirname "$prefix")/build/litesim3d_plugin_tests" --output-on-failure || status=1
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout 60 --xml "$run_dir/control-configuration-runner.xml" --log "$run_dir/control-configuration.log" -- \
-  ctest --test-dir "$(dirname "$prefix")/build/litesim3d_ros2_control" -R configuration --output-on-failure || status=1
+  ctest --test-dir "$(dirname "$prefix")/build/litesim3d_ros2_control" -R 'configuration|control_loop_sleep' --output-on-failure || status=1
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_SUITE_TIMEOUT:-180}" --xml "$run_dir/control-hardware-runner.xml" --log "$run_dir/control-hardware.log" -- \
-  python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/litesim3d_ros2_control/test/test_integration.py" "$project_dir/litesim3d_ros2_control/test/test_spawner.py" \
+  python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/litesim3d_ros2_control/test/test_integration.py" "$project_dir/litesim3d_ros2_control/test/test_spawner.py" "$project_dir/litesim3d_ros2_control/test/test_shutdown.py" \
     --basetemp="$run_dir/control-hardware" --junitxml="$run_dir/control-hardware.xml" || status=1
 python3 "$project_dir/scripts/checks/run_checked.py" --timeout "${LWS_TEST_ROS_TIMEOUT:-1200}" --xml "$run_dir/ros-runner.xml" --log "$run_dir/ros.log" -- \
   python3 -m pytest -q -o cache_dir="$run_dir/pytest-cache" "$project_dir/litesim3d_ros2/test" --basetemp="$run_dir/ros" --junitxml="$run_dir/ros.xml" || status=1

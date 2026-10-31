@@ -125,7 +125,7 @@ def test_controller_manager_joint_modes_and_feedback(tmp_path):
         sim = spawn('sim', [executable('litesim3d_ros2', 'sim_node'), '--ros-args', '-p', 'config:=' + str(config),
             '-p', 'publish_odom_tf:=false', '-r', 'sim/joint_commands:=/renamed/command', '-r', 'sim/joint_feedback:=/renamed/feedback'])
         wait(lambda: 'feedback' in messages)
-        manager = spawn('manager', [executable('controller_manager', 'ros2_control_node'), '--ros-args',
+        manager = spawn('manager', [executable('litesim3d_ros2_control', 'ros2_control_node'), '--ros-args',
             '-r', 'controller_manager:__node:=test_manager', '-r', 'joint_states:=/renamed/joints', '--params-file', str(manager_params)])
         for name in ['state', 'drive', 'velocity', 'position']:
             args = [executable('controller_manager', 'spawner'), name, '-c', '/test_manager']

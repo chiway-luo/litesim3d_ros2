@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start a stock control process after simulator readiness and advancing ROS time."""
+"""Start a control process after simulator readiness and advancing ROS time."""
 import argparse
 import math
 import os
@@ -84,8 +84,10 @@ def main():
         parser.error('provide stock controller_manager spawner arguments after --')
     try:
         wait_for_simulation(args.timeout, args.status_topic, args.clock_topic)
-        spawner = Path(get_package_prefix('controller_manager')) / 'lib/controller_manager' / args.executable
-        # Preserve the stock loader, its arguments, signals and exact exit status.
+        package = 'controller_manager' if args.executable == 'spawner' else 'litesim3d_ros2_control'
+        spawner = Path(get_package_prefix(package)) / 'lib' / package / args.executable
+        # Keep the stock loader and the local Humble manager entry point's
+        # arguments, signals and exact exit status (including real failures).
         os.execv(str(spawner), [str(spawner), *forwarded])
     except Exception as error:
         print(f'controller startup: {error}', file=sys.stderr)

@@ -17,7 +17,7 @@
   <depend>litesim3d_interfaces</depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
-  <exec_depend>controller_manager</exec_depend>
+  <depend>controller_manager</depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>rosgraph_msgs</exec_depend>
   <test_depend>ament_cmake_pytest</test_depend>
