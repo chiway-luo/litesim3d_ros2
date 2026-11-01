@@ -9,6 +9,7 @@
   <depend>yaml-cpp</depend>
   <buildtool_depend>pkg-config</buildtool_depend>
   <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>gtest</test_depend>
   <test_depend>ament_index_python</test_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>python3-yaml</test_depend>

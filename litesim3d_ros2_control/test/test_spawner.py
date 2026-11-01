@@ -28,23 +28,24 @@ def startup(tmp_path, monkeypatch):
     status_pub = node.create_publisher(DiagnosticArray, '/sim/status', 10)
     clock_pub = node.create_publisher(Clock, '/clock', qos_profile_sensor_data)
     prefix = tmp_path / 'overlay'
-    marker = prefix / 'share/ament_index/resource_index/packages/controller_manager'
-    marker.parent.mkdir(parents=True)
-    marker.touch()
-    binaries = prefix / 'lib/controller_manager'
-    binaries.mkdir(parents=True)
+    executable = Path(get_package_prefix('litesim3d_ros2_control')) / 'lib/litesim3d_ros2_control/spawn_when_ready.py'
+    for package in ['controller_manager', 'litesim3d_ros2_control']:
+        marker = prefix / 'share/ament_index/resource_index/packages' / package
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+        (prefix / 'lib' / package).mkdir(parents=True)
     captured = tmp_path / 'spawned.json'
     processes = []
 
     def launch(timeout, exit_code=0, target='spawner'):
-        binary = binaries / target
+        package = 'controller_manager' if target == 'spawner' else 'litesim3d_ros2_control'
+        binary = prefix / 'lib' / package / target
         binary.write_text('#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n'
                           f'Path({str(captured)!r}).write_text(json.dumps(sys.argv[1:]))\n'
                           f'raise SystemExit({exit_code})\n')
         binary.chmod(0o755)
         env = dict(os.environ)
         env['AMENT_PREFIX_PATH'] = str(prefix) + os.pathsep + env.get('AMENT_PREFIX_PATH', '')
-        executable = Path(get_package_prefix('litesim3d_ros2_control')) / 'lib/litesim3d_ros2_control/spawn_when_ready.py'
         forwarded = (['body_velocity_controller', '-c', '/controller_manager'] if target == 'spawner'
                      else ['--ros-args', '-p', 'use_sim_time:=true'])
         process = subprocess.Popen([str(executable), '--timeout', str(timeout), '--executable', target,

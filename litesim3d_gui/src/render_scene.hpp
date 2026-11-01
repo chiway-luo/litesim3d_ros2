@@ -187,9 +187,14 @@ public:
     std::vector<math::Pose3d> result;for(const auto &i:items_)result.push_back(i.visual->WorldPose());return result;
   }
   const ignition::common::Mesh *loadMesh(const std::string &file) {
+    return loadMesh(file,collada_);
+  }
+  using MeshCache=std::map<std::string,std::unique_ptr<ignition::common::Mesh>>;
+  // File decoding/cache ownership does not depend on a rendering engine.
+  static const ignition::common::Mesh *loadMesh(const std::string &file,MeshCache &cache) {
     if(std::filesystem::path(file).extension()!=".dae")
       return ignition::common::MeshManager::Instance()->Load(file);
-    auto found=collada_.find(file);if(found!=collada_.end())return found->second.get();
+    auto found=cache.find(file);if(found!=cache.end())return found->second.get();
     // Use the same COLLADA decoder / node transforms as the collision kernel.
     // Older gz-common loaders misread legal shared-index polylist inputs.
     Assimp::Importer loader;loader.SetPropertyBool(AI_CONFIG_IMPORT_COLLADA_IGNORE_UP_DIRECTION,true);
@@ -221,7 +226,7 @@ public:
       for(unsigned f=0;f<input->mNumFaces;++f){const auto &face=input->mFaces[f];require(face.mNumIndices==3,"non-triangle COLLADA primitive");for(unsigned j=0;j<3;++j)sub->AddIndex(face.mIndices[j]);}
       mesh->AddSubMesh(std::move(sub));
     }
-    auto result=mesh.get();collada_[file]=std::move(mesh);return result;
+    auto result=mesh.get();cache[file]=std::move(mesh);return result;
   }
   void applyPoses(const J &poses){for(auto &i:items_)if(!i.binding.empty()&&poses.contains(i.binding))i.visual->SetLocalPose(pose(poses.at(i.binding))*i.local);}
 private:
@@ -233,6 +238,6 @@ private:
   J description_;
   render::RenderEngine *engine_=nullptr;render::ScenePtr scene_;
   std::vector<Item> items_;
-  std::map<std::string,std::unique_ptr<ignition::common::Mesh>> collada_;
+  MeshCache collada_;
 };
 } // namespace litesim3d_render

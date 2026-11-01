@@ -7,6 +7,9 @@
 它等待 `/sim/status` 就绪和 `/clock` 实际推进，再执行原生 controller_manager spawner，保留其退出码。
 使用 `--executable ros2_control_node` 时以同样顺序启动管理器，`--` 后的 ROS 参数和 remap 原样传递；
 这样硬件接口不会在相机尚未就绪时提前激活、随后把初始化期间的反馈空窗误判为失联。
+管理器入口由本包提供，继续使用 Humble 的 controller_manager 库、控制器和仿真时钟。
+它处理关闭时 ROS 上下文在更新后、休眠前失效的竞态，避免 Ctrl+C 导致 `context cannot be slept with because it's invalid` 和退出码 -6。
+此处理仅覆盖关闭时的休眠异常；运行中的异常和进程失败仍原样报告。
 等待期间仿真故障或超过墙钟预算会明确失败；不会推进仿真时间或放宽指令看门狗。
 五种基础运动模型的例子通过 `controller_startup_timeout` 配置该预算，默认 60 秒。
 Humble 的控制器加载会等待管理器更新线程；相机初始化时停滞的时钟不能靠提前启动 spawner 解决。

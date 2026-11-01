@@ -2,39 +2,42 @@
 #include <chrono>
 #include <cstdlib>
 #include <nlohmann/json.hpp>
-#include <rclcpp/rclcpp.hpp>
+#include "cloud_tool_boundary.hpp"
 #include <std_msgs/msg/string.hpp>
-class Adapter : public rclcpp::Node {
+template<class Boundary = litesim3d_ros2::CloudToolBoundary>
+class Adapter : public Boundary::Node {
+  using BaseNode = typename Boundary::Node;
 public:
-  Adapter() : Node("sim_ouster_adapter") {
-    if (const auto *run = std::getenv("LWS_RUN_ID"))
+  Adapter() : BaseNode("sim_ouster_adapter") {
+    if (const auto *run = Boundary::environment("LWS_RUN_ID"))
       run_id_ = run;
     auto sensor_qos = rclcpp::SensorDataQoS();
-    if (declare_parameter<bool>("sensor_reliable", false))
+    if (this->template declare_parameter<bool>("sensor_reliable", false))
       sensor_qos.reliable();
-    output_ = create_publisher<sensor_msgs::msg::PointCloud2>(
-        declare_parameter<std::string>("output_topic", "points_ouster"),
+    output_ = this->template create_publisher<sensor_msgs::msg::PointCloud2>(
+        this->template declare_parameter<std::string>("output_topic", "points_ouster"),
         sensor_qos);
-    status_ = create_publisher<std_msgs::msg::String>("adapter_status", 10);
-    input_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-        declare_parameter<std::string>("input_topic", "points_raw"),
+    status_ = this->template create_publisher<std_msgs::msg::String>("adapter_status", 10);
+    input_ = this->template create_subscription<sensor_msgs::msg::PointCloud2>(
+        this->template declare_parameter<std::string>("input_topic", "points_raw"),
         sensor_qos,
-        [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr m) {
-          try {
-            output_->publish(ousterCloud(*m));
-            ++accepted_;
-            error_.clear();
-          } catch (const std::exception &e) {
-            ++rejected_;
-            error_ = e.what();
-          }
-          publishStatus();
-        });
-    status_timer_ = create_wall_timer(std::chrono::milliseconds(200),
+        [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr m) { processCloud(*m); });
+    status_timer_ = this->create_wall_timer(std::chrono::milliseconds(200),
                                      [this] { publishStatus(); });
   }
 
 private:
+  void processCloud(const sensor_msgs::msg::PointCloud2 &m) {
+    try {
+      output_->publish(ousterCloud(m));
+      ++accepted_;
+      error_.clear();
+    } catch (const std::exception &e) {
+      ++rejected_;
+      error_ = e.what();
+    }
+    publishStatus();
+  }
   void publishStatus() {
     std_msgs::msg::String s;
     s.data = nlohmann::json({{"accepted", accepted_}, {"rejected", rejected_},
@@ -44,15 +47,20 @@ private:
                  .dump();
     status_->publish(s);
   }
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr output_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr input_;
-  rclcpp::TimerBase::SharedPtr status_timer_;
+  typename Boundary::template Publisher<sensor_msgs::msg::PointCloud2> output_;
+  typename Boundary::template Publisher<std_msgs::msg::String> status_;
+  typename Boundary::template Subscription<sensor_msgs::msg::PointCloud2> input_;
+  typename Boundary::Timer status_timer_;
   uint64_t accepted_ = 0, rejected_ = 0;
   std::string error_, run_id_;
 };
+#ifndef LITESIM_CLOUD_TOOL_BOUNDARY
+#define LITESIM_CLOUD_TOOL_BOUNDARY litesim3d_ros2::CloudToolBoundary
+#endif
 int main(int argc, char **argv) {
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<Adapter>());
-  rclcpp::shutdown();
+  using Boundary = LITESIM_CLOUD_TOOL_BOUNDARY;
+  Boundary::initialize(argc, argv);
+  Boundary::spin(std::make_shared<Adapter<Boundary>>());
+  Boundary::shutdown();
+  return 0;
 }

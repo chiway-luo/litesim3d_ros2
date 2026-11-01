@@ -35,6 +35,17 @@ def ns(msg):
     return msg.sec * 1_000_000_000 + msg.nanosec
 
 
+def point_samples(h, count):
+    """Start the sample budget after discovery, then observe the matching clock."""
+    h.wait_for_readers('/clock', '/points_raw')
+    h.until(lambda: len(h.messages['points']) >= count)
+    clouds = list(h.messages['points'])
+    last_stamp = max(ns(cloud.header.stamp) for cloud in clouds)
+    # Clock and cloud callbacks are independent even when writers emitted both.
+    h.until(lambda: h.messages['clock'] and ns(h.messages['clock'][-1].clock) >= last_stamp)
+    return clouds
+
+
 class Harness:
     serial = 0
 
@@ -154,6 +165,15 @@ class Harness:
             return ns(message.clock if isinstance(message, Clock) else message.header.stamp) == stamp
         self.until(lambda: all(observed(key) for key in keys))
 
+    def wait_for_readers(self, *topics):
+        """Observe publisher-side DDS matches, not just the kernel ready flag."""
+        def matched():
+            matches = json.loads(self.status().get('subscription_matches', '{}'))
+            return all(self.node.count_publishers(topic) == 1
+                       and 0 < self.node.count_subscribers(topic) <= matches.get(topic, 0)
+                       for topic in topics)
+        self.until(matched)
+
     def ready(self):
         self.until(lambda: self.status().get("ready") == "true")
 
@@ -237,9 +257,9 @@ def test_T_ROS_02_03_time_tf_and_point_bytes(h):
     h.config["lidars"][0]["vertical_angles_deg"] = [-15+30*i/31 for i in range(32)]
     h.config["lidars"][0]["rings"] = 32
     h.subscribe("points", PointCloud2, "/points_raw", reliable=False)
-    h.rsp();h.sim();h.ready();h.until(lambda:len(h.messages["points"]) >= 5)
+    h.rsp();h.sim();h.ready()
+    clouds = point_samples(h, 5)
     assert h.node.count_publishers("/clock") == 1
-    clouds = list(h.messages["points"])
     clocks = [ns(c.clock) for c in h.messages["clock"]]
     assert all(a <= b for a,b in zip(clocks,clocks[1:]))
     for c in clouds:

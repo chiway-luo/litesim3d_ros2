@@ -7,9 +7,8 @@ import re
 
 from audit import compilation_errors
 from inventory import inventory
+from sanitizer_control import FINDING
 
-FINDING = re.compile(r"(?:ERROR|WARNING|FATAL): (?:AddressSanitizer|LeakSanitizer|ThreadSanitizer)|"
-                     r"AddressSanitizer:DEADLYSIGNAL|SUMMARY: (?:AddressSanitizer|UndefinedBehaviorSanitizer|ThreadSanitizer)|runtime error:")
 SUPPRESSION = re.compile(r"^\s*(\d+)\s+(\d+)\s+(\S.*)\s*$")
 
 
@@ -20,7 +19,7 @@ def findings(evidence):
             continue
         if "positive-control" in path.relative_to(evidence).parts:
             continue # Verified independently; deliberately faulty programs.
-        if path.suffix == ".log" or re.match(r"^(asan|ubsan|tsan)\.[0-9]+$", path.name):
+        if path.suffix == ".log" or re.match(r"^(asan|lsan|ubsan|tsan)\.[0-9]+$", path.name):
             for number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
                 if FINDING.search(line):
                     result.append({"file": str(path), "line": number, "message": line.strip()})
@@ -34,7 +33,7 @@ def suppression_usage(evidence):
              for line in Path(__file__).with_name(name).read_text().splitlines() if line.startswith("leak:")}
     for path in sorted(evidence.rglob("*")):
         if (not path.is_file() or "positive-control" in path.relative_to(evidence).parts or
-                not (path.suffix == ".log" or re.match(r"^(asan|ubsan)\.[0-9]+$", path.name))):
+                not (path.suffix == ".log" or re.match(r"^(asan|lsan|ubsan)\.[0-9]+$", path.name))):
             continue
         for line in path.read_text(errors="replace").splitlines():
             match = SUPPRESSION.match(line)

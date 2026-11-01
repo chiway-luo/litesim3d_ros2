@@ -34,7 +34,23 @@ if(BUILD_TESTING)
   add_executable(mid360_plugin_tests test/test_plugin.cpp)
   target_link_libraries(mid360_plugin_tests litesim3d_core::litesim3d_core GTest::gtest_main)
   ament_target_dependencies(mid360_plugin_tests ament_index_cpp)
+  # Compile the real serializer without a plugin factory. Linking the plugin
+  # DSO here would register an unowned factory before main(), outside pluginlib.
+  add_executable(livox_outputs_unit test/test_livox_outputs_unit.cpp src/livox_outputs.cpp)
+  target_compile_features(livox_outputs_unit PRIVATE cxx_std_17)
+  target_compile_definitions(livox_outputs_unit PRIVATE LITESIM3D_NO_PLUGIN_REGISTRATION)
+  target_link_libraries(livox_outputs_unit litesim3d_ros2::litesim3d_lidar_output_api GTest::gtest_main)
+  ament_target_dependencies(livox_outputs_unit pluginlib rclcpp sensor_msgs livox_ros_driver2)
+  # Keep production DSO loading in its own integration process/profile: the
+  # isolated serializer unit must never acquire a plugin-library dependency.
+  add_executable(livox_output_plugin_integration test/test_output_plugin_integration.cpp)
+  add_dependencies(livox_output_plugin_integration ${PROJECT_NAME}_output)
+  target_compile_features(livox_output_plugin_integration PRIVATE cxx_std_17)
+  target_link_libraries(livox_output_plugin_integration litesim3d_ros2::litesim3d_lidar_output_api GTest::gtest_main)
+  ament_target_dependencies(livox_output_plugin_integration pluginlib)
   include(GoogleTest)
   gtest_discover_tests(mid360_plugin_tests DISCOVERY_TIMEOUT 60 DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(livox_outputs_unit DISCOVERY_TIMEOUT 60 DISCOVERY_MODE PRE_TEST)
+  gtest_discover_tests(livox_output_plugin_integration DISCOVERY_TIMEOUT 60 DISCOVERY_MODE PRE_TEST)
 endif()
 ament_package()

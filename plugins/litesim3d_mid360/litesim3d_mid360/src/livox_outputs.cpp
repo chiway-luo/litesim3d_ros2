@@ -49,6 +49,13 @@ sensor_msgs::msg::PointCloud2 cloudMessage(const litesim3d::Cloud &c,
   }
   return m;
 }
+template<class Message> LivoxOutputs::Output<Message> publisher(
+    rclcpp::Node &node,const std::string &name,const rclcpp::QoS &qos,
+    const rclcpp::PublisherOptions &options) {
+  auto handle=node.create_publisher<Message>(name,qos,options);
+  return {handle->get_topic_name(),[handle](const Message &message){handle->publish(message);},
+    [handle]{return handle->get_subscription_count();}};
+}
 } // namespace
 
 void LivoxOutputs::initialize(rclcpp::Node &node, const litesim3d::Config &config,
@@ -75,7 +82,8 @@ void LivoxOutputs::initialize(rclcpp::Node &node, const litesim3d::Config &confi
                   {"lidars", litesim3d::Json::array()}};
   std::set<std::string> topics;
   const auto topic = [&](const std::string &name) {
-    const auto result = node.get_node_topics_interface()->resolve_topic_name(topic_prefix + name);
+    const auto result = transport_.resolve ? transport_.resolve(node,topic_prefix + name)
+        : node.get_node_topics_interface()->resolve_topic_name(topic_prefix + name);
     require(topics.insert(result).second, "sensor output topic collision: " + result);
     return result;
   };
@@ -91,19 +99,24 @@ void LivoxOutputs::initialize(rclcpp::Node &node, const litesim3d::Config &confi
       require(cfg.offsetNs(0, cfg.columns - 1) <= std::numeric_limits<uint32_t>::max(),
               "Livox frame point offset exceeds uint32 nanoseconds");
       if (xfer_format == 1) {
-        l.custom = node.create_publisher<livox_ros_driver2::msg::CustomMsg>(main, livox_qos, options);
-        l.cloud = node.create_publisher<sensor_msgs::msg::PointCloud2>(
-            topic(stem + "/pointcloud"), livox_qos, options);
+        l.custom = transport_.custom ? transport_.custom(node,main,livox_qos,options)
+            : publisher<livox_ros_driver2::msg::CustomMsg>(node,main,livox_qos,options);
+        const auto points=topic(stem + "/pointcloud");
+        l.cloud = transport_.cloud ? transport_.cloud(node,points,livox_qos,options)
+            : publisher<sensor_msgs::msg::PointCloud2>(node,points,livox_qos,options);
       } else {
-        l.cloud = node.create_publisher<sensor_msgs::msg::PointCloud2>(main, livox_qos, options);
+        l.cloud = transport_.cloud ? transport_.cloud(node,main,livox_qos,options)
+            : publisher<sensor_msgs::msg::PointCloud2>(node,main,livox_qos,options);
       }
     }
-    if (cfg.publish_range_boundary)
-      l.boundary = node.create_publisher<sensor_msgs::msg::PointCloud2>(
-          topic(stem + "/range_boundary"), livox_qos, options);
+    if (cfg.publish_range_boundary) {
+      const auto helper=topic(stem + "/range_boundary");
+      l.boundary = transport_.cloud ? transport_.cloud(node,helper,livox_qos,options)
+          : publisher<sensor_msgs::msg::PointCloud2>(node,helper,livox_qos,options);
+    }
     description_["lidars"].push_back({{"name",cfg.name}, {"topic",main}, {"lidar_id",l.lidar_id},
         {"message_type",l.custom ? "livox_ros_driver2/msg/CustomMsg" : "sensor_msgs/msg/PointCloud2"},
-        {"pointcloud_topic",l.cloud->get_topic_name()},
+        {"pointcloud_topic",l.cloud.get_topic_name()},
         {"frame_id",frame_prefix_ + cfg.link}, {"qos","reliable/256"}});
     lidars_.emplace(cfg.topic, std::move(l));
   }
@@ -147,17 +160,20 @@ bool LivoxOutputs::publish(const litesim3d::Cloud &c) {
     dest.row_step = dest.width * 26;
   };
   convert(c.data, false, m);
-  if (l.custom) { custom.point_num = custom.points.size(); l.custom->publish(custom); }
-  l.cloud->publish(m);
-  if (l.boundary) { convert(c.range_boundary, true, boundary); l.boundary->publish(boundary); }
+  if (l.custom) { custom.point_num = custom.points.size(); l.custom.publish(custom); }
+  l.cloud.publish(m);
+  if (l.boundary) { convert(c.range_boundary, true, boundary); l.boundary.publish(boundary); }
   return true;
 }
 
 void LivoxOutputs::matches(litesim3d::Json &result) const {
   const auto count = [&](const auto &pub) {
-    if (pub) result[pub->get_topic_name()] = pub->get_subscription_count();
+    if (pub) result[pub.get_topic_name()] = pub.get_subscription_count();
   };
   for (const auto &[topic,l] : lidars_) { count(l.cloud); count(l.custom); count(l.boundary); }
 }
 } // namespace litesim3d_ros
+// Only direct-class units omit registration; the installed DSO still exports.
+#ifndef LITESIM3D_NO_PLUGIN_REGISTRATION
 PLUGINLIB_EXPORT_CLASS(litesim3d_ros::LivoxOutputs, litesim3d_ros::LidarOutputPlugin)
+#endif

@@ -14,7 +14,7 @@ target_include_directories(litesim3d_lidar_output_api INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(litesim3d_lidar_output_api INTERFACE litesim3d_core::litesim3d_core rclcpp::rclcpp)
 # Record the installed ROS/launch implementation independently of the core hash.
-set(bridge_sources src/joint_control.hpp src/lidar_outputs.cpp src/lidar_outputs.hpp include/litesim3d_ros2/lidar_output_plugin.hpp src/sim_node.cpp src/sim_world_node.cpp src/point_adapter.cpp
+set(bridge_sources src/joint_control.hpp src/robot_view.hpp src/simulator_backend.hpp src/world_backend.hpp src/cloud_tool_boundary.hpp src/lidar_outputs.cpp src/lidar_outputs.hpp include/litesim3d_ros2/lidar_output_plugin.hpp src/sim_node.cpp src/sim_world_node.cpp src/point_adapter.cpp
   src/point_adapter.hpp src/service_responses.hpp src/sim_ouster_adapter.cpp src/sim_cloud_probe.cpp
   launch/demo.launch.py launch/world.launch.py scripts/sim_session)
 set(bridge_fingerprint "")
@@ -61,7 +61,29 @@ ament_export_include_directories(include)
 ament_export_dependencies(litesim3d_core rclcpp)
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(launch_testing_ament_cmake REQUIRED)
+  # Pure byte-layout conversion tests; no ROS nodes, transport or launched peers.
+  ament_add_gtest(point_adapter_unit test/test_point_adapter.cpp src/point_adapter.cpp)
+  ament_target_dependencies(point_adapter_unit sensor_msgs)
+  ament_add_gtest(service_responses_unit test/test_service_responses_unit.cpp)
+  ament_target_dependencies(service_responses_unit rclcpp rcl std_srvs)
+  ament_add_gtest(joint_control_unit test/test_joint_control_unit.cpp)
+  target_link_libraries(joint_control_unit litesim3d_core::litesim3d_core)
+  ament_target_dependencies(joint_control_unit rclcpp sensor_msgs litesim3d_interfaces)
+  ament_add_gtest(lidar_outputs_unit test/test_lidar_outputs_unit.cpp src/lidar_outputs.cpp)
+  target_link_libraries(lidar_outputs_unit litesim3d_core::litesim3d_core)
+  ament_target_dependencies(lidar_outputs_unit rclcpp pluginlib)
+  ament_add_gtest(sim_node_unit test/test_sim_node_unit.cpp src/lidar_outputs.cpp)
+  target_link_libraries(sim_node_unit litesim3d_core::litesim3d_core tf2_ros::tf2_ros)
+  ament_target_dependencies(sim_node_unit ${DEPS})
+  ament_add_gtest(world_node_unit test/test_world_node_unit.cpp src/lidar_outputs.cpp)
+  target_link_libraries(world_node_unit litesim3d_core::litesim3d_core tf2_ros::tf2_ros)
+  ament_target_dependencies(world_node_unit ${DEPS})
+  ament_add_gtest(cloud_tools_unit test/test_cloud_tools_unit.cpp src/point_adapter.cpp)
+  target_include_directories(cloud_tools_unit SYSTEM PRIVATE ${PCL_INCLUDE_DIRS})
+  target_link_libraries(cloud_tools_unit ${PCL_LIBRARIES} nlohmann_json::nlohmann_json)
+  ament_target_dependencies(cloud_tools_unit rclcpp sensor_msgs std_msgs)
   get_filename_component(_interfaces_prefix "${litesim3d_interfaces_DIR}/../../.." ABSOLUTE)
   ament_add_pytest_test(ros_contracts test
     APPEND_LIBRARY_DIRS "${_interfaces_prefix}/lib"

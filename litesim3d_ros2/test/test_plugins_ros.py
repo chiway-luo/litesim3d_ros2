@@ -37,6 +37,35 @@ def use_plugin_model(h, root):
     h.config['robot'].update(urdf=str(description), continue_on_collision=keep_driving)
 
 
+def omni4_robot(wheels):
+    """The test owns the URDF geometry; plugin parameters only bind joints."""
+    robot = ET.Element('robot', name='omni4')
+    body = ET.SubElement(robot, 'link', name='base_link')
+    for role in ['visual', 'collision']:
+        shape = ET.SubElement(body, role); ET.SubElement(shape, 'origin', xyz='0 0 .25')
+        ET.SubElement(ET.SubElement(shape, 'geometry'), 'box', size='.4 .3 .2')
+    # The ordinary omni-wheel layout matches the documented four-wheel example.
+    # Radius, position and rolling direction must be resolved from this URDF,
+    # not read back from the joint-only parameters.yaml bindings.
+    layout = [(.3, .3, 3 * math.pi / 4), (-.3, .3, 5 * math.pi / 4),
+              (-.3, -.3, 7 * math.pi / 4), (.3, -.3, 9 * math.pi / 4)]
+    radius = .1
+    for wheel, (x, y, angle) in zip(wheels, layout, strict=True):
+        name = wheel['joint']
+        link = ET.SubElement(robot, 'link', name=name + '_link')
+        for role in ['visual', 'collision']:
+            shape = ET.SubElement(link, role)
+            ET.SubElement(shape, 'origin', rpy=f'{-math.pi / 2} 0 {angle}')
+            ET.SubElement(ET.SubElement(shape, 'geometry'), 'cylinder', radius=str(radius), length='.04')
+        joint = ET.SubElement(robot, 'joint', name=name, type='continuous')
+        ET.SubElement(joint, 'parent', link='base_link'); ET.SubElement(joint, 'child', link=name + '_link')
+        ET.SubElement(joint, 'origin', xyz=f'{x} {y} {radius}')
+        ET.SubElement(joint, 'axis', xyz=f'{-math.sin(angle)} {math.cos(angle)} 0')
+        ET.SubElement(joint, 'limit', effort='10', velocity='100')
+    add_plugins(robot, 'litesim3d_omni4_drive', 'Omni4Drive', 'litesim3d_omni_odometry', 'OmniOdometry', wheels)
+    return robot
+
+
 @pytest.mark.parametrize('enabled', [False, True])
 def test_plugin_diff_ros_collision_encoder_and_tf(h, enabled):
     configure(h, enabled)
@@ -62,24 +91,7 @@ def test_plugin_diff_ros_collision_encoder_and_tf(h, enabled):
 def test_plugin_omni_ros_lateral_odometry_is_independent_of_truth(h, enabled):
     configure(h, enabled)
     p = yaml.safe_load((Path(get_package_share_directory('litesim3d_omni4_drive')) / 'config/parameters.yaml').read_text())
-    robot = ET.Element('robot', name='omni4')
-    body = ET.SubElement(robot, 'link', name='base_link')
-    for role in ['visual', 'collision']:
-        shape = ET.SubElement(body, role); ET.SubElement(shape, 'origin', xyz='0 0 .25')
-        ET.SubElement(ET.SubElement(shape, 'geometry'), 'box', size='.4 .3 .2')
-    for wheel in p['wheels']:
-        name, angle = wheel['joint'], wheel['rolling_angle_rad']
-        link = ET.SubElement(robot, 'link', name=name + '_link')
-        for role in ['visual', 'collision']:
-            shape = ET.SubElement(link, role)
-            ET.SubElement(shape, 'origin', rpy=f'{-math.pi / 2} 0 {angle}')
-            ET.SubElement(ET.SubElement(shape, 'geometry'), 'cylinder', radius=str(wheel['radius_m']), length='.04')
-        joint = ET.SubElement(robot, 'joint', name=name, type='continuous')
-        ET.SubElement(joint, 'parent', link='base_link'); ET.SubElement(joint, 'child', link=name + '_link')
-        ET.SubElement(joint, 'origin', xyz=f"{wheel['x_m']} {wheel['y_m']} .1")
-        ET.SubElement(joint, 'axis', xyz=f'{-math.sin(angle)} {math.cos(angle)} 0')
-        ET.SubElement(joint, 'limit', effort='10', velocity='100')
-    add_plugins(robot, 'litesim3d_omni4_drive', 'Omni4Drive', 'litesim3d_omni_odometry', 'OmniOdometry', p['wheels'])
+    robot = omni4_robot(p['wheels'])
     use_plugin_model(h, robot)
     h.config['lidars'] = []
     h.config['entities'] = [{'id': 'wall', 'pose': {'xyz': [0, 1, 1]}, 'geometry': {'type': 'box', 'size': [10, .1, 2]}}]

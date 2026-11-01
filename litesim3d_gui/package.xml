@@ -11,6 +11,7 @@
   <depend>assimp</depend>
   <buildtool_depend>pkg-config</buildtool_depend>
   <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>libfontconfig1-dev</test_depend>
   <url type="repository">https://github.com/chiway-luo/litesim3d_ros2</url>
   <url type="bugtracker">https://github.com/chiway-luo/litesim3d_ros2/issues</url>
   <export><build_type>ament_cmake</build_type></export>

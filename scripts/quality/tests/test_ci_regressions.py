@@ -15,7 +15,7 @@ SCRIPTS = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SCRIPTS))
 from checks.run_checked import run
 from quality.asan_host import prepare
-from quality.sanitizer_control import asan_options
+from quality.sanitizer_control import asan_link_options, asan_options
 
 spec = importlib.util.spec_from_file_location("sim_timing", SCRIPTS.parent / "litesim3d_test_support/litesim3d_test_support/timing.py")
 timing = importlib.util.module_from_spec(spec)
@@ -138,8 +138,14 @@ def test_asan_host_loads_plugin_and_detects_ub_and_leak_without_preloading_pytho
     bindir = underlay / "lib/controller_manager"
     bindir.mkdir(parents=True)
     (underlay / "share/controller_manager").mkdir(parents=True)
+    project = tmp_path / "project"
+    project_bindir = project / "lib/litesim3d_ros2_control"
+    project_bindir.mkdir(parents=True)
+    (project / "share/litesim3d_ros2_control").mkdir(parents=True)
     host = tmp_path / "host.cpp"
-    host.write_text('#include <dlfcn.h>\n#include <cstdio>\nint main(int argc, char** argv){'
+    host.write_text('#include <dlfcn.h>\n#include <cstdio>\n#include <cstdlib>\nint main(int argc, char** argv){'
+                    'if(argc==1){printf("%s\\n%s\\n",getenv("LD_PRELOAD")?getenv("LD_PRELOAD"):"",'
+                    'getenv("LSAN_OPTIONS")?getenv("LSAN_OPTIONS"):"");return 0;}'
                     'void* h=dlopen(argv[1],RTLD_NOW);if(!h){puts(dlerror());return 7;}'
                     'auto f=(void(*)(int))dlsym(h,"probe");f(argc>2?argv[2][0]:0);dlclose(h);return 0;}')
     plugin = tmp_path / "plugin.cpp"
@@ -148,28 +154,54 @@ def test_asan_host_loads_plugin_and_detects_ub_and_leak_without_preloading_pytho
                       'if(mode==108){volatile int* p=(int*)malloc(64);*p=7;}'
                       'if(mode==117){volatile int n=INT_MAX; n+=1;}}')
     binary = bindir / "ros2_control_node"
-    library = tmp_path / "plugin.so"
+    project_binary = project_bindir / "ros2_control_node"
+    library = project / "lib/libprobe.so"
     subprocess.run([compiler, str(host), "-ldl", "-o", str(binary)], check=True)
+    subprocess.run([compiler, "-fsanitize=address,undefined", *asan_link_options(),
+                    str(host), "-ldl", "-o", str(project_binary)], check=True)
     subprocess.run([compiler, "-O0", "-g", "-shared", "-fPIC", "-fsanitize=address,undefined",
                     "-fno-sanitize-recover=all", str(plugin), "-o", str(library)], check=True)
     spawner = bindir / "spawner"
-    spawner.write_text('#!/usr/bin/env python3\nimport os\nprint(os.environ.get("LD_PRELOAD", ""))\n')
+    spawner.write_text('#!/usr/bin/env python3\nimport json,os\n'
+                       'print(json.dumps([os.environ.get("LD_PRELOAD", ""),os.environ.get("LSAN_OPTIONS", "")]))\n')
     spawner.chmod(0o755)
+    startup = project_bindir / "spawn_when_ready.py"
+    startup.write_text(spawner.read_text())
+    startup.chmod(0o755)
     before = os.environ.get("LD_PRELOAD")
     overlay = tmp_path / "overlay"
-    prepare(underlay, overlay, compiler)
+    prepare(underlay, overlay, compiler, project)
+    assert (overlay / "lib/libprobe.so").samefile(library)
+    assert (overlay / "share/litesim3d_ros2_control").samefile(project / "share/litesim3d_ros2_control")
     env = dict(os.environ)
     for name in ("ASAN_OPTIONS", "UBSAN_OPTIONS", "LSAN_OPTIONS", "LD_PRELOAD"):
         env.pop(name, None)
     env.update(ASAN_OPTIONS=asan_options(shutil.which("llvm-symbolizer-14")),
-               UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1")
+               UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1", LSAN_OPTIONS="print_suppressions=1")
     unprepared = subprocess.run([str(binary), str(library)], env=env, capture_output=True, text=True)
     assert unprepared.returncode == 7 and "undefined symbol" in unprepared.stdout
-    for mode, expected in (("", ""), ("leak", "Direct leak of 64 byte(s)"), ("undefined", "runtime error:")):
-        result = subprocess.run([str(overlay / "lib/controller_manager/ros2_control_node"), str(library), mode],
-                                env=env, capture_output=True, text=True, timeout=30)
-        assert (result.returncode == 0) == (mode == ""), result.stdout + result.stderr
-        assert expected in result.stdout + result.stderr
-    result = subprocess.run([str(overlay / "lib/controller_manager/spawner")], env=env, capture_output=True, text=True)
-    assert result.stdout.strip() == "" and result.returncode == 0
+    for package in ("controller_manager", "litesim3d_ros2_control"):
+        wrapped = overlay / "lib" / package / "ros2_control_node"
+        settings = subprocess.run([str(wrapped)], env=env, capture_output=True, text=True, timeout=30)
+        assert settings.returncode == 0, settings.stderr
+        preload, policy = settings.stdout.splitlines()
+        assert bool(preload) == (package == "controller_manager")
+        assert policy == f"print_suppressions=1:suppressions={overlay / 'lsan-controller-host.supp'}"
+        for mode, expected in (("", ""), ("leak", "Direct leak of 64 byte(s)"), ("undefined", "runtime error:")):
+            result = subprocess.run([str(wrapped), str(library), mode],
+                                    env=env, capture_output=True, text=True, timeout=30)
+            assert (result.returncode == 0) == (mode == ""), result.stdout + result.stderr
+            assert expected in result.stdout + result.stderr
+    for helper in (overlay / "lib/controller_manager/spawner",
+                   overlay / "lib/litesim3d_ros2_control/spawn_when_ready.py"):
+        result = subprocess.run([str(helper)], env=env, capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0 and json.loads(result.stdout) == ["", env["LSAN_OPTIONS"]]
     assert os.environ.get("LD_PRELOAD") == before
+
+
+def test_asan_host_requires_the_built_project_manager(tmp_path):
+    stock = tmp_path / "underlay/lib/controller_manager/ros2_control_node"
+    stock.parent.mkdir(parents=True)
+    stock.touch()
+    with pytest.raises(RuntimeError, match="litesim3d_ros2_control/ros2_control_node"):
+        prepare(tmp_path / "underlay", tmp_path / "overlay", "unused", tmp_path / "project")

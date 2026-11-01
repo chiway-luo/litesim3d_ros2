@@ -14,6 +14,13 @@ target_link_libraries(sdf_import litesim3d_core::litesim3d_core sdformat12::sdfo
 target_compile_options(sdf_import PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS sdf_import DESTINATION lib/${PROJECT_NAME})
 if(BUILD_TESTING)
+  find_package(GTest REQUIRED)
+  add_executable(test_sdf_import_units test/test_sdf_import_units.cpp)
+  target_link_libraries(test_sdf_import_units PRIVATE litesim3d_core::litesim3d_core sdformat12::sdformat12 assimp::assimp PkgConfig::TINYXML2 PkgConfig::URDF yaml-cpp GTest::gtest_main)
+  target_compile_definitions(test_sdf_import_units PRIVATE SDF_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures")
+  target_compile_options(test_sdf_import_units PRIVATE -Wall -Wextra -Wpedantic)
+  include(GoogleTest)
+  gtest_discover_tests(test_sdf_import_units DISCOVERY_TIMEOUT 60 DISCOVERY_MODE PRE_TEST)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(sdf_assets test
     APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 TIMEOUT 200)

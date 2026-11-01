@@ -16,8 +16,11 @@ namespace litesim3d_ros {
 // Humble's Service::send_response hides RCL_RET_TIMEOUT. Use the deferred-response
 // API and retain the result instead: retrying the command could advance time twice.
 class ServiceResponses {
+  friend struct ServiceResponsesUnitAccess;
 public:
-  explicit ServiceResponses(rclcpp::Logger logger) : logger_(std::move(logger)) {}
+  explicit ServiceResponses(rclcpp::Logger logger,
+      decltype(&rcl_send_response) sender = rcl_send_response)
+      : logger_(std::move(logger)), sender_(sender) {}
 
   void start(rclcpp::Node &node, const std::shared_ptr<ServiceResponses> &self) {
     timer_ = node.create_wall_timer(std::chrono::milliseconds(50),
@@ -68,8 +71,8 @@ private:
     if (!service)
       return true;
     ++item.attempts;
-    const auto result = rcl_send_response(service->get_service_handle().get(),
-                                          &item.header, item.response.get());
+    const auto result = sender_(service->get_service_handle().get(),
+                                &item.header, item.response.get());
     if (result == RCL_RET_TIMEOUT) {
       rcl_reset_error();
       return false;
@@ -110,14 +113,16 @@ private:
   }
 
   rclcpp::Logger logger_;
+  decltype(&rcl_send_response) sender_;
   std::deque<Pending> pending_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 
 template <typename ServiceT, typename Callback>
 typename rclcpp::Service<ServiceT>::SharedPtr createResponseService(
-    rclcpp::Node &node, const std::string &name, Callback callback) {
-  auto responses = std::make_shared<ServiceResponses>(node.get_logger());
+    rclcpp::Node &node, const std::string &name, Callback callback,
+    decltype(&rcl_send_response) sender = rcl_send_response) {
+  auto responses = std::make_shared<ServiceResponses>(node.get_logger(), sender);
   responses->start(node, responses);
   return node.create_service<ServiceT>(name,
       [responses, callback = std::move(callback)](

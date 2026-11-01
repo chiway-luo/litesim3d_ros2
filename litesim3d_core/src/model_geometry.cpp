@@ -1,14 +1,18 @@
-#include "litesim3d/sim.hpp"
+#include "cli_runtime.hpp"
 #include <iostream>
 
 // Read-only model inspection for adapters such as ros2_control parameter preparation.
 // Uses exactly the same parser, FK and collision geometry as the simulator.
+#ifndef LITESIM_CORE_CLI_RUNTIME
+#define LITESIM_CORE_CLI_RUNTIME litesim3d::CliRuntime
+#endif
 int main(int argc, char **argv) {
+  using Runtime = LITESIM_CORE_CLI_RUNTIME;
   try {
     litesim3d::require(argc == 3 || (argc == 4 && std::string(argv[3]) == "--resolve"),
                       "usage: model_geometry expanded.urdf base_link [--resolve < requests.json]");
-    litesim3d::ModelOptions options; options.allow_visual_only = true; options.sensor_geometry = "collision";
-    const auto geometry = litesim3d::Model::load(argv[1], options).mechanicalGeometry(argv[2]);
+    Runtime::ModelOptions options; options.allow_visual_only = true; options.sensor_geometry = "collision";
+    const auto geometry = Runtime::loadModel(argv[1], options).mechanicalGeometry(argv[2]);
     litesim3d::Json joints = litesim3d::Json::object();
     for (const auto &[name, j] : geometry.model.joints) {
       joints[name] = {{"type", j.type}, {"mimic", j.mimic}, {"parent_joint", j.parent_joint},
@@ -25,9 +29,9 @@ int main(int argc, char **argv) {
       for (const auto &request : requests) {
         const auto kind = request.at("kind").get<std::string>();
         const auto &p = request.at("parameters");
-        if (kind == "differential") result["resolved"].push_back(litesim3d::plugins::differentialGeometry(geometry, p));
-        else if (kind == "ackermann") result["resolved"].push_back(litesim3d::plugins::ackermannGeometry(geometry, p));
-        else if (kind == "omni") result["resolved"].push_back(litesim3d::plugins::omniGeometry(geometry, p));
+        if (kind == "differential") result["resolved"].push_back(Runtime::differentialGeometry(geometry, p));
+        else if (kind == "ackermann") result["resolved"].push_back(Runtime::ackermannGeometry(geometry, p));
+        else if (kind == "omni") result["resolved"].push_back(Runtime::omniGeometry(geometry, p));
         else throw std::runtime_error("unknown geometry request: " + kind);
       }
     }

@@ -12,6 +12,7 @@ namespace litesim3d_ros2_control {
 // Ordinary omni wheels: each roller releases motion perpendicular to the wheel's
 // rolling direction. This is not a mecanum-wheel controller.
 class OmniDriveController : public controller_interface::ControllerInterface {
+  friend struct ControllerUnitAccess;
   struct Reference { double x = 0, y = 0, yaw = 0; int64_t stamp = 0; bool valid = false; uint64_t epoch = 0; };
   std::vector<std::string> joints_;
   Eigen::MatrixXd matrix_;
@@ -141,4 +142,7 @@ public:
   }
 };
 }
+// Only direct-class units omit registration; the installed DSO still exports.
+#ifndef LITESIM3D_NO_PLUGIN_REGISTRATION
 PLUGINLIB_EXPORT_CLASS(litesim3d_ros2_control::OmniDriveController, controller_interface::ControllerInterface)
+#endif

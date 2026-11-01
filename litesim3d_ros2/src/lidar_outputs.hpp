@@ -2,16 +2,18 @@
 
 #include <litesim3d_ros2/lidar_output_plugin.hpp>
 #include <pluginlib/class_loader.hpp>
+#include <functional>
 
 namespace litesim3d_ros {
 // Retain the existing launch selectors while loading vendor serialization only
 // when a matching sensor actually requests it. Native output needs no plugin.
 class LidarOutputs {
 public:
+  using PluginFactory = std::function<std::shared_ptr<LidarOutputPlugin>()>;
   LidarOutputs(rclcpp::Node &node, const litesim3d::Config &config,
                const std::string &topic_prefix, const std::string &frame_prefix,
                const std::string &interface, int xfer_format, int lidar_id,
-               const rclcpp::PublisherOptions &options);
+               const rclcpp::PublisherOptions &options, PluginFactory factory = {});
   bool handles(const std::string &topic) const { return plugin_ && plugin_->handles(topic); }
   bool publish(const litesim3d::Cloud &cloud) { return plugin_ && plugin_->publish(cloud); }
   void matches(litesim3d::Json &result) const { if (plugin_) plugin_->matches(result); }

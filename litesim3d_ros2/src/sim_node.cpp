@@ -3,6 +3,8 @@
 #include "service_responses.hpp"
 #include "lidar_outputs.hpp"
 #include "joint_control.hpp"
+#include "simulator_backend.hpp"
+#include <any>
 #include <chrono>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <fstream>
@@ -14,6 +16,9 @@
 #include <litesim3d_interfaces/srv/step.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <rcl/graph.h>
+#include <rcl/node.h>
+#include <rclcpp/expand_topic_or_service_name.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rmw/rmw.h>
 #include <rosgraph_msgs/msg/clock.hpp>
@@ -52,9 +57,40 @@ geometry_msgs::msg::Pose poseMsg(const litesim3d::Pose &p) {
   return m;
 }
 } // namespace
+struct SimNodeHooks {
+  std::function<litesim3d::Config(const std::string &, litesim3d::Scene &)> load_config;
+  std::function<litesim3d::Model(const std::filesystem::path &, const litesim3d::ModelOptions &)> load_model;
+  std::function<std::unique_ptr<litesim3d_ros::SimulatorBackend>(litesim3d::Config, litesim3d::Model, litesim3d::Scene)> make_backend;
+  std::function<void(const std::string &, std::any)> publish;
+  std::function<std::chrono::steady_clock::time_point()> now;
+  std::function<bool()> ok, camera_ready;
+  std::function<void()> shutdown;
+  std::function<size_t(const std::string &)> publishers, subscriptions;
+  std::function<litesim3d_interfaces::srv::RenderCameras::Response::SharedPtr(
+      litesim3d_interfaces::srv::RenderCameras::Request::SharedPtr, double)> render;
+  decltype(&rcl_send_response) sender = rcl_send_response;
+  litesim3d_ros::LidarOutputs::PluginFactory lidar_factory;
+};
+
+// Test the timeout/cancellation protocol with an inert client/executor pair;
+// production instantiates exactly this code with the real Humble interfaces.
+template<class Client, class Executor>
+auto requestCamera(Client &client, Executor &executor,
+    litesim3d_interfaces::srv::RenderCameras::Request::SharedPtr request, double timeout) {
+  auto future = client.async_send_request(request);
+  const auto status = executor.spin_until_future_complete(future, std::chrono::duration<double>(timeout));
+  if (status != rclcpp::FutureReturnCode::SUCCESS) {
+    client.remove_pending_request(future);
+    throw std::runtime_error("camera render timeout or shutdown");
+  }
+  return future.get();
+}
+
 class SimNode : public rclcpp::Node {
+  friend struct SimNodeUnitAccess;
 public:
-  SimNode() : Node("litesim3d") {
+  explicit SimNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions{}, SimNodeHooks hooks = {})
+      : Node("litesim3d", node_options), hooks_(std::move(hooks)) {
     status_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/sim/status",
                                                                       rclcpp::QoS(10).reliable());
     const auto file = declare_parameter<std::string>("config", "");
@@ -74,15 +110,17 @@ public:
     paused_ = declare_parameter<bool>("start_paused", false);
     manifest_path_ = declare_parameter<std::string>("manifest_path", "");
     litesim3d::Scene scene;
-    auto cfg = litesim3d::Config::load(file, scene);
+    auto cfg = hooks_.load_config ? hooks_.load_config(file, scene) : litesim3d::Config::load(file, scene);
     auto initial = declare_parameter<std::vector<double>>("initial_pose_override", std::vector<double>{});
     if (!initial.empty()) {
       litesim3d::require(initial.size() == 7, "initial_pose_override requires xyz and xyzw");
       cfg.initial_pose = litesim3d::quaternionPose({initial[0], initial[1], initial[2]},
           {initial[6], initial[3], initial[4], initial[5]});
     }
-    auto model = litesim3d::Model::load(cfg.urdf, cfg.model_options);
-    sim_ = std::make_unique<litesim3d::Simulator>(cfg, model, scene);
+    auto model = hooks_.load_model ? hooks_.load_model(cfg.urdf, cfg.model_options) : litesim3d::Model::load(cfg.urdf, cfg.model_options);
+    sim_ = hooks_.make_backend ? hooks_.make_backend(cfg, model, scene) :
+        std::make_unique<litesim3d_ros::SimulatorBackendAdapter<litesim3d::Simulator>>(
+            std::make_shared<litesim3d::Simulator>(cfg, model, scene));
     cfg = sim_->config();
     stats_ = create_publisher<std_msgs::msg::String>("/sim/stats", rclcpp::QoS(1).best_effort());
     const auto scene_file = declare_parameter<std::string>("scene_description", "");
@@ -90,12 +128,12 @@ public:
       scene_description_ = litesim3d::Json::parse(litesim3d::readText(scene_file));
       scene_description_["cameras"] = litesim3d::Json::array();
       for (const auto &camera : cfg.cameras) scene_description_["cameras"].push_back(camera.json());
-      scene_description_["run_id"] = sim_->run_id;
+      scene_description_["run_id"] = sim_->runId();
       scene_description_pub_ = create_publisher<std_msgs::msg::String>(
           "/sim/scene_description", rclcpp::QoS(1).reliable().transient_local());
       scene_state_ = create_publisher<std_msgs::msg::String>("/sim/scene_state", rclcpp::QoS(1).best_effort());
       std_msgs::msg::String description; description.data = scene_description_.dump();
-      scene_description_pub_->publish(description);
+      emit(scene_description_pub_, description);
       scene_timer_ = create_wall_timer(std::chrono::milliseconds(33), [this] { publishSceneState(); });
     }
     const auto mode = declare_parameter<std::string>("cmd_mode", "twist");
@@ -113,7 +151,7 @@ public:
         [this](rclcpp::QOSOfferedIncompatibleQoSInfo &) { ++qos_conflicts_; };
     livox_ = std::make_unique<litesim3d_ros::LidarOutputs>(*this, cfg, "", prefix_,
         declare_parameter<std::string>("lidar_interface", "native"),
-        declare_parameter<int>("xfer_format", 1), declare_parameter<int>("livox_lidar_id", 0), options);
+        declare_parameter<int>("xfer_format", 1), declare_parameter<int>("livox_lidar_id", 0), options, hooks_.lidar_factory);
     for (auto &lidar : cfg.lidars) {
       if (livox_->handles(lidar.topic)) continue;
       clouds_[lidar.topic] =
@@ -147,14 +185,17 @@ public:
         "/sim/ground_truth/" + cfg.robot_id + "/contacts", rclcpp::QoS(10).reliable());
     if (cfg.control_mode == "ros2_control")
       joint_control_ = std::make_unique<litesim3d_ros::JointControl>(*this, *sim_,
-          [this](const auto &cmd) { return sim_->jointCommand(cmd); });
+          [this](const auto &cmd) { return sim_->jointCommand(cmd); }, "",
+          hooks_.publish ? litesim3d_ros::JointControl::FeedbackSink([this](const auto &message) {
+            hooks_.publish("/sim/joint_feedback", std::any(message)); }) : litesim3d_ros::JointControl::FeedbackSink{},
+          hooks_.publishers ? std::function<size_t()>([this] { return publisherCount("sim/joint_commands"); }) : std::function<size_t()>{});
     else joints_ = create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::QoS(10).reliable());
     clock_ = create_publisher<rosgraph_msgs::msg::Clock>("/clock", rclcpp::QoS(1).best_effort());
     description_ = create_publisher<std_msgs::msg::String>(
         "robot_description", rclcpp::QoS(1).reliable().transient_local());
     std_msgs::msg::String description;
     description.data = model.xml;
-    description_->publish(description);
+    emit(description_, description);
     markers_ = create_publisher<visualization_msgs::msg::MarkerArray>(
         "scene", rclcpp::QoS(1).reliable().transient_local());
     path_ = create_publisher<nav_msgs::msg::Path>("trajectory", rclcpp::QoS(1).reliable());
@@ -192,7 +233,7 @@ public:
           try {
             sim_->pause(request->data);
             paused_ = request->data;
-            pace_time_ = std::chrono::steady_clock::now();
+            pace_time_ = wallNow();
             pace_stamp_ = sim_->snapshot().stamp;
             response->success = true;
             response->message = "state updated";
@@ -201,7 +242,7 @@ public:
             response->message = e.what();
           }
           publishStatus();
-        });
+        }, hooks_.sender);
     step_service_ = litesim3d_ros::createResponseService<litesim3d_interfaces::srv::Step>(
         *this, "/sim/step", [this](litesim3d_interfaces::srv::Step::Request::SharedPtr request,
                             litesim3d_interfaces::srv::Step::Response::SharedPtr response) {
@@ -221,7 +262,7 @@ public:
           response->message = result.message;
           response->time_ns = result.time_ns;
           publishStatus();
-        });
+        }, hooks_.sender);
     pose_service_ = litesim3d_ros::createResponseService<litesim3d_interfaces::srv::SetPose>(
         *this, "/sim/set_pose",
         [this](litesim3d_interfaces::srv::SetPose::Request::SharedPtr request,
@@ -241,7 +282,7 @@ public:
             response->message = e.what();
           }
           response->time_ns = sim_->snapshot().stamp;
-        });
+        }, hooks_.sender);
     tf_watch_ = create_subscription<tf2_msgs::msg::TFMessage>(
         "/tf", rclcpp::QoS(100),
         [this](tf2_msgs::msg::TFMessage::ConstSharedPtr msg, const rclcpp::MessageInfo &info) {
@@ -259,7 +300,7 @@ public:
         cfg.real_time_factor > 0
             ? std::max<uint64_t>(1, uint64_t(cfg.step_ns / cfg.real_time_factor))
             : 1);
-    started_ = std::chrono::steady_clock::now();
+    started_ = wallNow();
     timer_ = create_wall_timer(interval, [this] { update(); });
     status_timer_ = create_wall_timer(std::chrono::milliseconds(200), [this] {
       publishPeriodicStatus();
@@ -280,29 +321,62 @@ public:
   }
 
 private:
+  std::chrono::steady_clock::time_point wallNow() const {
+    return hooks_.now ? hooks_.now() : std::chrono::steady_clock::now();
+  }
+  bool contextOk() const { return hooks_.ok ? hooks_.ok() : rclcpp::ok(); }
+  void shutdownContext() { if (hooks_.shutdown) hooks_.shutdown(); else rclcpp::shutdown(); }
+  size_t publisherCount(const std::string &topic) {
+    if (hooks_.publishers) return hooks_.publishers(topic);
+    const auto name = rclcpp::expand_topic_or_service_name(topic, get_name(), get_namespace(), false);
+    const auto base = get_node_base_interface();
+    size_t count = 0;
+    // Humble's count_publishers discards the rcl return code in an untyped
+    // runtime_error. Preserve it so only a proven context shutdown is benign.
+    const auto result = rcl_count_publishers(base->get_rcl_node_handle(), name.c_str(), &count);
+    if (result == RCL_RET_NODE_INVALID && !base->get_context()->is_valid() &&
+        rcl_node_is_valid_except_context(base->get_rcl_node_handle())) {
+      rcl_reset_error();
+      return 0;
+    }
+    if (result != RCL_RET_OK)
+      rclcpp::exceptions::throw_from_rcl_error(result, "could not count publishers");
+    return count;
+  }
+  bool cameraReady() const {
+    return hooks_.camera_ready ? hooks_.camera_ready() : camera_client_ && camera_client_->service_is_ready();
+  }
+  template<class Publisher, class Message>
+  void emit(const Publisher &publisher, const Message &message) {
+    if (hooks_.publish) hooks_.publish(publisher->get_topic_name(), std::any(message));
+    else publisher->publish(message);
+  }
+  void emitTransform(const geometry_msgs::msg::TransformStamped &message) {
+    sendTransform(*broadcaster_, message);
+  }
+  template<class Broadcaster>
+  void sendTransform(Broadcaster &broadcaster, const geometry_msgs::msg::TransformStamped &message) {
+    if (hooks_.publish) hooks_.publish("/tf", std::any(message)); else broadcaster.sendTransform(message);
+  }
+  template<class Publisher>
+  size_t subscriptionCount(const Publisher &publisher) const {
+    return hooks_.subscriptions ? hooks_.subscriptions(publisher->get_topic_name()) : publisher->get_subscription_count();
+  }
   void publishCameras(const litesim3d::Event &event) {
     if (event.cameras.empty()) return;
     using Service = litesim3d_interfaces::srv::RenderCameras;
     auto request = std::make_shared<Service::Request>();
     request->header.stamp = stamp(event.snapshot.stamp); request->header.frame_id = "world";
-    request->scene_id = scene_description_.at("scene_id"); request->run_id = sim_->run_id;
+    request->scene_id = scene_description_.at("scene_id"); request->run_id = sim_->runId();
     const auto frames = sim_->model().fk(event.snapshot.joints);
     const litesim3d::Pose root = event.snapshot.world_base * frames.at(sim_->config().base_link).inverse();
     for (const auto &[name, local] : frames) {
       request->link_names.push_back(name); request->link_poses.push_back(poseMsg(root * local));
     }
     for (const auto index : event.cameras) request->camera_names.push_back(sim_->config().cameras.at(index).name);
-    litesim3d::require(camera_client_ && camera_client_->service_is_ready(), "camera renderer disconnected");
-    auto future = camera_client_->async_send_request(request);
-    // A separate executor receives the reply without reentering physics callbacks.
-    // There is exactly one in-flight frame batch: slow rendering slows simulation.
-    const auto status = camera_executor_.spin_until_future_complete(
-        future, std::chrono::duration<double>(camera_render_timeout_));
-    if (status != rclcpp::FutureReturnCode::SUCCESS) {
-      camera_client_->remove_pending_request(future);
-      throw std::runtime_error("camera render timeout or shutdown");
-    }
-    auto response = future.get();
+    litesim3d::require(cameraReady(), "camera renderer disconnected");
+    auto response = hooks_.render ? hooks_.render(request, camera_render_timeout_) :
+        requestCamera(*camera_client_, camera_executor_, request, camera_render_timeout_);
     litesim3d::require(response->success, "camera rendering failed: " + response->message);
     litesim3d::require(response->frames.size() == event.cameras.size(), "incomplete camera response");
     for (size_t i = 0; i < event.cameras.size(); ++i) {
@@ -324,8 +398,8 @@ private:
             image.data.size() == size_t(image.step) * image.height, "invalid camera image buffer");
         image.header.frame_id = prefix_ + c.link;
         auto info = frame.info; info.header = image.header;
-        images_.at(c.topic + "/" + channel + "/image_raw")->publish(image);
-        camera_info_.at(c.topic + "/" + channel + "/camera_info")->publish(info);
+        emit(images_.at(c.topic + "/" + channel + "/image_raw"), image);
+        emit(camera_info_.at(c.topic + "/" + channel + "/camera_info"), info);
       };
       if (c.color()) send(frame.color, "color", "rgb8", 3);
       if (c.depth()) send(frame.depth, "depth", "32FC1", 4);
@@ -333,7 +407,7 @@ private:
     }
   }
   void publishSceneState() {
-    const auto now = std::chrono::steady_clock::now();
+    const auto now = wallNow();
     if (!scene_state_ || now < next_scene_state_) return;
     next_scene_state_ = now + std::chrono::milliseconds(33);
     const auto &s = sim_->snapshot();
@@ -345,15 +419,15 @@ private:
       poses[name] = {p.translation().x(), p.translation().y(), p.translation().z(), q.x(), q.y(), q.z(), q.w()};
     }
     std_msgs::msg::String message;
-    message.data = litesim3d::Json({{"schema_version", 1}, {"run_id", sim_->run_id},
+    message.data = litesim3d::Json({{"schema_version", 1}, {"run_id", sim_->runId()},
       {"scene_id", scene_description_.at("scene_id")}, {"stamp_ns", s.stamp},
       {"link_poses", poses}}).dump();
-    scene_state_->publish(message);
+    emit(scene_state_, message);
   }
   void publishClock() {
     rosgraph_msgs::msg::Clock c;
     c.clock = stamp(sim_->snapshot().stamp);
-    clock_->publish(c);
+    emit(clock_, c);
   }
   void publishState(const litesim3d::Snapshot &s) {
     sensor_msgs::msg::JointState js;
@@ -364,7 +438,7 @@ private:
         js.position.push_back(value);
         js.velocity.push_back(s.joint_velocities.count(name) ? s.joint_velocities.at(name) : 0);
       }
-    if (joints_) joints_->publish(js);
+    if (joints_) emit(joints_, js);
     if (joint_control_) joint_control_->publish(js, s);
     if (publish_tf_) {
       geometry_msgs::msg::TransformStamped t;
@@ -376,7 +450,7 @@ private:
       t.transform.translation.y = p.position.y;
       t.transform.translation.z = p.position.z;
       t.transform.rotation = p.orientation;
-      broadcaster_->sendTransform(t);
+      emitTransform(t);
     }
   }
   void publish(const std::vector<litesim3d::Event> &events) {
@@ -396,7 +470,7 @@ private:
         o.twist.twist.angular.z = e.snapshot.odom_w;
         o.pose.covariance = sim_->config().pose_covariance;
         o.twist.covariance = sim_->config().twist_covariance;
-        odom_->publish(o);
+        emit(odom_, o);
         auto truth = o;
         truth.header.frame_id = "world";
         truth.pose.pose = poseMsg(e.snapshot.world_base);
@@ -406,7 +480,7 @@ private:
         truth.twist.twist.linear.y = e.snapshot.lateral;
         truth.twist.twist.linear.z = e.snapshot.vertical;
         truth.twist.twist.angular.z = e.snapshot.w;
-        truth_->publish(truth);
+        emit(truth_, truth);
         geometry_msgs::msg::PoseStamped p;
         p.header = o.header;
         p.pose = o.pose.pose;
@@ -414,7 +488,7 @@ private:
         trajectory_.poses.push_back(p);
         if (trajectory_.poses.size() > 2000)
           trajectory_.poses.erase(trajectory_.poses.begin(), trajectory_.poses.begin() + 1000);
-        path_->publish(trajectory_);
+        emit(path_, trajectory_);
       }
       for (const auto &imu : e.imus) {
         sensor_msgs::msg::Imu m;
@@ -430,7 +504,7 @@ private:
         m.angular_velocity.x = imu.angular_velocity.x();
         m.angular_velocity.y = imu.angular_velocity.y();
         m.angular_velocity.z = imu.angular_velocity.z();
-        imus_.at(imu.topic)->publish(m);
+        emit(imus_.at(imu.topic), m);
         ++published_imus_;
       }
       for (auto &cloud : e.clouds) {
@@ -460,16 +534,16 @@ private:
             f.datatype = i == 4 ? 4 : 7;
             m.fields.push_back(f);
           }
-          clouds_.at(cloud.topic)->publish(m);
+          emit(clouds_.at(cloud.topic), m);
           if (!cloud.range_boundary.empty()) {
             m.data = cloud.range_boundary;
             m.is_dense = false;
-            clouds_.at(cloud.topic + "/range_boundary")->publish(m);
+            emit(clouds_.at(cloud.topic + "/range_boundary"), m);
           }
         }
         ++published_clouds_;
         const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+            wallNow().time_since_epoch()).count();
         compute_ms_.push_back(cloud.compute_ms);
         bridge_ms_.push_back((now - cloud.compute_end_ns) * 1e-6);
         if (compute_ms_.size() > 4096) { compute_ms_.pop_front(); bridge_ms_.pop_front(); }
@@ -485,20 +559,20 @@ private:
       litesim3d_interfaces::msg::Contact m;
       m.header.stamp = stamp(c.stamp);
       m.header.frame_id = "world";
-      m.run_id = sim_->run_id;
+      m.run_id = sim_->runId();
       m.robot_link = prefix_ + c.robot_link;
       m.entity = c.entity;
       m.clearance = c.clearance;
-      contacts_->publish(m);
+      emit(contacts_, m);
     }
   }
   void update() {
-    if (!rclcpp::ok()) return;
+    if (!contextOk()) return;
     if (!ready_) {
       const bool viewer_ready = viewer_ready_file_.empty() || std::filesystem::is_regular_file(viewer_ready_file_);
-      const bool camera_ready = !camera_client_ || camera_client_->service_is_ready();
+      const bool camera_ready = !camera_client_ || cameraReady();
       if (!viewer_ready || !camera_ready) {
-        if (std::chrono::duration<double>(std::chrono::steady_clock::now() - started_).count() >
+        if (std::chrono::duration<double>(wallNow() - started_).count() >
             startup_timeout_) {
           sim_->fault(!camera_ready ? "camera renderer readiness timeout" : "viewer readiness timeout");
           timer_->cancel();
@@ -507,7 +581,7 @@ private:
         }
         return;
       }
-      if (count_publishers("/clock") > 1) {
+      if (publisherCount("/clock") > 1) {
         sim_->fault("multiple /clock publishers");
         timer_->cancel();
         publishStatus();
@@ -515,7 +589,7 @@ private:
       }
       ready_ = true;
       sim_->pause(paused_);
-      pace_time_ = std::chrono::steady_clock::now();
+      pace_time_ = wallNow();
       pace_stamp_ = sim_->snapshot().stamp;
     }
     try {
@@ -527,14 +601,24 @@ private:
       unsigned steps = 1;
       const auto &cfg = sim_->config();
       if (cfg.real_time_factor > 0 && sim_->state() == litesim3d::State::Running) {
-        const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - pace_time_).count();
+        const auto now = wallNow();
+        const double elapsed = std::chrono::duration<double>(now - pace_time_).count();
         const uint64_t target = pace_stamp_ + uint64_t(elapsed * cfg.real_time_factor * 1e9);
-        steps = target > sim_->snapshot().stamp
-            ? unsigned(std::min<uint64_t>(8, (target - sim_->snapshot().stamp) / cfg.step_ns)) : 0;
+        const uint64_t due = target > sim_->snapshot().stamp
+            ? (target - sim_->snapshot().stamp) / cfg.step_ns : 0;
+        steps = unsigned(std::min<uint64_t>(8, due));
+        if (due > steps) {
+          // Bound accumulated wall-clock debt, not just this callback's work.
+          // After rendering overload, retain one catch-up batch and its
+          // fractional phase instead of racing to repay an arbitrarily old
+          // target. Every committed physics/sensor step still executes.
+          pace_time_ = now;
+          pace_stamp_ = target - (due - steps) * cfg.step_ns;
+        }
       }
       for (unsigned i = 0; i < steps; ++i) publish(sim_->tick());
     } catch (const std::exception &e) {
-      if (!rclcpp::ok()) return;
+      if (!contextOk()) return;
       RCLCPP_ERROR(get_logger(), "simulation fault: %s", e.what());
       sim_->fault(e.what());
       timer_->cancel();
@@ -542,33 +626,33 @@ private:
     }
   }
   void publishPeriodicStatus() {
-    if (!rclcpp::ok() || std::chrono::steady_clock::now() < next_status_) return;
+    if (!contextOk() || wallNow() < next_status_) return;
     publishStatus();
     if (std::any_of(sim_->scene().visual.begin(), sim_->scene().visual.end(),
                     [](const litesim3d::Geometry &g) { return bool(g.motion); }))
       publishScene(false);
   }
   void publishStatus() {
-    if (!sim_ || !rclcpp::ok())
+    if (!sim_ || !contextOk())
       return;
-    next_status_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
-    if (count_publishers("/clock") > 1)
+    next_status_ = wallNow() + std::chrono::milliseconds(200);
+    if (publisherCount("/clock") > 1)
       sim_->fault("multiple /clock publishers");
     auto data = sim_->diagnostics();
-    const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    const auto actual = rate_.sample(sim_->run_id, sim_->snapshot().stamp, wall);
+    const double wall = std::chrono::duration<double>(wallNow().time_since_epoch()).count();
+    const auto actual = rate_.sample(sim_->runId(), sim_->snapshot().stamp, wall);
     const bool paused = sim_->state() == litesim3d::State::Paused;
     data["actual_real_time_factor"] = paused ? litesim3d::Json(0.0) :
         (actual ? litesim3d::Json(*actual) : litesim3d::Json(nullptr));
     data["target_real_time_factor"] = sim_->config().real_time_factor;
     data["collision_budget_enabled"] = sim_->config().collision_budget_enabled;
     std_msgs::msg::String statistics;
-    statistics.data = litesim3d::Json({{"schema_version", 1}, {"run_id", sim_->run_id},
+    statistics.data = litesim3d::Json({{"schema_version", 1}, {"run_id", sim_->runId()},
       {"stamp_ns", sim_->snapshot().stamp}, {"state", data["state"]},
       {"actual_real_time_factor", data["actual_real_time_factor"]},
       {"target_real_time_factor", sim_->config().real_time_factor},
       {"collision_budget_enabled", sim_->config().collision_budget_enabled}}).dump();
-    stats_->publish(statistics);
+    emit(stats_, statistics);
     data["ready"] = ready_;
     data["qos_conflicts"] = qos_conflicts_;
     data["dropped_frames"] = dropped_frames_;
@@ -577,8 +661,8 @@ private:
     data["published_camera_frames"] = published_camera_frames_;
     // Session reset waits for real publisher-side DDS matches before releasing clients.
     auto matches = nlohmann::json::object();
-    auto count_matches = [&matches](const auto &publisher) {
-      matches[publisher->get_topic_name()] = publisher->get_subscription_count();
+    auto count_matches = [this, &matches](const auto &publisher) {
+      matches[publisher->get_topic_name()] = subscriptionCount(publisher);
     };
     count_matches(clock_);
     count_matches(odom_);
@@ -606,7 +690,7 @@ private:
     msg.header.stamp = stamp(sim_->snapshot().stamp);
     diagnostic_msgs::msg::DiagnosticStatus s;
     s.name = "litesim3d/" + sim_->config().robot_id;
-    s.hardware_id = sim_->run_id;
+    s.hardware_id = sim_->runId();
     s.level = sim_->state() == litesim3d::State::Fault
                   ? 2
                   : ((qos_conflicts_ || dropped_frames_ || data["command_timeout"].get<bool>() ||
@@ -623,13 +707,13 @@ private:
       s.values.push_back(kv);
     }
     msg.status.push_back(s);
-    status_->publish(msg);
+    emit(status_, msg);
     if (failed()) {
       if (!fault_time_)
-        fault_time_ = std::chrono::steady_clock::now();
-      if (std::chrono::steady_clock::now() - *fault_time_ > std::chrono::milliseconds(400)) {
+        fault_time_ = wallNow();
+      if (wallNow() - *fault_time_ > std::chrono::milliseconds(400)) {
         saveManifest("fault");
-        rclcpp::shutdown();
+        shutdownContext();
       }
     }
   }
@@ -676,7 +760,7 @@ private:
       }
       all.markers.push_back(m);
     }
-    markers_->publish(all);
+    emit(markers_, all);
   }
   void saveManifest(const std::string &reason) {
     if (manifest_path_.empty())
@@ -696,7 +780,8 @@ private:
   litesim3d::Json scene_description_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stats_, scene_description_pub_, scene_state_;
   rclcpp::TimerBase::SharedPtr scene_timer_;
-  std::unique_ptr<litesim3d::Simulator> sim_;
+  SimNodeHooks hooks_;
+  std::unique_ptr<litesim3d_ros::SimulatorBackend> sim_;
   std::unique_ptr<litesim3d_ros::LidarOutputs> livox_;
   litesim3d::Pose scene_inverse_ = litesim3d::Pose::Identity();
   std::unique_ptr<tf2_ros::TransformBroadcaster> broadcaster_;
@@ -742,12 +827,30 @@ private:
   rclcpp::Service<litesim3d_interfaces::srv::SetPose>::SharedPtr pose_service_;
   rclcpp::TimerBase::SharedPtr timer_, status_timer_;
 };
-int main(int argc, char **argv) {
-  rclcpp::init(argc, argv);
+struct SimMainHooks {
+  std::function<void(int, char **)> initialize;
+  std::function<std::shared_ptr<SimNode>()> make_node;
+  std::function<void(std::shared_ptr<rclcpp::Node>)> spin;
+  std::function<bool()> ok;
+  std::function<void()> shutdown, wait;
+  std::function<void(const diagnostic_msgs::msg::DiagnosticArray &)> report;
+};
+
+int runSimNode(int argc, char **argv, const SimMainHooks &hooks = {}) {
+  if (hooks.initialize) hooks.initialize(argc, argv); else rclcpp::init(argc, argv);
+  auto ok = [&hooks] { return hooks.ok ? hooks.ok() : rclcpp::ok(); };
   int result = 0;
   try {
-    auto node = std::make_shared<SimNode>();
-    rclcpp::spin(node);
+    auto node = hooks.make_node ? hooks.make_node() : std::make_shared<SimNode>();
+    try {
+      if (hooks.spin) hooks.spin(node); else rclcpp::spin(node);
+    } catch (const rclcpp::exceptions::RCLError &e) {
+      // A signal may close the context after this node was constructed but
+      // before Humble creates the executor's guard condition. Still finish
+      // that node; unrelated executor errors and simulator faults remain errors.
+      if (e.ret != RCL_RET_NOT_INIT || ok()) throw;
+      rcl_reset_error();
+    }
     result = node->failed() ? 1 : 0;
     node->finish();
   } catch (const std::exception &e) {
@@ -755,7 +858,7 @@ int main(int argc, char **argv) {
     result = 1;
     // Publish startup failures on the same diagnostics channel before exiting.
     // No simulator world is committed when its constructor fails validation.
-    if (rclcpp::ok()) {
+    if (ok()) {
       auto reporter = std::make_shared<rclcpp::Node>("litesim3d_startup_error");
       auto publisher = reporter->create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
           "/sim/status", rclcpp::QoS(1).reliable().transient_local());
@@ -769,13 +872,16 @@ int main(int argc, char **argv) {
       error.message = e.what();
       report.status.push_back(error);
       for (int i = 0; i < 10; ++i) {
-        publisher->publish(report);
-        rclcpp::spin_some(reporter);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (hooks.report) hooks.report(report); else publisher->publish(report);
+        if (hooks.spin) hooks.spin(reporter); else rclcpp::spin_some(reporter);
+        if (hooks.wait) hooks.wait(); else std::this_thread::sleep_for(std::chrono::milliseconds(50));
       }
     }
   }
-  if (rclcpp::ok())
-    rclcpp::shutdown();
+  if (ok()) {
+    if (hooks.shutdown) hooks.shutdown(); else rclcpp::shutdown();
+  }
   return result;
 }
+
+int main(int argc, char **argv) { return runSimNode(argc, argv); }
