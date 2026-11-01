@@ -167,9 +167,42 @@ TEST(RenderNormals, RejectsNonTrianglesBadFaceCountsAndOutOfRangeIndices) {
   }
 }
 
-std::filesystem::path crateMeshes() {
-  return std::filesystem::path(__FILE__).parent_path().parent_path().parent_path()/
-      "litesim3d_assets/test/fixtures/assets/models/textured_crate/meshes";
+std::filesystem::path crateMeshes(const std::filesystem::path &testSource=__FILE__) {
+  // Release validation builds this package alone under a renamed source root.
+  // Keep the mesh, MTL and relative texture references within the GUI package.
+  return testSource.parent_path()/"fixtures/textured_crate/meshes";
+}
+
+TEST(RenderMeshImport, PackageLocalFixturesSurviveStandaloneSourceDirectoryNames) {
+  QTemporaryDir directory;ASSERT_TRUE(directory.isValid());
+  const auto packages=std::filesystem::path(directory.path().toStdString())/"packages";
+  const auto source=packages/"current-source/test/test_render_helpers.cpp";
+  const auto crate=source.parent_path()/"fixtures/textured_crate";
+  std::filesystem::create_directories(crate.parent_path());
+  std::filesystem::copy(crateMeshes().parent_path(),crate,std::filesystem::copy_options::recursive);
+  const auto meshes=crateMeshes(source);
+  ASSERT_EQ(meshes,crate/"meshes");
+  EXPECT_FALSE(std::filesystem::exists(packages/"litesim3d_assets"));
+  ASSERT_TRUE(std::filesystem::is_regular_file(meshes/"crate.mtl"));
+  const auto checker=crate/"materials/textures/checker.png";
+  ASSERT_TRUE(std::filesystem::is_regular_file(checker));
+  RenderScene::MeshCache cache;
+  for(const auto *extension:{".obj",".dae"}) {
+    const auto path=meshes/(std::string("crate")+extension);
+    ASSERT_TRUE(std::filesystem::is_regular_file(path));
+    const auto *mesh=RenderScene::loadMesh(path.string(),cache);ASSERT_NE(mesh,nullptr);
+    bool textured=false;
+    for(unsigned i=0;i<mesh->MaterialCount();++i) {
+      auto material=mesh->MaterialByIndex(i);ASSERT_NE(material,nullptr);
+      if(material->TextureImage().empty())continue;
+      textured=true;
+      EXPECT_EQ(std::filesystem::weakly_canonical(material->TextureImage()),
+          std::filesystem::weakly_canonical(checker));
+      QImageReader reader(QString::fromStdString(material->TextureImage()));
+      EXPECT_FALSE(reader.read().isNull());
+    }
+    EXPECT_TRUE(textured);
+  }
 }
 
 TEST(RenderMeshImport, ObjAndColladaPreserveIndependentMaterialsUvsAndNormals) {

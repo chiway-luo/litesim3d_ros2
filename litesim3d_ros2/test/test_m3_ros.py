@@ -24,6 +24,23 @@ def executable(name):
     return str(Path(get_package_prefix('litesim3d_ros2'))/'lib/litesim3d_ros2'/name)
 
 
+def world_tf_pairs(h, count):
+    """Observe the raw TF collector before checking its complete robot edges."""
+    required = {(f'r{k}/odom', f'r{k}/base_link') for k in range(count)}
+
+    def collected():
+        return {(t.header.frame_id, t.child_frame_id)
+                for message in h.messages['tf'] for t in message.transforms}
+
+    # TransformListener and the raw /tf collector are separate subscriptions.
+    # Buffer.can_transform() does not establish that the collector callback ran.
+    h.until(lambda: required <= collected())
+    pairs = collected()
+    assert all(a.split('/')[0] == b.split('/')[0] for a, b in pairs)
+    assert required <= pairs
+    return pairs
+
+
 def start_world(h, count, *, ready=True, command_timeout=100.0, range_boundary=False, mid360=False, rsp=True, **settings):
     m2_config(h)
     h.config['entities'] = []
@@ -163,9 +180,7 @@ def test_EXT03_namespaces_clock_tf_commands_and_peer_cloud(h, count):
     cloud = h.messages['r0-cloud'][-1]
     for x,y,z,intensity,ring,t in struct.iter_unpack('<ffffH2xf', bytes(cloud.data)):
         assert x == pytest.approx(2-.4-.2-.2*(.9+t), abs=1e-5)
-    pairs={(t.header.frame_id,t.child_frame_id) for m in h.messages['tf'] for t in m.transforms}
-    assert all(a.split('/')[0]==b.split('/')[0] for a,b in pairs)
-    assert all((f'r{k}/odom', f'r{k}/base_link') in pairs for k in range(count))
+    pairs = world_tf_pairs(h, count)
     cached = h.step(20, 'block-9')
     assert cached.success and cached.time_ns==1_000_000_001
     assert not h.step(21, 'block-9').success

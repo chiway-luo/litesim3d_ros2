@@ -326,6 +326,7 @@ class Profile:
         self.stage("python-runtime-unit", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                    "--import-mode=importlib", ROOT / "litesim3d_ros2/test/test_session_unit.py",
                    ROOT / "litesim3d_ros2/test/test_launch_units.py",
+                   ROOT / "litesim3d_ros2/test/test_integration_expectations_unit.py",
                    ROOT / "scripts/quality/tests/test_prepare_xacro_unit.py",
                    ROOT / "scripts/quality/tests/test_convert_mid360_unit.py",
                    f"--junitxml={self.evidence / 'python-runtime-cases.xml'}"], 300, unit=True)

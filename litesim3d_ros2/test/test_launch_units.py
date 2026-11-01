@@ -6,11 +6,12 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument
 
 
-ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = [
     ('dual_mid360/dual_mid360_bringup/launch/bringup.launch.py', 'diff_drive_controller', 'workshop.sdf'),
     ('ackermann/ackermann_sim/launch/ackermann.launch.py', 'ackermann_controller', 'room.sdf'),
@@ -23,12 +24,69 @@ LEGACY = ['wheel_car_4w/wheel_car_4w_sim/launch/legacy_twist.launch.py',
           'drone_3d/drone_3d_sim/launch/legacy_twist.launch.py']
 
 
+def launch_source(path):
+    relative = Path(path)
+    if relative.parts[0] == 'litesim3d_ros2':
+        return PACKAGE_ROOT.joinpath(*relative.parts[1:])
+    repository = PACKAGE_ROOT.parent
+    if (repository / 'examples').is_dir():
+        # Coverage runs must exercise checkout sources, not an older install.
+        return repository / relative
+    # Independent-package validation installs every package before its test
+    # pass, then restores only the package under test into current-source.
+    return Path(get_package_share_directory(relative.parts[2])).joinpath(*relative.parts[3:])
+
+
 def load(path):
-    path = ROOT / path
+    path = launch_source(path)
     spec = importlib.util.spec_from_file_location('launch_unit_' + path.parent.parent.name + path.stem, path)
     result = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(result)
     return result
+
+
+def test_launch_sources_use_checkout_paths_without_installed_fallback(monkeypatch, tmp_path):
+    package = tmp_path / 'litesim3d_ros2'
+    (tmp_path / 'examples').mkdir()
+    monkeypatch.setitem(globals(), 'PACKAGE_ROOT', package)
+    installed = Mock(side_effect=AssertionError('checkout tests must not use installed launch files'))
+    monkeypatch.setitem(globals(), 'get_package_share_directory', installed)
+    assert launch_source('litesim3d_ros2/launch/demo.launch.py') == package / 'launch/demo.launch.py'
+    for filename in [entry[0] for entry in EXAMPLES] + LEGACY:
+        assert launch_source('examples/' + filename) == tmp_path / 'examples' / filename
+    installed.assert_not_called()
+
+
+def test_launch_sources_use_staged_bridge_and_installed_examples(monkeypatch, tmp_path):
+    package = tmp_path / 'packages/current-source'
+    share = tmp_path / 'install/share'
+    monkeypatch.setitem(globals(), 'PACKAGE_ROOT', package)
+    installed = Mock(side_effect=lambda name: str(share / name))
+    monkeypatch.setitem(globals(), 'get_package_share_directory', installed)
+    bridge = package / 'launch/world.launch.py'
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text("location = 'staged-bridge'\n")
+    assert load('litesim3d_ros2/launch/world.launch.py').location == 'staged-bridge'
+    installed.assert_not_called()
+    filenames = [entry[0] for entry in EXAMPLES] + LEGACY
+    for filename in filenames:
+        relative = Path(filename)
+        target = share.joinpath(*relative.parts[1:])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("location = 'installed-example'\n")
+        module = load('examples/' + filename)
+        assert Path(module.__file__) == target and module.location == 'installed-example'
+    assert [call.args[0] for call in installed.call_args_list] == [Path(name).parts[1] for name in filenames]
+
+
+def test_missing_checkout_launch_file_is_not_replaced_by_installed_copy(monkeypatch, tmp_path):
+    (tmp_path / 'examples').mkdir()
+    monkeypatch.setitem(globals(), 'PACKAGE_ROOT', tmp_path / 'litesim3d_ros2')
+    installed = Mock(side_effect=AssertionError('missing source must remain a test failure'))
+    monkeypatch.setitem(globals(), 'get_package_share_directory', installed)
+    with pytest.raises(FileNotFoundError):
+        load('examples/wheel_car_4w/wheel_car_4w_sim/launch/missing.launch.py')
+    installed.assert_not_called()
 
 
 def capture(module, monkeypatch):
