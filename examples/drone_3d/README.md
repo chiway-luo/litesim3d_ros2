@@ -22,7 +22,6 @@ drone_3d/
 
 ```bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 launch drone_3d_sim drone_3d.launch.py
 ```
 
@@ -41,7 +40,7 @@ ros2 launch drone_3d_sim drone_3d.launch.py real_time_factor:=0.5 collision_budg
 
 ## 三维运动和话题
 
-在另一个相同 ROS 环境、相同 ROS_DOMAIN_ID 的终端发送：
+在另一个加载相同 ROS 环境的终端发送：
 
 ```bash
 # 从初始悬停位置上升；linear.z > 0 向上。

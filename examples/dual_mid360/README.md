@@ -9,7 +9,6 @@
 完成[安装与构建](../../docs/usage/安装与构建.md)后，在已加载安装环境的 Bash 终端执行：
 
 ```bash
-export ROS_DOMAIN_ID=71 ROS_LOCALHOST_ONLY=1
 ros2 launch dual_mid360_bringup bringup.launch.py
 ```
 

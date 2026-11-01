@@ -18,9 +18,10 @@
 </p>
 
 <p align="center">
+  <a href="#开发初衷">开发初衷</a> ·
   <a href="#主要功能">主要功能</a> ·
-  <a href="#运行要求">运行要求</a> ·
-  <a href="#快速开始">快速开始</a> ·
+  <a href="#版本适配">版本适配</a> ·
+  <a href="docs/tutorials/快速开始.md">快速开始</a> ·
   <a href="#文档">文档</a> ·
   <a href="#开发与贡献">开发与贡献</a>
 </p>
@@ -33,6 +34,10 @@ LiteSim 3D 是面向 ROS 2 模型接入、传感器处理和算法联调的 C++1
 | --- | --- |
 | ![办公区仿真](docs/images/office.png) | ![无人机仿真](docs/images/drone-arena.png) |
 
+## 开发初衷
+
+我们开发 LiteSim 3D，是希望让机器人算法的早期验证更方便、更快速。项目着重减少仿真环境的搭建成本和仿真器自身的资源占用，把更多计算资源留给算法，方便开发者反复测试模型接入、传感器处理与控制流程。
+
 ## 主要功能
 
 - 差速、阿克曼、三轮/四轮普通全向底盘，以及速度控制无人机；示例默认使用 ros2_control。
@@ -44,59 +49,18 @@ LiteSim 3D 是面向 ROS 2 模型接入、传感器处理和算法联调的 C++1
 仿真采用运动学和几何约束，不模拟接触力、悬架、轮胎动力学、电机推力或飞控动力学。
 
 <a id="开发环境"></a>
-## 运行要求
+<a id="运行要求"></a>
+## 版本适配
 
-Ubuntu 22.04 LTS、ROS 2 Humble、Bash、C++17、CMake ≥ 3.20、Python ≥ 3.10 和 colcon。三维窗口及相机另需 Qt 5、Gazebo Rendering 6 / Ogre2 和可用图形环境。
+目前仅适配 **ROS 2 Humble**，推荐使用 **Ubuntu 22.04 LTS**。其他 ROS 2 发行版尚未适配。
 
-本机运行先完成[安装依赖](docs/usage/安装与构建.md#安装依赖)。使用[容器](docs/usage/容器运行.md)时，宿主机只需准备 Git 和 Docker。
-
-## 快速开始
-
-没有 ROS 环境时，可在仓库根目录运行 `docker compose up --build desktop`，通过浏览器使用三维窗口。完整步骤见[容器运行](docs/usage/容器运行.md)。下面是本机安装方式。
-
-### 1. 获取源码并构建
-
-```bash
-source /opt/ros/humble/setup.bash
-git clone --branch humble https://github.com/chiway-luo/litesim3d_ros2.git
-cd litesim3d_ros2
-rosdep install --from-paths . --ignore-src --rosdistro humble -y
-bash scripts/build.sh
-source "$(python3 scripts/paths.py install)/setup.bash"
-```
-
-所有包构建完成且没有失败后，在同一源码目录继续。
-
-### 2. 启动小车
-
-终端 A：
-
-```bash
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false rviz:=false cameras:=false lidar_profile:=vlp16 lidar_interface:=native
-```
-
-保持终端 A 运行。本步骤关闭窗口和相机，使用办公场景、VLP-16 和原生 PointCloud2。同一 domain 只运行一个仿真世界。
-
-### 3. 发送速度并检查反馈
-
-终端 B 进入同一源码目录，执行：
-
-```bash
-source /opt/ros/humble/setup.bash
-source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
-python3 docs/examples/ros_client.py --drive --linear 0.1 --angular 0.0 --duration 8 --require-imu --require-motion
-```
-
-JSON 中 `success: true`、`checks.motion: true` 表示数据连通且里程计位移至少 1 cm。程序退出前发送零速度；在终端 A 按 Ctrl+C 结束仿真。
-
-需要三维窗口时，将第 2 步改为 `gui:=true` 后重新启动；需要 RViz 再加 `rviz:=true`。更多检查见[启动与控制](docs/tutorials/启动与控制.md)。
+详细依赖和构建方式见[安装与构建](docs/usage/安装与构建.md)；宿主机没有 ROS 环境时可使用[Docker 容器](docs/usage/容器运行.md)。
 
 ## 文档
 
 | 要做什么 | 入口 |
 | --- | --- |
+| 首次获取源码、构建并运行仿真 | [快速开始](docs/tutorials/快速开始.md) |
 | 无需本机 ROS 环境，使用浏览器体验 | [容器运行](docs/usage/容器运行.md) |
 | 安装依赖、选择构建方式 | [安装与构建](docs/usage/安装与构建.md) |
 | 用自己的 description 搭建仿真 | [双 MID-360 从零搭建](docs/tutorials/双MID360从零搭建.md) |
@@ -108,6 +72,8 @@ JSON 中 `success: true`、`checks.motion: true` 表示数据连通且里程计�
 全部页面见[文档目录](docs/README.md)。
 
 ## 开发与贡献
+
+项目目前尚不成熟，功能、稳定性和文档都在持续完善。欢迎开发者试用并参与开发、修复、测试和文档贡献，也欢迎通过 [Issues](https://github.com/chiway-luo/litesim3d_ros2/issues) 提出使用中遇到的问题和建议，或提交 [Pull Request](https://github.com/chiway-luo/litesim3d_ros2/pulls)。我们会尽快跟进、排查并解决反馈的问题。
 
 版本号见 [VERSION](VERSION)。源码、文档与安装包应使用同一版本。
 

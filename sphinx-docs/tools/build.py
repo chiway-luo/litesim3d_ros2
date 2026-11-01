@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SLUGS = {
     "docs/README.md": "index",
     "docs/tutorials/README.md": "tutorials/index",
+    "docs/tutorials/快速开始.md": "tutorials/quick-start",
     "docs/tutorials/双MID360从零搭建.md": "tutorials/dual-mid360-from-scratch",
     "docs/tutorials/阿克曼与全向轮ros2_control.md": "tutorials/ackermann-omni-control",
     "docs/tutorials/全部模型与第三方算法ros2_control.md": "tutorials/unified-control-plugins",

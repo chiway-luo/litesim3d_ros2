@@ -9,7 +9,6 @@
 ```bash
 source /opt/ros/humble/setup.bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```
 
@@ -20,7 +19,6 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py
 ```bash
 source /opt/ros/humble/setup.bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
   '{linear: {x: 0.3}, angular: {z: 0.2}}'
 ```
