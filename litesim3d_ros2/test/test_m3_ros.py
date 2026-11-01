@@ -15,6 +15,7 @@ from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import PointCloud2, PointField, Imu
 from std_msgs.msg import String
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
 from visualization_msgs.msg import MarkerArray
 from test_ros import Harness, h, ns
 from test_m2_ros import m2_config
@@ -22,6 +23,12 @@ from test_m2_ros import m2_config
 
 def executable(name):
     return str(Path(get_package_prefix('litesim3d_ros2'))/'lib/litesim3d_ros2'/name)
+
+
+def world_transforms_ready(h, count):
+    """Wait for the listener, not another topic's independently queued callback."""
+    h.until(lambda: all(h.buffer.can_transform(f'r{k}/odom', f'r{k}/lidar_link', Time())
+                        for k in range(count)))
 
 
 def world_tf_pairs(h, count):
@@ -170,6 +177,7 @@ def test_EXT03_namespaces_clock_tf_commands_and_peer_cloud(h, count):
     for k in range(1,count):
         assert h.messages[f'r{k}-odom'][-1].pose.pose.position.x == 0
         assert h.messages[f'r{k}-odom'][-1].pose.pose.position.y == 0
+    world_transforms_ready(h, count)
     for k in range(count):
         cloud = h.messages[f'r{k}-cloud'][-1]
         assert cloud.header.frame_id == f'r{k}/lidar_link'

@@ -1,6 +1,7 @@
 // Validation/state-machine units: stop the private executor immediately, inject
 // feedback directly and assert exported scalar state. No ROS peer is launched.
 #include "../src/system.cpp"
+#include <class_loader/class_loader_core.hpp>
 #include <gtest/gtest.h>
 #include <limits>
 
@@ -32,6 +33,13 @@ namespace {
 using namespace litesim3d_ros2_control;
 using Feedback = litesim3d_interfaces::msg::JointFeedback;
 using Command = litesim3d_interfaces::msg::JointCommand;
+TEST(SystemRegistrationUnit, DirectClassDoesNotInstallAnUnownedPluginFactory) {
+  const auto classes = class_loader::impl::getAvailableClasses<
+      hardware_interface::SystemInterface>(nullptr);
+  EXPECT_EQ(std::count(classes.begin(), classes.end(),
+      "litesim3d_ros2_control::LiteSimSystem"), 0);
+  EXPECT_FALSE(class_loader::impl::hasANonPurePluginLibraryBeenOpened());
+}
 // The unit doubles replace only external endpoint discovery and sends. All
 // configuration, feedback validation, ownership and write logic is production.
 class IsolatedSystem final : public LiteSimSystem {

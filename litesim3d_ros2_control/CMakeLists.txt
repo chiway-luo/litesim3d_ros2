@@ -49,9 +49,13 @@ if(BUILD_TESTING)
   ament_add_gtest(omni_configuration test/test_omni_configuration.cpp)
   ament_target_dependencies(omni_configuration controller_interface pluginlib rclcpp)
   ament_add_gtest(controller_units test/test_controller_units.cpp)
+  # These targets include the implementation directly, not a plugin DSO.
+  # A factory registered before main() has no class_loader owner to unload it.
+  target_compile_definitions(controller_units PRIVATE LITESIM3D_NO_PLUGIN_REGISTRATION)
   target_link_libraries(controller_units Eigen3::Eigen hardware_interface::hardware_interface)
   ament_target_dependencies(controller_units controller_interface geometry_msgs realtime_tools pluginlib rclcpp)
   ament_add_gtest(system_units test/test_system_units.cpp)
+  target_compile_definitions(system_units PRIVATE LITESIM3D_NO_PLUGIN_REGISTRATION)
   target_link_libraries(system_units hardware_interface::hardware_interface)
   ament_target_dependencies(system_units pluginlib rclcpp rclcpp_lifecycle litesim3d_interfaces)
   ament_add_pytest_test(control_integration test/test_integration.py TIMEOUT 180

@@ -16,6 +16,9 @@
 #include <litesim3d_interfaces/srv/step.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <rcl/graph.h>
+#include <rcl/node.h>
+#include <rclcpp/expand_topic_or_service_name.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rmw/rmw.h>
 #include <rosgraph_msgs/msg/clock.hpp>
@@ -323,8 +326,22 @@ private:
   }
   bool contextOk() const { return hooks_.ok ? hooks_.ok() : rclcpp::ok(); }
   void shutdownContext() { if (hooks_.shutdown) hooks_.shutdown(); else rclcpp::shutdown(); }
-  size_t publisherCount(const std::string &topic) const {
-    return hooks_.publishers ? hooks_.publishers(topic) : count_publishers(topic);
+  size_t publisherCount(const std::string &topic) {
+    if (hooks_.publishers) return hooks_.publishers(topic);
+    const auto name = rclcpp::expand_topic_or_service_name(topic, get_name(), get_namespace(), false);
+    const auto base = get_node_base_interface();
+    size_t count = 0;
+    // Humble's count_publishers discards the rcl return code in an untyped
+    // runtime_error. Preserve it so only a proven context shutdown is benign.
+    const auto result = rcl_count_publishers(base->get_rcl_node_handle(), name.c_str(), &count);
+    if (result == RCL_RET_NODE_INVALID && !base->get_context()->is_valid() &&
+        rcl_node_is_valid_except_context(base->get_rcl_node_handle())) {
+      rcl_reset_error();
+      return 0;
+    }
+    if (result != RCL_RET_OK)
+      rclcpp::exceptions::throw_from_rcl_error(result, "could not count publishers");
+    return count;
   }
   bool cameraReady() const {
     return hooks_.camera_ready ? hooks_.camera_ready() : camera_client_ && camera_client_->service_is_ready();
@@ -584,10 +601,20 @@ private:
       unsigned steps = 1;
       const auto &cfg = sim_->config();
       if (cfg.real_time_factor > 0 && sim_->state() == litesim3d::State::Running) {
-        const double elapsed = std::chrono::duration<double>(wallNow() - pace_time_).count();
+        const auto now = wallNow();
+        const double elapsed = std::chrono::duration<double>(now - pace_time_).count();
         const uint64_t target = pace_stamp_ + uint64_t(elapsed * cfg.real_time_factor * 1e9);
-        steps = target > sim_->snapshot().stamp
-            ? unsigned(std::min<uint64_t>(8, (target - sim_->snapshot().stamp) / cfg.step_ns)) : 0;
+        const uint64_t due = target > sim_->snapshot().stamp
+            ? (target - sim_->snapshot().stamp) / cfg.step_ns : 0;
+        steps = unsigned(std::min<uint64_t>(8, due));
+        if (due > steps) {
+          // Bound accumulated wall-clock debt, not just this callback's work.
+          // After rendering overload, retain one catch-up batch and its
+          // fractional phase instead of racing to repay an arbitrarily old
+          // target. Every committed physics/sensor step still executes.
+          pace_time_ = now;
+          pace_stamp_ = target - (due - steps) * cfg.step_ns;
+        }
       }
       for (unsigned i = 0; i < steps; ++i) publish(sim_->tick());
     } catch (const std::exception &e) {
@@ -815,7 +842,15 @@ int runSimNode(int argc, char **argv, const SimMainHooks &hooks = {}) {
   int result = 0;
   try {
     auto node = hooks.make_node ? hooks.make_node() : std::make_shared<SimNode>();
-    if (hooks.spin) hooks.spin(node); else rclcpp::spin(node);
+    try {
+      if (hooks.spin) hooks.spin(node); else rclcpp::spin(node);
+    } catch (const rclcpp::exceptions::RCLError &e) {
+      // A signal may close the context after this node was constructed but
+      // before Humble creates the executor's guard condition. Still finish
+      // that node; unrelated executor errors and simulator faults remain errors.
+      if (e.ret != RCL_RET_NOT_INIT || ok()) throw;
+      rcl_reset_error();
+    }
     result = node->failed() ? 1 : 0;
     node->finish();
   } catch (const std::exception &e) {

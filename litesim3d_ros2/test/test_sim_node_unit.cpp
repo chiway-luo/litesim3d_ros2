@@ -43,6 +43,11 @@ struct SimNodeUnitAccess {
   static void timer(SimNode &n) { n.timer_->execute_callback(); }
   static void statusTimer(SimNode &n) { n.status_timer_->execute_callback(); }
   static void sceneTimer(SimNode &n) { n.scene_timer_->execute_callback(); }
+  static std::vector<std::weak_ptr<void>> contextEntities(SimNode &n) {
+    return {n.status_,n.stats_,n.odom_,n.truth_,n.contacts_,n.joints_,n.clock_,
+      n.description_,n.markers_,n.path_,n.twist_,n.tf_watch_,n.pause_service_,
+      n.step_service_,n.pose_service_,n.timer_,n.status_timer_};
+  }
   template<class Message> static void command(SimNode &n,const Message &v) {
     std::shared_ptr<void> p=std::make_shared<Message>(v);
     if constexpr(std::is_same_v<Message,geometry_msgs::msg::Twist>) n.twist_->handle_message(p,rclcpp::MessageInfo{});
@@ -104,6 +109,16 @@ struct Publication{std::string topic;std::any value;};
 std::function<rcl_ret_t(void*)> response_callback;
 rcl_ret_t responseSender(const rcl_service_t*,rmw_request_id_t*,void*value){return response_callback?response_callback(value):RCL_RET_OK;}
 std::shared_ptr<Shape> shape(Shape::Kind kind,Vec3 size){auto s=std::make_shared<Shape>();s->kind=kind;s->size=size;return s;}
+class SimPrivateContext final:public rclcpp::Context {
+public:
+  void finalize(){
+    if(is_valid())shutdown("unit teardown");
+    // Humble's Context/GraphListener/GuardCondition cycle outlives shutdown.
+    // Test-owned contexts may run destructor-equivalent, idempotent cleanup
+    // only after all their nodes and entities have been released.
+    clean_up();
+  }
+};
 class SimNodeUnits:public ::testing::Test {
 protected:
   static void SetUpTestSuite(){rclcpp::init(0,nullptr);}
@@ -135,6 +150,17 @@ protected:
     return h;
   }
   void create(std::vector<rclcpp::Parameter> parameters={}){rclcpp::NodeOptions options;options.parameter_overrides(parameters);node=std::make_shared<SimNode>(options,hooks());}
+  void releasePrivateContext(std::shared_ptr<SimPrivateContext>&context,rclcpp::NodeOptions&options){
+    std::weak_ptr<SimNode> released_node=node;
+    std::weak_ptr<rclcpp::node_interfaces::NodeBaseInterface> base=node->get_node_base_interface();
+    std::weak_ptr<rclcpp::node_interfaces::NodeGraphInterface> graph=node->get_node_graph_interface();
+    const auto entities=SimNodeUnitAccess::contextEntities(*node);node.reset();
+    ASSERT_TRUE(released_node.expired());ASSERT_TRUE(base.expired());ASSERT_TRUE(graph.expired());
+    for(const auto&entity:entities)ASSERT_TRUE(entity.expired());
+    options.context(rclcpp::contexts::get_global_default_context());
+    std::weak_ptr<rclcpp::Context> released_context=context;
+    context->finalize();context.reset();EXPECT_TRUE(released_context.expired());
+  }
   template<class Message> const Message&last(const std::string&topic)const{
     for(auto it=published.rbegin();it!=published.rend();++it)if(it->topic==topic)return std::any_cast<const Message&>(it->value);
     throw std::logic_error("unit publication missing: "+topic);
@@ -176,6 +202,75 @@ TEST_F(SimNodeUnits, UpdateReadinessPacingAndFaultsUseDeterministicClock){
   node.reset();cfg.real_time_factor=1;create();SimNodeUnitAccess::update(*node);EXPECT_EQ(engine->ticks,0U);clock+=std::chrono::milliseconds(100);SimNodeUnitAccess::update(*node);EXPECT_EQ(engine->ticks,8U);
   node.reset();clock_publishers=2;create();SimNodeUnitAccess::update(*node);EXPECT_TRUE(node->failed());EXPECT_EQ(engine->ticks,0U);
 }
+TEST_F(SimNodeUnits, RenderingStallDoesNotAccumulateUnboundedPacingDebt) {
+  cfg.real_time_factor = .5;
+  cfg.step_ns = 5000000;
+  create();
+  const auto initial_stamp = engine->snap.stamp;
+  std::vector<uint64_t> commits;
+  engine->on_tick = [&] {
+    engine->snap.stamp += cfg.step_ns;
+    commits.push_back(engine->snap.stamp);
+  };
+  SimNodeUnitAccess::update(*node);
+  const auto advance = [&](unsigned callbacks) {
+    for (unsigned i = 0; i < callbacks; ++i) {
+      clock += std::chrono::milliseconds(10);
+      SimNodeUnitAccess::update(*node);
+    }
+  };
+  advance(200);
+  const auto before_stall = engine->ticks;
+  // Rendering or an overloaded executor blocks for a second; after the load
+  // disappears, do not replay that entire wall-clock debt as a speed-up burst.
+  clock += std::chrono::seconds(1);
+  SimNodeUnitAccess::update(*node);
+  EXPECT_EQ(engine->ticks - before_stall, 8U); // Retain the existing batch cap.
+  const auto after_stall = engine->ticks;
+  SimNodeUnitAccess::update(*node); // No additional wall time is available.
+  EXPECT_EQ(engine->ticks, after_stall);
+  advance(200);
+  double maximum_rate = 0;
+  unsigned rate_samples = 0;
+  for (const auto &publication : published) {
+    if (publication.topic != "/sim/stats") continue;
+    const auto data = Json::parse(std::any_cast<const std_msgs::msg::String &>(publication.value).data);
+    EXPECT_EQ(data["target_real_time_factor"], .5);
+    if (data["actual_real_time_factor"].is_null()) continue;
+    const double actual = data["actual_real_time_factor"];
+    EXPECT_GT(actual, 0);
+    maximum_rate = std::max(maximum_rate, actual);
+    ++rate_samples;
+  }
+  ASSERT_GE(rate_samples, 20U);
+  RecordProperty("maximum_actual_rtf", std::to_string(maximum_rate));
+  EXPECT_LE(maximum_rate, .6);
+  // Reanchoring wall pacing must never skip or rewrite committed physics time.
+  ASSERT_EQ(commits.size(), engine->ticks);
+  for (size_t i = 0; i < commits.size(); ++i)
+    EXPECT_EQ(commits[i], initial_stamp + (i + 1) * cfg.step_ns);
+}
+
+TEST_F(SimNodeUnits, BoundedPacingKeepsSmallJitterAndFractionalStepPhase) {
+  cfg.real_time_factor = .5;
+  cfg.step_ns = 5000000;
+  create();
+  engine->on_tick = [&] { engine->snap.stamp += cfg.step_ns; };
+  SimNodeUnitAccess::update(*node);
+  clock += std::chrono::milliseconds(85);
+  SimNodeUnitAccess::update(*node);
+  EXPECT_EQ(engine->ticks, 8U); // 42.5 ms due: eight steps, 2.5 ms remaining.
+  clock += std::chrono::milliseconds(6);
+  SimNodeUnitAccess::update(*node);
+  EXPECT_EQ(engine->ticks, 9U); // Small jitter is not discarded.
+  clock += std::chrono::milliseconds(1004);
+  SimNodeUnitAccess::update(*node);
+  EXPECT_EQ(engine->ticks, 17U); // Excess debt is dropped, not physics steps.
+  clock += std::chrono::milliseconds(6);
+  SimNodeUnitAccess::update(*node);
+  EXPECT_EQ(engine->ticks, 18U); // Retained 2.5 ms phase + 3 ms earns one step.
+}
+
 TEST_F(SimNodeUnits, EventSerializationPreservesSensorOdometryContactsAndBoundedWindows){
   sensors();create({rclcpp::Parameter("frame_prefix","r/")});auto e=event();
   ImuSample imu;imu.stamp=e.snapshot.stamp;imu.frame="imu_link";imu.topic="imu/data_raw";imu.acceleration={1,2,3};imu.angular_velocity={4,5,6};e.imus={imu};
@@ -238,6 +333,83 @@ TEST_F(SimNodeUnits, ProcessLifecycleUsesInjectedRuntimeAndReportsStartupErrors)
   h.make_node=[]()->std::shared_ptr<SimNode>{throw std::runtime_error("unit startup failure");};
   EXPECT_EQ(runSimNode(0,nullptr,h),1);EXPECT_EQ(reports,10U);EXPECT_EQ(waits,10U);
   h.ok=[]{return false;};EXPECT_EQ(runSimNode(0,nullptr,h),1);EXPECT_EQ(reports,10U);
+}
+TEST_F(SimNodeUnits, ShutdownBeforeExecutorConstructionFinishesHealthyNode){
+  // Exercise the real Humble executor handoff without a DDS peer or a race:
+  // its context closes after successful node construction, before spin starts.
+  auto context=std::make_shared<SimPrivateContext>();context->init(0,nullptr);
+  rclcpp::NodeOptions options;options.context(context);
+  node=std::make_shared<SimNode>(options,hooks());
+  SimMainHooks h;h.initialize=[](int,char**){};unsigned interruptions=0;
+  h.make_node=[&]{context->shutdown("unit executor handoff");return node;};
+  h.spin=[&](std::shared_ptr<rclcpp::Node> current){
+    try{rclcpp::spin(current);}
+    catch(const rclcpp::exceptions::RCLError&e){
+      ++interruptions;EXPECT_EQ(e.ret,RCL_RET_NOT_INIT);throw;
+    }
+  };
+  h.ok=[&]{return context->is_valid();};
+  EXPECT_EQ(runSimNode(0,nullptr,h),0);
+  EXPECT_EQ(interruptions,1U);EXPECT_FALSE(node->failed());EXPECT_EQ(engine->exits,1U);
+  releasePrivateContext(context,options);
+}
+TEST_F(SimNodeUnits, ContextShutdownDuringStatusGraphQueryFinishesHealthyNode){
+  auto context=std::make_shared<SimPrivateContext>();context->init(0,nullptr);
+  auto node_hooks=hooks();node_hooks.ok=[&]{return context->is_valid();};
+  rclcpp::NodeOptions options;options.context(context);
+  node=std::make_shared<SimNode>(options,std::move(node_hooks));
+  auto&nh=SimNodeUnitAccess::hooks(*node);nh.publishers={};
+  EXPECT_THROW(SimNodeUnitAccess::publishers(*node,"invalid topic"),rclcpp::exceptions::InvalidTopicNameError);
+  // Shutdown falls exactly between publishStatus's context check and its
+  // real count_publishers query, not in a fake graph implementation.
+  bool interrupted=false;
+  nh.now=[&]{
+    if(!interrupted){
+      interrupted=true;context->shutdown("unit status graph boundary");
+      size_t count=0;
+      EXPECT_EQ(rcl_count_publishers(node->get_node_base_interface()->get_rcl_node_handle(),"/clock",&count),RCL_RET_NODE_INVALID);
+      rcl_reset_error();
+    }
+    return clock;
+  };
+  SimMainHooks h;h.initialize=[](int,char**){};h.make_node=[&]{return node;};
+  h.ok=[&]{return context->is_valid();};
+  h.spin=[&](std::shared_ptr<rclcpp::Node>){SimNodeUnitAccess::status(*node);};
+  EXPECT_EQ(runSimNode(0,nullptr,h),0);
+  EXPECT_TRUE(interrupted);EXPECT_FALSE(context->is_valid());EXPECT_FALSE(node->failed());EXPECT_EQ(engine->exits,1U);
+  EXPECT_FALSE(rcl_error_is_set());
+  EXPECT_THROW(SimNodeUnitAccess::publishers(*node,"invalid topic"),rclcpp::exceptions::InvalidTopicNameError);
+  nh.publishers=[](const std::string&)->size_t{throw std::runtime_error("unit graph failure");};
+  EXPECT_THROW(SimNodeUnitAccess::publishers(*node,"/clock"),std::runtime_error);
+  releasePrivateContext(context,options);
+}
+TEST_F(SimNodeUnits, ShutdownBoundaryDoesNotHideRuntimeOrStartupFailures){
+  create();
+  SimMainHooks h;h.initialize=[](int,char**){};h.make_node=[&]{return node;};
+  bool runtime_ok=true;unsigned reports=0;int failure=RCL_RET_NOT_INIT;
+  h.ok=[&]{return runtime_ok;};h.shutdown=[]{};h.wait=[]{};
+  h.report=[&](const diagnostic_msgs::msg::DiagnosticArray&){++reports;};
+  h.spin=[&](std::shared_ptr<rclcpp::Node> current){
+    if(current.get()!=node.get())return; // startup diagnostic reporter
+    if(failure<0)throw std::runtime_error("unit runtime failure");
+    const rcl_error_state_t error{};
+    throw rclcpp::exceptions::RCLError(failure,&error,"unit spin");
+  };
+  // NOT_INIT is still an error while the runtime claims a live context.
+  EXPECT_EQ(runSimNode(0,nullptr,h),1);EXPECT_EQ(reports,10U);EXPECT_EQ(engine->exits,0U);
+  runtime_ok=false;failure=RCL_RET_ERROR;
+  EXPECT_EQ(runSimNode(0,nullptr,h),1);EXPECT_EQ(reports,10U);EXPECT_EQ(engine->exits,0U);
+  failure=-1;EXPECT_EQ(runSimNode(0,nullptr,h),1);EXPECT_EQ(engine->exits,0U);
+  // A genuine simulator fault must survive even an interrupted executor.
+  engine->fault("unit preserved fault");failure=RCL_RET_NOT_INIT;
+  EXPECT_EQ(runSimNode(0,nullptr,h),1);EXPECT_TRUE(node->failed());
+  EXPECT_EQ(engine->error,"unit preserved fault");EXPECT_EQ(engine->exits,0U);
+  // A constructor failure never reaches the successfully constructed-node boundary.
+  h.make_node=[]()->std::shared_ptr<SimNode>{
+    const rcl_error_state_t error{};
+    throw rclcpp::exceptions::RCLError(RCL_RET_NOT_INIT,&error,"unit startup");
+  };
+  EXPECT_EQ(runSimNode(0,nullptr,h),1);EXPECT_EQ(reports,10U);
 }
 TEST_F(SimNodeUnits, JointControlAndPublisherCountsUseIsolatedBackendAndFeedbackSink){
  cfg.control_mode="ros2_control";cfg.drive.model="multicopter";create();

@@ -158,9 +158,49 @@ def verify_collision(directory, kind, enabled):
         h.close()
 
 
+def wait_for_joint_targets(h, targets, *, run_id, after):
+    """Observe the retained one-shot targets on the hardware wire after handoff.
+
+    A successful controller switch and a matched subscription do not establish
+    command callback/update delivery. This observes, but never republishes, the
+    target values; physical motion is asserted independently afterwards.
+    """
+    def observed():
+        for message in reversed(h.messages['commands']):
+            if message.run_id != run_id or stamp(message.header.stamp) <= after:
+                continue
+            if not (len(message.name) == len(message.mode) == len(message.command)):
+                continue
+            if len(set(message.name)) != len(message.name):
+                continue
+            values = dict(zip(message.name, zip(message.mode, message.command)))
+            if values == targets:
+                return message
+        return None
+
+    h.until(lambda: observed() is not None)
+    return observed()
+
+
+def wait_for_direct_motion(h, kind, *, after):
+    """Do not let an earlier controller's queued truth satisfy the new command."""
+    h.until(lambda: h.messages["truth"]
+            and stamp(h.messages["truth"][-1].header.stamp) > after
+            and (h.messages["truth"][-1].twist.twist.angular.z > .05 if kind == "ackermann"
+                 else h.messages["truth"][-1].twist.twist.linear.y > .15))
+    return h.messages["truth"][-1]
+
+
 def verify_control_handoff(directory, kind):
     h = setup(directory, kind, wheel_limit=2 if kind.startswith("omni") else None)
     h.subscribe("commands", JointCommand, "/sim/joint_commands", 10)
+    progress = {"phase": "initial_controller", "switches": []}
+
+    def evidence():
+        return {**{key: message_to_ordereddict(h.messages[key][-1]) if h.messages[key] else None
+                   for key in ("truth", "odom", "joints", "commands", "status")},
+                "handoff": progress}
+
     try:
         controller = "ackermann_controller" if kind == "ackermann" else "omni_controller"
         manager = "/controller_manager"
@@ -201,16 +241,27 @@ def verify_control_handoff(directory, kind):
                                            strictness=SwitchController.Request.STRICT)
             req.timeout.sec = 3
             future = client.call_async(req); h.until(future.done)
+            progress["switches"].append({"start": start, "stop": stop,
+                                         "expected": expected, "ok": future.result().ok})
             assert future.result().ok == expected
+        progress["phase"] = "reject_conflicting_ownership"
         switch(names, [], False)  # Controller manager rejects conflicting wheel ownership.
+        progress["phase"] = "activate_direct_controllers"
         switch(names, [controller], True)
         velocity = h.node.create_publisher(Float64MultiArray, "/wheel_velocity_controller/commands", 1)
         h.until(lambda: velocity.get_subscription_count() == 1)
+        targets = {}
+        after = stamp(h.messages["clock"][-1].clock)
+        run_id = h.status()["run_id"]
+        progress.update(phase="publish_direct_targets", run_id=run_id, after_stamp_ns=after)
         if kind == "ackermann":
             steering = h.node.create_publisher(Float64MultiArray, "/steering_position_controller/commands", 1)
             h.until(lambda: steering.get_subscription_count() == 1)
             steering.publish(Float64MultiArray(data=[.3, .25]))
             rates = [2.0, 2.0]
+            wheel_joints = ["rear_left_wheel_joint", "rear_right_wheel_joint"]
+            targets.update({"left_steering_joint": (JointCommand.POSITION, .3),
+                            "right_steering_joint": (JointCommand.POSITION, .25)})
         else:
             import xacro
             from litesim3d_bringup.controller_parameters import resolve_controller_parameters
@@ -218,25 +269,37 @@ def verify_control_handoff(directory, kind):
                 yaml.safe_load((h.share / "config/controllers.yaml").read_text()),
                 xacro.process_file(str(h.share / "urdf/control.urdf.xacro")).toxml())
             wheels = control["/omni_controller"]["ros__parameters"]
+            wheel_joints = wheels["wheel_joints"]
             rates = [.2 * math.sin(angle) / radius
                      for angle, radius in zip(wheels["wheel_angle"], wheels["wheel_radius"])]
+        targets.update({name: (JointCommand.VELOCITY, value) for name, value in zip(wheel_joints, rates)})
+        progress["targets"] = targets
         velocity.publish(Float64MultiArray(data=rates))
-        h.until(lambda: (h.messages["truth"][-1].twist.twist.angular.z > .05 if kind == "ackermann"
-                        else h.messages["truth"][-1].twist.twist.linear.y > .15))
+        progress["phase"] = "observe_direct_targets"
+        observed = wait_for_joint_targets(h, targets, run_id=run_id, after=after)
+        progress["observed_command"] = message_to_ordereddict(observed)
+        progress["phase"] = "observe_direct_motion"
+        moving = wait_for_direct_motion(h, kind, after=stamp(observed.header.stamp))
         if kind == "ackermann":
+            progress["phase"] = "observe_direct_joint_feedback"
+            h.until(lambda: stamp(h.messages["joints"][-1].header.stamp) >= stamp(moving.header.stamp)
+                    and abs(dict(zip(h.messages["joints"][-1].name, h.messages["joints"][-1].position))["left_steering_joint"]-.3) < 1e-5)
             positions = dict(zip(h.messages["joints"][-1].name, h.messages["joints"][-1].position))
-            h.until(lambda: abs(dict(zip(h.messages["joints"][-1].name, h.messages["joints"][-1].position))["left_steering_joint"]-.3) < 1e-5)
             assert positions["front_left_wheel_joint"] != 0  # State-only passive wheel also rolls.
+        progress["phase"] = "restore_chassis_controller"
         switch([controller], names, True)
         h.until(lambda: all(abs(v) < 1e-6 for v in h.messages["joints"][-1].velocity))
         # Same-interface handoff must not replay the previous wheel speed.
         h.spin(.2)
         assert all(abs(v) < 1e-6 for v in h.messages["joints"][-1].velocity)
         h.node.destroy_client(client)
+        progress["phase"] = "complete"
+    except AssertionError as error:
+        # Keep the failed phase and actual command/state in JUnit too: a runner
+        # may not have retained pytest's temporary directory when this fails.
+        raise AssertionError(f"{error}\nControl handoff observations:\n{json.dumps(evidence(), indent=2)}") from error
     finally:
-        (directory / "control-evidence.json").write_text(json.dumps({
-            key: message_to_ordereddict(h.messages[key][-1]) if h.messages[key] else None
-            for key in ("truth", "odom", "joints", "commands", "status")}, indent=2))
+        (directory / "control-evidence.json").write_text(json.dumps(evidence(), indent=2))
         h.close()
 
 

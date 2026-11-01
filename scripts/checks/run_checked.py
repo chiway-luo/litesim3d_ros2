@@ -16,6 +16,15 @@ class Interrupted(BaseException):
         self.signum = signum
 
 
+def xml_text(text):
+    """Replace XML 1.0-invalid characters in the report, never the raw log."""
+    return ''.join(character if (character in '\t\n\r'
+                                 or 0x20 <= ord(character) <= 0xD7FF
+                                 or 0xE000 <= ord(character) <= 0xFFFD
+                                 or 0x10000 <= ord(character) <= 0x10FFFF)
+                   else '\ufffd' for character in text)
+
+
 def process_tree(pid):
     """Snapshot owned Linux descendants, including children that called setsid."""
     records = {}
@@ -108,10 +117,10 @@ def run(command,timeout,xml,log):
                 for signum, handler in handlers.items():
                     signal.signal(signum, handler)
     suite=ET.Element('testsuite',name='required_command',tests='1',failures=str(int(status!=0)))
-    case=ET.SubElement(suite,'testcase',name=' '.join(command),time=str(time.monotonic()-start))
+    case=ET.SubElement(suite,'testcase',name=xml_text(' '.join(command)),time=str(time.monotonic()-start))
     if status:
-        detail=log.read_text()[-6000:]
-        ET.SubElement(case,'failure',message=message).text=detail
+        detail=log.read_text(errors='replace')[-6000:]
+        ET.SubElement(case,'failure',message=xml_text(message)).text=xml_text(detail)
         # Also expose the failure in the CI step log, before artifact upload.
         print(f'{message}; log: {log}\n{detail}',file=sys.stderr,flush=True)
     ET.ElementTree(suite).write(xml,encoding='utf-8',xml_declaration=True)

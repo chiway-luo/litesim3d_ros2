@@ -21,8 +21,9 @@ offscreen widget units remain included; physical-renderer, Xvfb/D-Bus and
 launched-peer integration workflows are not started. Only their presence checks
 are omitted; GUI compilation is **not** disabled.
 
-Its tooling preflight runs `test_quality.py` with the existing unrelated
-ASan/LSan ELF control explicitly out of scope. No sanitizer detector is disabled
+Its tooling preflight runs `test_quality.py` and the sanitizer-diagnostic,
+packaging-command and JUnit-encoding contract regressions, with the
+existing unrelated ASan/LSan ELF control explicitly out of scope. No sanitizer detector is disabled
 or reported as passing. The default/full runner still selects the entire
 tooling suite, sanitizer controls and integration workflows unchanged.
 

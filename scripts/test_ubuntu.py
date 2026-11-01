@@ -339,6 +339,12 @@ class Profile:
         # pipeline. Calling main in-process does not make that an isolated unit.
         self.stage("core-cli-integration", [self.runtime / "build/litesim3d_core/core_cli_integration_tests",
                    f"--gtest_output=xml:{self.evidence / 'core-cli-integration-cases.xml'}"], 300)
+        # Direct serializer units deliberately own no plugin registration.
+        # Exercise the production DSO's registration/load/unload separately,
+        # retaining its profiles only in the integration bucket.
+        self.stage("livox-output-plugin-integration", [
+                   self.runtime / "build/litesim3d_mid360/livox_output_plugin_integration",
+                   f"--gtest_output=xml:{self.evidence / 'livox-output-plugin-integration-cases.xml'}"], 60)
         self.stage("controller-parameters-integration", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                    ROOT / "litesim3d_bringup/test/test_controller_parameters.py",
                    f"--junitxml={self.evidence / 'controller-parameters-cases.xml'}"], 300)
@@ -358,13 +364,17 @@ class Profile:
     def execute(self):
         try:
             quality = ROOT / "scripts/quality/tests"
-            selection = []
+            selection = [quality]
             if self.unit_only:
-                quality /= "test_quality.py"
-                selection = ["-k", "not test_asan_executable_mapping_keeps_plugins_shared"]
+                # These diagnostic/command-contract regressions use injected
+                # results, not sanitizer runtimes, live DDS or a display.
+                selection = [quality / module for module in (
+                    "test_quality.py", "test_sanitizer_controls.py", "test_install_contract.py",
+                    "test_run_checked_xml.py")]
+                selection += ["-k", "not test_asan_executable_mapping_keeps_plugins_shared"]
             if not self.stage("coverage-tooling-unit" if self.unit_only else "quality-tests",
                        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                       quality, *selection, f"--junitxml={self.evidence / 'quality-cases.xml'}"], installed=False):
+                       *selection, f"--junitxml={self.evidence / 'quality-cases.xml'}"], installed=False):
                 raise RuntimeError("Quality tooling tests failed")
             if self.name == "release":
                 self.stage("versions", [sys.executable, ROOT / "scripts/checks/check_versions.py"], installed=False)

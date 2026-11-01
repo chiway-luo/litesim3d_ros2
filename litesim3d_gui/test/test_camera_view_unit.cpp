@@ -6,6 +6,10 @@
 #include <gtest/gtest.h>
 #include <QTemporaryDir>
 #include <QFileInfo>
+#include <QPointer>
+#ifdef LITESIM_CAMERA_VIEW_FONTCONFIG
+#include <fontconfig/fontconfig.h>
+#endif
 
 struct CameraViewUnitAccess {
   static void stop(CameraView &v){v.timer_.stop();}
@@ -19,6 +23,9 @@ struct CameraViewUnitAccess {
   static std::string state(const CameraView &v){return v.state_;}
   static bool color(const CameraView &v){return bool(v.colorSub_);}
   static bool depth(const CameraView &v){return bool(v.depthSub_);}
+  static std::vector<rclcpp::SubscriptionBase::WeakPtr> subscriptions(const CameraView &v){
+    return {v.colorSub_,v.depthSub_,v.stats_};
+  }
   static const QImage &pixels(const CameraView &v,bool depth){return depth?v.depth_:v.color_;}
   static auto status(const CameraView &v){return v.statusText();}
   static void image(CameraView &v,bool depth,const sensor_msgs::msg::Image &message){
@@ -42,14 +49,32 @@ namespace {
 using Access=CameraViewUnitAccess;
 using Image=sensor_msgs::msg::Image;
 class CameraViewUnits:public testing::Test {
-  struct Context: rclcpp::Context {void finalize(){clean_up();}};
+  struct Context: rclcpp::Context {
+    // Humble's GraphListener retains this Context through its guard condition.
+    // Only break that sub-context cycle after observing every fixture-owned
+    // widget, node, node handle and subscription expire normally.
+    void finalize(){clean_up();}
+  };
 protected:
   std::shared_ptr<Context> context;
-  std::vector<rclcpp::Node::SharedPtr> nodes;
+  std::vector<QPointer<CameraView>> views;
+  std::vector<rclcpp::Node::WeakPtr> nodes;
+  std::vector<rclcpp::node_interfaces::NodeBaseInterface::WeakPtr> nodeBases;
+  std::vector<std::weak_ptr<rcl_node_t>> nodeHandles;
+  std::vector<rclcpp::SubscriptionBase::WeakPtr> subscriptions;
   unsigned sequence=0;
   void SetUp() override {context=std::make_shared<Context>();context->init(0,nullptr);}
   void TearDown() override {
-    nodes.clear();context->shutdown("unit complete");context->finalize();
+    // Observers must not keep resources alive or force their destruction.
+    // Fatal assertions prevent clean_up() from masking a surviving owner.
+    for(const auto &v:views)ASSERT_TRUE(v.isNull())<<"CameraView survives test body";
+    for(const auto &s:subscriptions)ASSERT_TRUE(s.expired())<<"CameraView subscription survives test body";
+    for(const auto &n:nodes)ASSERT_TRUE(n.expired())<<"CameraView node survives test body";
+    for(const auto &n:nodeBases)ASSERT_TRUE(n.expired())<<"CameraView node interface survives test body";
+    // Publishers/subscriptions can retain the rcl handle after Node expires.
+    // Observe that public handle too, including node-owned entities.
+    for(const auto &n:nodeHandles)ASSERT_TRUE(n.expired())<<"CameraView ROS node handle survives test body";
+    context->shutdown("unit complete");context->finalize();
     std::weak_ptr<Context> weak=context;context.reset();EXPECT_TRUE(weak.expired());
   }
   std::unique_ptr<CameraView> view(const std::string &type="rgb",
@@ -57,8 +82,12 @@ protected:
     parameters.emplace_back("type",type);
     auto node=std::make_shared<rclcpp::Node>("camera_view_unit_"+std::to_string(sequence++),
         rclcpp::NodeOptions().context(context).parameter_overrides(parameters));
-    nodes.push_back(node);
-    auto result=std::make_unique<CameraView>(node,std::move(hooks));Access::stop(*result);return result;
+    nodes.emplace_back(node);nodeBases.emplace_back(node->get_node_base_interface());
+    nodeHandles.emplace_back(node->get_node_base_interface()->get_shared_rcl_node_handle());
+    auto result=std::make_unique<CameraView>(node,std::move(hooks));Access::stop(*result);
+    views.emplace_back(result.get());
+    for(const auto &subscription:Access::subscriptions(*result))subscriptions.push_back(subscription);
+    return result;
   }
   static Image image(bool depth=false,int64_t stamp=1000000000){
     Image result;result.header.stamp.sec=stamp/1000000000;result.header.stamp.nanosec=stamp%1000000000;
@@ -178,5 +207,15 @@ int main(int argc,char **argv){
   qputenv("QT_QPA_PLATFORM","offscreen");
   QTemporaryDir runtime;
   qputenv("XDG_RUNTIME_DIR",runtime.path().toUtf8());
-  QApplication app(argc,argv);testing::InitGoogleTest(&argc,argv);return RUN_ALL_TESTS();
+  int result;
+  {
+    QApplication app(argc,argv);testing::InitGoogleTest(&argc,argv);result=RUN_ALL_TESTS();
+  }
+#ifdef LITESIM_CAMERA_VIEW_FONTCONFIG
+  // Fontconfig's documented process-finalization API must run after Qt has
+  // released its fonts. This does not clean up Qt's offscreen QScreen leak.
+  // https://www.freedesktop.org/software/fontconfig/fontconfig-devel/fcfini.html
+  FcFini();
+#endif
+  return result;
 }

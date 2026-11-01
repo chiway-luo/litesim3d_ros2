@@ -27,6 +27,17 @@ def stamp(message):
     return message.sec * 1_000_000_000 + message.nanosec
 
 
+def child_failure_report(output, children):
+    """Keep a failed child's own diagnostics in JUnit, not only a temp file."""
+    failures = {}
+    for pid, child in children.items():
+        if child["exit_code"] != child["expected_exit_code"]:
+            marker = f'[{child["name"]}]'
+            lines = [line for line in output.splitlines() if marker in line]
+            failures[pid] = {**child, "log_tail": "\n".join(lines)[-6000:]}
+    return json.dumps({"children": children, "failed_child_logs": failures}, indent=2)
+
+
 class SimulationHarness:
     serial = 0
 
@@ -270,7 +281,7 @@ class SimulationHarness:
                                 for pid, name in started.items()}
                     (self.directory / "child-exits.json").write_text(json.dumps(children, indent=2))
                     assert children and all(item["exit_code"] == item["expected_exit_code"]
-                                            for item in children.values()), children
+                                            for item in children.values()), child_failure_report(output, children)
             (self.directory / "status.json").write_text(json.dumps(self.status(), indent=2))
         finally:
             if self.log:

@@ -621,9 +621,11 @@ class QualityTests(unittest.TestCase):
         self.assertFalse(stages["coverage-report"][1]["installed"])
         self.assertFalse(any(options.get("graphical") for _, _, options in calls))
         self.assertFalse({"regression", "desktop", "sanitizer-report", "controller-parameters-integration",
-                          "core-cli-integration", "lifecycle"} & stages.keys())
+                          "core-cli-integration", "livox-output-plugin-integration", "lifecycle"} & stages.keys())
         tooling = stages["coverage-tooling-unit"][0]
-        self.assertIn(str(self.root / "scripts/quality/tests/test_quality.py"), tooling)
+        for module in ("test_quality.py", "test_sanitizer_controls.py", "test_install_contract.py",
+                       "test_run_checked_xml.py"):
+            self.assertIn(str(self.root / "scripts/quality/tests" / module), tooling)
         self.assertIn("not test_asan_executable_mapping_keeps_plugins_shared", tooling)
         self.assertEqual(profile.env["LWS_BUILD_GUI"], "1")
         self.assertEqual(profile.record["scope"], "unit-only")
@@ -700,6 +702,32 @@ class QualityTests(unittest.TestCase):
         self.assertFalse(stages["lifecycle"][1].get("unit", False))
         self.assertEqual(profile.record["status"], "PASS")
         self.assertEqual(profile.record["scope"], "full-profile")
+
+    def test_livox_real_plugin_load_is_integration_not_unit_coverage(self):
+        from unittest.mock import patch
+        sys.path.insert(0, str(QUALITY.parent))
+        import test_ubuntu
+        for name in ("functional", "coverage", "asan"):
+            args = Namespace(output=self.root.parent / name, jobs=1,
+                             ros_prefix=self.root.parent / "underlay", rmw="rmw_fastrtps_cpp")
+            with patch.object(test_ubuntu, "ROOT", self.root):
+                profile = test_ubuntu.Profile(args, name)
+                with patch.object(profile, "stage", return_value=True) as stage, \
+                        patch.object(test_ubuntu.subprocess, "check_output", return_value="100"):
+                    profile.regression()
+                calls = [call for call in stage.call_args_list
+                         if call.args[0] == "livox-output-plugin-integration"]
+                self.assertEqual(len(calls), 1)
+                command = calls[0].args[1]
+                self.assertEqual(command[0], profile.runtime / "build/litesim3d_mid360/livox_output_plugin_integration")
+                self.assertEqual(command[1], f"--gtest_output=xml:{profile.evidence / 'livox-output-plugin-integration-cases.xml'}")
+                self.assertEqual(calls[0].args[2], 60)
+                self.assertFalse(calls[0].kwargs.get("unit", False))
+                self.assertFalse(calls[0].kwargs.get("graphical", False))
+                with patch.object(profile, "stage", return_value=True) as stage:
+                    profile.native()
+                self.assertFalse(any("livox_output_plugin_integration" in str(call)
+                                     for call in stage.call_args_list))
 
     def test_unit_only_summary_is_scope_specific_and_never_full_matrix_pass(self):
         from unittest.mock import patch

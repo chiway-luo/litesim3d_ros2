@@ -19,13 +19,16 @@ shutil.copytree(ROOT,project,ignore=shutil.ignore_patterns("__pycache__", ".pyte
 env=os.environ.copy();env["LWS_BUILD_ROOT"]=str(stage/"artifacts")
 env["LITESIM3D_ARTIFACTS_DIR"]=str(stage/"artifacts")
 env["PYTHONDONTWRITEBYTECODE"]="1"
+env["LWS_BUILD_GUI"]="1"
 # A full GUI/SDF build takes over seven minutes on the Ubuntu CI runner.
 # Bound the whole process group so a timeout cannot leave compilers running
 # during the subsequent integration and graphics checks.
+# This disposable install needs every runtime package, not another compilation
+# of the tests. Override only this build; scripts/build.sh still defaults to ON.
 built=subprocess.run([sys.executable,str(ROOT/"scripts/checks/run_checked.py"),
     "--timeout","900","--xml",str(out/"install-build-runner.xml"),
     "--log",str(out/"install-isolated-build.log"),"--",
-    "bash",str(project/"scripts/build.sh")],env=env)
+    "bash",str(project/"scripts/build.sh"),"-DBUILD_TESTING=OFF"],env=env)
 if built.returncode:
     (out/"install-check.json").write_text(json.dumps({"status":"FAIL","phase":"build","stage":str(stage),
         "build_exit":built.returncode}))

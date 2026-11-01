@@ -173,4 +173,7 @@ void LivoxOutputs::matches(litesim3d::Json &result) const {
   for (const auto &[topic,l] : lidars_) { count(l.cloud); count(l.custom); count(l.boundary); }
 }
 } // namespace litesim3d_ros
+// Only direct-class units omit registration; the installed DSO still exports.
+#ifndef LITESIM3D_NO_PLUGIN_REGISTRATION
 PLUGINLIB_EXPORT_CLASS(litesim3d_ros::LivoxOutputs, litesim3d_ros::LidarOutputPlugin)
+#endif

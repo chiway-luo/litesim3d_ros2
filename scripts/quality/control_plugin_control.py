@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from sanitizer_control import asan_options
+from sanitizer_control import asan_options, control_result, run_probe
 from asan_host import runtime_library, write_wrapper
 
 
@@ -17,6 +17,8 @@ def main():
     args = parser.parse_args()
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=True)
+    result_path = root / "result.json"
+    result_path.write_text(json.dumps({"status": "FAIL", "classification": "incomplete", "cases": {}}) + "\n")
     build, prefix = root / "build", root / "install"
     fixture = Path(__file__).resolve().parents[1] / "fixtures/control_plugin_probe"
     for command in (["cmake", "-S", str(fixture), "-B", str(build),
@@ -49,20 +51,22 @@ def main():
                     current["LITESIM_PROBE_LEAK"] = "1"
                 binary = (build / "control_plugin_probe" if loader == "native" else
                           raw_host if mode == "registration" else host)
-                process = subprocess.run([str(binary), kind], env=current,
-                                         capture_output=True, text=True, timeout=30)
-                output = process.stdout + process.stderr
+                returncode, output = run_probe([str(binary), kind], current)
                 name = f"{loader}-{kind}-{mode}"
                 (root / f"{name}.log").write_text(output)
-                if mode == "clean":
-                    passed = process.returncode == 0
-                elif mode == "registration":
-                    passed = process.returncode != 0 and "LeakSanitizer" in output and "class_loader::impl::loadLibrary(" in output
+                base = ("hardware_interface::SystemInterface" if kind == "hardware" else
+                        "controller_interface::ControllerInterface")
+                rules = (f"pluginlib::ClassLoader<{base}>::loadLibraryForClass",)
+                if loader == "stripped-host":
+                    rules += ("class_loader::impl::loadLibrary(",)
+                if mode == "registration":
+                    case = control_result("leak", returncode, output, expected_bytes=None,
+                                          required_stack="class_loader::impl::loadLibrary(")
                 else:
-                    passed = process.returncode != 0 and "Direct leak of 64 byte(s)" in output and "Suppressions used:" in output
-                cases[name] = {"exit_code": process.returncode, "passed": passed}
+                    case = control_result(mode, returncode, output, suppression_rules=rules)
+                cases[name] = case
     result = {"status": "PASS" if all(item["passed"] for item in cases.values()) else "FAIL", "cases": cases}
-    (root / "result.json").write_text(json.dumps(result, indent=2))
+    result_path.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
     return int(result["status"] != "PASS")
 

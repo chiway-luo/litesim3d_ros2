@@ -504,14 +504,19 @@ private:
       const auto &cfg = world_->robot(0).config();
       unsigned steps = 1;
       if (cfg.real_time_factor) {
-        auto elapsed = std::chrono::duration<double>(
-                           steadyNow() - anchor_)
-                           .count();
-        uint64_t target =
+        const auto now = steadyNow();
+        const double elapsed = std::chrono::duration<double>(now - anchor_).count();
+        const uint64_t target =
             anchor_stamp_ + uint64_t(elapsed * cfg.real_time_factor * 1e9);
-        steps = target > time()
-                    ? std::min<uint64_t>(8, (target - time()) / cfg.step_ns)
-                    : 0;
+        const uint64_t due = target > time() ? (target - time()) / cfg.step_ns : 0;
+        steps = unsigned(std::min<uint64_t>(8, due));
+        if (due > steps) {
+          // Match single-robot pacing: bound total wall-clock debt after an
+          // overload, retaining the batch and fractional phase, without
+          // skipping any committed world/robot physics or sensor steps.
+          anchor_ = now;
+          anchor_stamp_ = target - (due - steps) * cfg.step_ns;
+        }
       }
       for (unsigned i = 0; i < steps; ++i)
         world_->tick(

@@ -351,4 +351,7 @@ private:
   bool active_ = false, received_ = false, fault_ = false;
 };
 } // namespace litesim3d_ros2_control
+// Only direct-class units omit registration; the installed DSO still exports.
+#ifndef LITESIM3D_NO_PLUGIN_REGISTRATION
 PLUGINLIB_EXPORT_CLASS(litesim3d_ros2_control::LiteSimSystem, hardware_interface::SystemInterface)
+#endif

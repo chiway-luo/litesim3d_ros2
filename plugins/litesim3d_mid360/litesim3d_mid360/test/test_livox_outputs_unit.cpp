@@ -1,7 +1,9 @@
 // Serializer units: all observed messages, topic resolution and match counts
 // use recording capabilities. No sensor kernel, driver, peer or executor runs.
 #include "../src/livox_outputs.hpp"
+#include <class_loader/class_loader_core.hpp>
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -10,6 +12,13 @@ using litesim3d_ros::LivoxOutputs;
 using litesim3d::Json;
 using CloudMessage=sensor_msgs::msg::PointCloud2;
 using CustomMessage=livox_ros_driver2::msg::CustomMsg;
+TEST(LivoxRegistrationUnit, DirectClassDoesNotInstallAnUnownedPluginFactory) {
+  const auto classes = class_loader::impl::getAvailableClasses<
+      litesim3d_ros::LidarOutputPlugin>(nullptr);
+  EXPECT_EQ(std::count(classes.begin(), classes.end(),
+      "litesim3d_ros::LivoxOutputs"), 0);
+  EXPECT_FALSE(class_loader::impl::hasANonPurePluginLibraryBeenOpened());
+}
 struct Capture {
   std::vector<std::pair<std::string,CloudMessage>> clouds;
   std::vector<std::pair<std::string,CustomMessage>> custom;

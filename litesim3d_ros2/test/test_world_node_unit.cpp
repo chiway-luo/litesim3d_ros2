@@ -47,6 +47,34 @@ struct WorldNodeUnitAccess {
   static auto anchorStamp(WorldNode &n) { return n.anchor_stamp_; }
   static void ready(WorldNode &n, bool value) { n.ready_ = value; }
   static void output(WorldNode &n, const std::string &value) { n.output_ = value; }
+  static auto lifetimes(WorldNode &n) {
+    std::vector<std::pair<std::string, std::weak_ptr<void>>> result;
+    const auto observe = [&](const std::string &name, const auto &entity) {
+      if (entity) result.emplace_back(name, entity);
+    };
+    observe("node base", n.get_node_base_interface());
+    observe("node graph", n.get_node_graph_interface());
+    observe("statistics publisher", n.stats_);
+    observe("clock publisher", n.clock_);
+    observe("status publisher", n.status_);
+    observe("TF subscription", n.tf_watch_);
+    observe("pause service", n.pause_);
+    observe("step service", n.step_);
+    observe("update timer", n.timer_);
+    observe("status timer", n.status_timer_);
+    for (const auto &c : n.channels_) {
+      observe(c.prefix + "odometry publisher", c.odom);
+      observe(c.prefix + "ground-truth publisher", c.truth);
+      observe(c.prefix + "joint-state publisher", c.joints);
+      observe(c.prefix + "description publisher", c.description);
+      observe(c.prefix + "contact publisher", c.contacts);
+      observe(c.prefix + "twist subscription", c.command);
+      observe(c.prefix + "stamped subscription", c.stamped_command);
+      for (const auto &[topic, publisher] : c.clouds) observe(c.prefix + topic, publisher);
+      for (const auto &[topic, publisher] : c.imus) observe(c.prefix + topic, publisher);
+    }
+    return result;
+  }
 };
 namespace litesim3d_ros {
 struct JointControlUnitAccess {
@@ -98,6 +126,7 @@ struct RecordingWorld {
   std::vector<std::vector<litesim3d::Event>> tick_events, step_events;
   litesim3d::StepResult step_result{true, 0, "stepped", 456};
   std::function<void()> on_pause, on_tick, on_step, on_manifest, on_exit;
+  std::shared_ptr<void> lifetime = std::make_shared<int>(0);
   explicit RecordingWorld(size_t count = 2) : robots(count) {
     for (size_t i = 0; i < count; ++i) {
       auto &r = robots[i]; r.cfg.robot_id = "robot_" + std::to_string(i);
@@ -149,10 +178,35 @@ public:
   void matches(Json &matches) const override { matches["/fake_serializer"] = 7; }
   const Json &description() const override { return description_; }
 };
+class PrivateContext final : public rclcpp::Context {
+public:
+  void finalize() {
+    if (is_valid()) shutdown("unit teardown");
+    // Humble's Context owns its GraphListener subcontext, whose interrupt
+    // GuardCondition owns the Context. Shutdown invalidates ROS but leaves
+    // that cycle intact. Only after every node/entity is destroyed may this
+    // test-owned context perform the same final cleanup as its destructor.
+    // clean_up() is idempotent, so the eventual destructor remains safe.
+    clean_up();
+  }
+};
 class WorldNodeUnits : public ::testing::Test {
 protected:
-  void SetUp() override { context = std::make_shared<rclcpp::Context>(); context->init(0, nullptr); }
-  void TearDown() override { node.reset(); RecordingWorld::next.reset(); if (context->is_valid()) context->shutdown("unit teardown"); }
+  void startContext() { context = std::make_shared<PrivateContext>(); context->init(0, nullptr); }
+  void releaseContext() {
+    ASSERT_FALSE(node);
+    for (const auto &created : created_nodes)
+      ASSERT_TRUE(created.expired()) << "a WorldNode outlived its private context";
+    for (const auto &[name, entity] : created_entities)
+      ASSERT_TRUE(entity.expired()) << name << " outlived its private context";
+    if (!context) return;
+    std::weak_ptr<rclcpp::Context> released = context;
+    context->finalize();
+    context.reset();
+    EXPECT_TRUE(released.expired()) << "private Context retained after final cleanup";
+  }
+  void SetUp() override { startContext(); }
+  void TearDown() override { node.reset(); RecordingWorld::next.reset(); releaseContext(); }
   void record(const std::string &topic, const std::type_info &type, const void *value) {
 #define RECORD(Type) if (type == typeid(Type)) { published.push_back({topic, type, *static_cast<const Type *>(value)}); return; }
     RECORD(std_msgs::msg::String)
@@ -183,6 +237,9 @@ protected:
     options.context(context).parameter_overrides(parameters).enable_rosout(false)
         .start_parameter_services(false).start_parameter_event_publisher(false);
     node = std::make_shared<WorldNode>(options, std::move(hooks));
+    created_nodes.push_back(node);
+    const auto entities = Access::lifetimes(*node);
+    created_entities.insert(created_entities.end(), entities.begin(), entities.end());
   }
   template<class Message> Message last(const std::string &topic) const {
     for (auto i = published.rbegin(); i != published.rend(); ++i)
@@ -208,8 +265,10 @@ protected:
       litesim3d::ImuConfig imu; imu.topic = "imu"; r.cfg.imus.push_back(imu);
     }
   }
-  rclcpp::Context::SharedPtr context;
+  std::shared_ptr<PrivateContext> context;
   std::shared_ptr<WorldNode> node;
+  std::vector<std::weak_ptr<WorldNode>> created_nodes;
+  std::vector<std::pair<std::string, std::weak_ptr<void>>> created_entities;
   RecordingWorld *world = nullptr;
   Clock::time_point now{std::chrono::seconds(1)};
   uint64_t wall = 5000000000;
@@ -218,6 +277,37 @@ protected:
   std::vector<Publication> published;
   std::shared_ptr<Serializer> serializer = std::make_shared<Serializer>();
 };
+}
+
+TEST_F(WorldNodeUnits, NodeDestructionReleasesRosEntitiesAndBackendBeforePrivateContextFinalization) {
+  build({}, sensors);
+  const auto entities = Access::lifetimes(*node);
+  ASSERT_GT(entities.size(), 20U);
+  std::weak_ptr<void> backend = world->lifetime;
+  node.reset();
+  EXPECT_TRUE(backend.expired());
+  for (const auto &[name, entity] : entities)
+    EXPECT_TRUE(entity.expired()) << name << " retained after WorldNode destruction";
+  EXPECT_TRUE(context->is_valid());
+  std::weak_ptr<rcl_context_t> rcl_context = context->get_rcl_context();
+  context->finalize();
+  EXPECT_FALSE(context->is_valid());
+  EXPECT_TRUE(rcl_context.expired());
+  EXPECT_NO_THROW(context->finalize());
+  releaseContext();
+}
+
+TEST_F(WorldNodeUnits, ConstructorUnwindReleasesBackendAndPrivateContextBeforeAFreshSession) {
+  std::weak_ptr<void> backend;
+  EXPECT_THROW(build({rclcpp::Parameter("cmd_mode", "invalid")},
+      [&](auto &engine) { backend = engine.lifetime; }), std::runtime_error);
+  EXPECT_FALSE(node);
+  EXPECT_TRUE(backend.expired());
+  releaseContext();
+  startContext();
+  build();
+  EXPECT_EQ(world->ticks, 0U);
+  EXPECT_TRUE(context->is_valid());
 }
 
 TEST_F(WorldNodeUnits, ConstructorRoutesDescriptionsInitialJointsClockAndTransformsWithoutAdvancingCore) {
@@ -418,6 +508,85 @@ TEST_F(WorldNodeUnits, PacedUpdateWaitsForTargetAndCapsCatchupAtEightSteps) {
   now += std::chrono::milliseconds(1); Access::update(*node); EXPECT_EQ(world->ticks, 1U);
   now += std::chrono::seconds(5); Access::update(*node); EXPECT_EQ(world->ticks, 9U);
   world->robots[0].snap.stamp = UINT64_C(9000000000); Access::update(*node); EXPECT_EQ(world->ticks, 9U);
+}
+
+TEST_F(WorldNodeUnits, RenderingStallDoesNotAccumulateUnboundedPacingDebt) {
+  build({}, [](auto &engine) {
+    for (auto &robot : engine.robots) {
+      robot.cfg.real_time_factor = .5;
+      robot.cfg.step_ns = 5000000;
+    }
+  });
+  const auto initial_stamp = world->robots[0].snap.stamp;
+  std::vector<uint64_t> commits;
+  world->on_tick = [&] {
+    for (auto &robot : world->robots) robot.snap.stamp += robot.cfg.step_ns;
+    commits.push_back(world->robots[0].snap.stamp);
+  };
+  Access::update(*node);
+  const auto advance = [&](unsigned callbacks) {
+    for (unsigned i = 0; i < callbacks; ++i) {
+      now += std::chrono::milliseconds(10);
+      wall += 10000000;
+      Access::update(*node);
+    }
+  };
+  advance(200);
+  const auto before_stall = world->ticks;
+  now += std::chrono::seconds(1);
+  wall += 1000000000;
+  Access::update(*node);
+  EXPECT_EQ(world->ticks - before_stall, 8U);
+  const auto after_stall = world->ticks;
+  Access::update(*node);
+  EXPECT_EQ(world->ticks, after_stall);
+  advance(200);
+  double maximum_rate = 0;
+  unsigned rate_samples = 0;
+  for (const auto &publication : published) {
+    if (publication.topic != "/sim/stats") continue;
+    const auto data = Json::parse(std::any_cast<const std_msgs::msg::String &>(publication.message).data);
+    EXPECT_EQ(data["target_real_time_factor"], .5);
+    if (data["actual_real_time_factor"].is_null()) continue;
+    const double actual = data["actual_real_time_factor"];
+    EXPECT_GT(actual, 0);
+    maximum_rate = std::max(maximum_rate, actual);
+    ++rate_samples;
+  }
+  ASSERT_GE(rate_samples, 20U);
+  RecordProperty("maximum_actual_rtf", std::to_string(maximum_rate));
+  EXPECT_LE(maximum_rate, .6);
+  // One wall-rate and one fixed timestamp sequence, not a sum of robot clocks.
+  ASSERT_EQ(commits.size(), world->ticks);
+  for (size_t i = 0; i < commits.size(); ++i)
+    EXPECT_EQ(commits[i], initial_stamp + (i + 1) * 5000000);
+  EXPECT_EQ(world->robots[0].snap.stamp, world->robots[1].snap.stamp);
+}
+
+TEST_F(WorldNodeUnits, BoundedPacingKeepsSmallJitterAndFractionalStepPhase) {
+  build({}, [](auto &engine) {
+    for (auto &robot : engine.robots) {
+      robot.cfg.real_time_factor = .5;
+      robot.cfg.step_ns = 5000000;
+    }
+  });
+  world->on_tick = [&] {
+    for (auto &robot : world->robots) robot.snap.stamp += robot.cfg.step_ns;
+  };
+  Access::update(*node);
+  const auto advance = [&](unsigned milliseconds) {
+    now += std::chrono::milliseconds(milliseconds);
+    wall += uint64_t(milliseconds) * 1000000;
+    Access::update(*node);
+  };
+  advance(85);
+  EXPECT_EQ(world->ticks, 8U);
+  advance(6);
+  EXPECT_EQ(world->ticks, 9U); // Preserve normal sub-batch jitter.
+  advance(1004);
+  EXPECT_EQ(world->ticks, 17U);
+  advance(6);
+  EXPECT_EQ(world->ticks, 18U); // Preserve fractional phase when discarding debt.
 }
 
 TEST_F(WorldNodeUnits, StartPausedStillReportsWallStatusAndDoesNotTick) {

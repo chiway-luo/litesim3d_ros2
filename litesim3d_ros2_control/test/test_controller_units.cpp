@@ -2,6 +2,7 @@
 // without a controller manager, simulator, publisher peer or ROS transport.
 #include "../src/body_controller.cpp"
 #include "../src/omni_controller.cpp"
+#include <class_loader/class_loader_core.hpp>
 #include <hardware_interface/loaned_command_interface.hpp>
 #include <gtest/gtest.h>
 #include <limits>
@@ -36,6 +37,15 @@ using namespace litesim3d_ros2_control;
 using Callback = controller_interface::CallbackReturn;
 using Return = controller_interface::return_type;
 constexpr int64_t second = 1000000000;
+TEST(ControllerRegistrationUnit, DirectClassesDoNotInstallUnownedPluginFactories) {
+  const auto classes = class_loader::impl::getAvailableClasses<
+      controller_interface::ControllerInterface>(nullptr);
+  EXPECT_EQ(std::count(classes.begin(), classes.end(),
+      "litesim3d_ros2_control::BodyVelocityController"), 0);
+  EXPECT_EQ(std::count(classes.begin(), classes.end(),
+      "litesim3d_ros2_control::OmniDriveController"), 0);
+  EXPECT_FALSE(class_loader::impl::hasANonPurePluginLibraryBeenOpened());
+}
 struct Commands {
   std::vector<double> values;
   std::vector<hardware_interface::CommandInterface> owned;
