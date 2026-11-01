@@ -48,11 +48,19 @@ if(BUILD_TESTING)
   ament_target_dependencies(body_configuration controller_interface pluginlib rclcpp)
   ament_add_gtest(omni_configuration test/test_omni_configuration.cpp)
   ament_target_dependencies(omni_configuration controller_interface pluginlib rclcpp)
+  ament_add_gtest(controller_units test/test_controller_units.cpp)
+  target_link_libraries(controller_units Eigen3::Eigen hardware_interface::hardware_interface)
+  ament_target_dependencies(controller_units controller_interface geometry_msgs realtime_tools pluginlib rclcpp)
+  ament_add_gtest(system_units test/test_system_units.cpp)
+  target_link_libraries(system_units hardware_interface::hardware_interface)
+  ament_target_dependencies(system_units pluginlib rclcpp rclcpp_lifecycle litesim3d_interfaces)
   ament_add_pytest_test(control_integration test/test_integration.py TIMEOUT 180
     APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1)
   ament_add_pytest_test(control_startup test/test_spawner.py TIMEOUT 60
     APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1)
   ament_add_pytest_test(control_shutdown test/test_shutdown.py TIMEOUT 90
+    APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1)
+  ament_add_pytest_test(spawner_unit test/test_spawner_unit.py TIMEOUT 30
     APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1)
 endif()
 ament_package()

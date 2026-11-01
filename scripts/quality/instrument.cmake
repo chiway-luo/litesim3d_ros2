@@ -12,6 +12,31 @@ endif()
 if(LITESIM_QUALITY_MODE STREQUAL "coverage")
   add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
   add_link_options(-fprofile-instr-generate)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Raw profiles are attributed to their exact ELF object before merging.
+    # Otherwise same-name/hash mains from separate executables borrow hits.
+    add_link_options("LINKER:--build-id=sha1")
+    # LLVM14's %m is only a layout signature: different plugin DSOs can share
+    # it and corrupt each other's raw profile within the same process. %b is
+    # not supported until newer runtimes. Give each ELF target its own prefix
+    # through the documented, module-local filename API (no extra counters).
+    set(LITESIM_COVERAGE_HELPER "${CMAKE_CURRENT_LIST_DIR}/profile_filename.cpp")
+    set_source_files_properties("${LITESIM_COVERAGE_HELPER}" PROPERTIES
+      COMPILE_OPTIONS "-fno-profile-instr-generate;-fno-coverage-mapping"
+      COMPILE_DEFINITIONS "LITESIM_COVERAGE_MODULE=\"${PROJECT_NAME}--$<TARGET_PROPERTY:NAME>--\"")
+    function(litesim_quality_profile_targets)
+      get_property(targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+      foreach(target IN LISTS targets)
+        get_target_property(kind "${target}" TYPE)
+        if(kind STREQUAL "EXECUTABLE" OR kind STREQUAL "SHARED_LIBRARY" OR kind STREQUAL "MODULE_LIBRARY")
+          target_sources("${target}" PRIVATE "${LITESIM_COVERAGE_HELPER}")
+          file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/litesim-coverage-${target}.json"
+            CONTENT "{\"binary\":\"$<TARGET_FILE:${target}>\",\"filename_prefix\":\"${PROJECT_NAME}--${target}--\"}\n")
+        endif()
+      endforeach()
+    endfunction()
+    cmake_language(DEFER CALL litesim_quality_profile_targets)
+  endif()
 elseif(LITESIM_QUALITY_MODE STREQUAL "asan")
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
   add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)

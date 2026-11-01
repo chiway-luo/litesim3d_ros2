@@ -10,6 +10,7 @@
 namespace litesim3d_ros2_control {
 // A velocity-level controller for the kinematic multicopter, not a rotor/force controller.
 class BodyVelocityController : public controller_interface::ControllerInterface {
+  friend struct ControllerUnitAccess;
   struct Reference { std::array<double, 4> value{}; int64_t stamp = 0; uint64_t epoch = 0; bool valid = false; };
   const std::array<std::string, 4> interfaces_{
       "linear.x.velocity", "linear.y.velocity", "linear.z.velocity", "angular.z.velocity"};

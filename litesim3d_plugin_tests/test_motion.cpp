@@ -7,6 +7,7 @@
 #include <cmath>
 #include <fstream>
 #include <chrono>
+#include <limits>
 
 namespace lp = litesim3d::plugins;
 using lp::Json;
@@ -423,4 +424,301 @@ TEST(PluginDeclarations, DuplicateNamesCategoriesUnknownFieldsAndMissingFileFail
     EXPECT_THROW(lp::declarations("<robot name='r'><litesim3d version='1'>" + children + "</litesim3d></robot>", {}, resolver), std::runtime_error);
   }
   EXPECT_THROW(lp::declarations("<robot><litesim3d version='2'/></robot>", {}, resolver), std::runtime_error);
+}
+
+TEST(MotionContract, PrimitiveValidationRejectsMissingNonFiniteAndIncompatibleState) {
+  const double bad = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW(lp::number(Json::object(), "value"), std::runtime_error);
+  EXPECT_THROW(lp::number({{"value", "1"}}, "value"), std::runtime_error);
+  EXPECT_THROW(lp::number({{"value", bad}}, "value"), std::runtime_error);
+  EXPECT_THROW(lp::positive({{"value", 0}}, "value"), std::runtime_error);
+  EXPECT_EQ(lp::number({{"value", -3}}, "value"), -3);
+  for (const auto &names : {Json("joint"), Json::array(), Json::array({""}),
+                           Json::array({"left", "left"}), Json(std::vector<std::string>(17, "j"))})
+    EXPECT_THROW(lp::jointNames({{"joints", names}}, "joints"), std::runtime_error);
+  EXPECT_EQ(lp::jointNames({{"joints", {"left", "right"}}}, "joints").size(), 2u);
+
+  auto model = differential().model;
+  EXPECT_THROW(lp::wheelJoint(model, "missing"), std::runtime_error);
+  for (int invalid = 0; invalid < 5; ++invalid) {
+    SCOPED_TRACE(invalid);
+    auto altered = model;
+    auto &joint = altered.joints.at("left_wheel_joint");
+    if (invalid == 0) joint.type = "revolute";
+    if (invalid == 1) joint.mimic = "right_wheel_joint";
+    if (invalid == 2) joint.position.x() = bad;
+    if (invalid == 3) joint.axis.z() = bad;
+    if (invalid == 4) joint.max_velocity = 0;
+    EXPECT_THROW(lp::wheelJoint(altered, "left_wheel_joint"), std::runtime_error);
+  }
+  model = ackermann().model;
+  EXPECT_THROW(lp::steeringJoint(model, "missing", .6), std::runtime_error);
+  for (int invalid = 0; invalid < 5; ++invalid) {
+    auto altered = model;
+    auto &joint = altered.joints.at("left_steering_joint");
+    if (invalid == 0) joint.type = "continuous";
+    if (invalid == 1) joint.mimic = "right_steering_joint";
+    if (invalid == 2) joint.axis = Eigen::Vector3d::UnitY();
+    if (invalid == 3) joint.lower = -.5;
+    if (invalid == 4) joint.upper = .5;
+    EXPECT_THROW(lp::steeringJoint(altered, "left_steering_joint", .6), std::runtime_error);
+  }
+
+  auto joints = zero(differential());
+  EXPECT_THROW(lp::encoderPosition(joints, "missing"), std::runtime_error);
+  joints.position["left_wheel_joint"] = bad;
+  EXPECT_THROW(lp::encoderPosition(joints, "left_wheel_joint"), std::runtime_error);
+  EXPECT_THROW(lp::validateState(joints), std::runtime_error);
+  joints = zero(differential());
+  joints.velocity["left_wheel_joint"] = bad;
+  EXPECT_THROW(lp::validateState(joints), std::runtime_error);
+  lp::EncoderInput input{100000000, zero(differential()), joints};
+  EXPECT_THROW(lp::encoderRate(input, "left_wheel_joint", true), std::runtime_error);
+  input.current.velocity.erase("left_wheel_joint");
+  EXPECT_THROW(lp::encoderRate(input, "left_wheel_joint", true), std::runtime_error);
+  input.current.position["left_wheel_joint"] = .25;
+  EXPECT_NEAR(lp::encoderRate(input, "left_wheel_joint", false), 2.5, 1e-12);
+}
+
+TEST(MotionContract, LimitsHandleBrakingReversalAndThreeDimensionalSaturation) {
+  lp::MotionLimits limits;
+  auto p = lp::MotionLimits::defaults();
+  for (const auto &key : {"max_linear_speed_mps", "max_angular_speed_radps", "acceleration_mps2",
+                          "deceleration_mps2", "angular_acceleration_radps2"}) {
+    auto invalid = p;
+    invalid[key] = 0;
+    EXPECT_THROW(limits.configure(invalid), std::runtime_error) << key;
+  }
+  limits.configure(p);
+  for (bool command : {false, true}) for (int component = 0; component < 4; ++component) {
+    lp::ChassisInput input{100000000, {}, {}, {}};
+    auto &twist = command ? input.command : input.drive_velocity;
+    const double bad = std::numeric_limits<double>::infinity();
+    if (component == 0) twist.vx = bad;
+    if (component == 1) twist.vy = bad;
+    if (component == 2) twist.vz = bad;
+    if (component == 3) twist.wz = bad;
+    EXPECT_THROW(limits.predict(input, true, true), std::runtime_error);
+  }
+  EXPECT_THROW(limits.predict({100000000, {0, 1, 0, 0}, {}, {}}), std::runtime_error);
+  EXPECT_THROW(limits.predict({100000000, {0, 0, 1, 0}, {}, {}}), std::runtime_error);
+  const auto braking = limits.predict({100000000, {}, {1, 0, 0, 1}, {}});
+  EXPECT_NEAR(braking.velocity.vx, .9, 1e-12);
+  EXPECT_NEAR(braking.average.vx, .95, 1e-12);
+  EXPECT_NEAR(braking.velocity.wz, .8, 1e-12);
+  const auto reversal = limits.predict({100000000, {-1, 0, 0, -2}, {.5, 0, 0, 1}, {}});
+  EXPECT_NEAR(reversal.velocity.vx, .4, 1e-12);
+  EXPECT_NEAR(reversal.average.vx, .45, 1e-12);
+  p["unlimited_acceleration"] = true;
+  limits.configure(p);
+  const auto diagonal = limits.predict({100000000, {2, -2, 1, -10}, {}, {}}, true, true);
+  EXPECT_NEAR(diagonal.velocity.vx, 2. / 3, 1e-12);
+  EXPECT_NEAR(diagonal.velocity.vy, -2. / 3, 1e-12);
+  EXPECT_NEAR(diagonal.velocity.vz, 1. / 3, 1e-12);
+  EXPECT_EQ(diagonal.velocity.wz, -2);
+  EXPECT_EQ(diagonal.average.vz, diagonal.velocity.vz);
+}
+
+TEST(MotionContract, WheelLimitScalesAllMotionComponentsAndRejectsNonFinitePrediction) {
+  auto model = differential().model;
+  model.joints.at("left_wheel_joint").max_velocity = 2;
+  model.joints.at("right_wheel_joint").max_velocity = 6;
+  lp::DriveStep step;
+  step.velocity = {1, 2, 3, 4};
+  step.average = {2, 4, 6, 8};
+  step.joint_velocity = {{"left_wheel_joint", -4}, {"right_wheel_joint", 8}};
+  step.wheel_delta = {{"left_wheel_joint", -.4}, {"right_wheel_joint", .8}};
+  lp::limitWheelSpeed(step, model);
+  EXPECT_EQ(step.velocity.vx, .5);
+  EXPECT_EQ(step.velocity.vy, 1);
+  EXPECT_EQ(step.velocity.vz, 1.5);
+  EXPECT_EQ(step.velocity.wz, 2);
+  EXPECT_EQ(step.average.vz, 3);
+  EXPECT_EQ(step.joint_velocity.at("left_wheel_joint"), -2);
+  EXPECT_EQ(step.joint_velocity.at("right_wheel_joint"), 4);
+  EXPECT_EQ(step.wheel_delta.at("right_wheel_joint"), .4);
+  step.joint_velocity.at("right_wheel_joint") = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW(lp::limitWheelSpeed(step, model), std::runtime_error);
+}
+
+TEST(MotionContract, TimeAndRigidIntegrationBoundaries) {
+  EXPECT_THROW(lp::seconds(0), std::runtime_error);
+  EXPECT_THROW(lp::seconds(1000000001), std::runtime_error);
+  EXPECT_DOUBLE_EQ(lp::seconds(1), 1e-9);
+  EXPECT_DOUBLE_EQ(lp::seconds(1000000000), 1);
+  lp::Pose initial = lp::Pose::Identity();
+  initial.translation() = Eigen::Vector3d(1, 2, 3);
+  initial.linear() = Eigen::AngleAxisd(pi / 2, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  const auto straight = lp::integrate(initial, {2, 1, 3, 0}, .5);
+  EXPECT_TRUE(straight.translation().isApprox(Eigen::Vector3d(.5, 3, 4.5), 1e-12));
+  EXPECT_TRUE(lp::integrate(initial, {2, 1, 3, 1}, 0).matrix().isApprox(initial.matrix()));
+  EXPECT_THROW(lp::integrate(initial, {}, -.1), std::runtime_error);
+  for (int component = 0; component < 5; ++component) {
+    lp::Twist twist;
+    double dt = .1;
+    const auto bad = std::numeric_limits<double>::quiet_NaN();
+    if (component == 0) twist.vx = bad;
+    if (component == 1) twist.vy = bad;
+    if (component == 2) twist.vz = bad;
+    if (component == 3) twist.wz = bad;
+    if (component == 4) dt = bad;
+    EXPECT_THROW(lp::integrate(initial, twist, dt), std::runtime_error);
+  }
+}
+
+TEST(OdometryContract, RejectsMalformedVectorNoiseAndLegacyErrorConflicts) {
+  lp::EncoderIntegrator integrator;
+  const auto init = differential();
+  for (const auto &key : {"linear_scale", "linear_bias_mps", "linear_sigma_mps", "linear_scale_error"}) {
+    for (const auto &value : {Json::array(), Json::array({0}), Json::array({0, 0, 0}),
+                              Json::array({0, std::numeric_limits<double>::infinity()})}) {
+      auto p = lp::EncoderIntegrator::defaults();
+      p[key] = value;
+      EXPECT_THROW(integrator.initialize(init, p), std::runtime_error) << key;
+    }
+  }
+  auto p = lp::EncoderIntegrator::defaults();
+  p["linear_scale"] = {0, 1};
+  EXPECT_THROW(integrator.initialize(init, p), std::runtime_error);
+  p = lp::EncoderIntegrator::defaults();
+  p["linear_sigma_mps"] = {0, -.1};
+  EXPECT_THROW(integrator.initialize(init, p), std::runtime_error);
+  p = lp::EncoderIntegrator::defaults();
+  p["angular_sigma_radps"] = -.1;
+  EXPECT_THROW(integrator.initialize(init, p), std::runtime_error);
+  p = lp::EncoderIntegrator::defaults();
+  p["angular_scale_error"] = .1;
+  p["angular_scale"] = 1.1;
+  EXPECT_THROW(integrator.initialize(init, p), std::runtime_error);
+}
+
+TEST(PluginDeclarations, MalformedXmlAttributesSectionsAndBudgetsAreRejected) {
+  ParameterDirectory temp;
+  std::ofstream(temp.path / "parameters.yaml") << "section: {value: 1}\nscalar: 3\n";
+  for (const auto &xml : {
+      "not xml", "<world/>", "<robot><litesim3d/></robot>",
+      "<robot><litesim3d version=''/></robot>",
+      "<robot><litesim3d version='1' extra='x'/></robot>"})
+    EXPECT_THROW(lp::declarations(xml, temp.path, resolver), std::runtime_error) << xml;
+  for (const std::string &child : {
+      "<sensor class='X'/>", "<sensor name='' class='X'/>", "<sensor name='s' class=''/>",
+      "<sensor name='s' class='X'><overrides><child/></overrides></sensor>",
+      "<sensor name='s' class='X'><overrides/><overrides/></sensor>",
+      "<sensor name='s' class='X'><overrides unsupported='1'/></sensor>",
+      "<sensor name='s' class='X'><unknown/></sensor>",
+      "<sensor name='s' class='X'><parameters file='parameters.yaml' section=''/></sensor>",
+      "<sensor name='s' class='X'><parameters file='parameters.yaml' section='missing'/></sensor>",
+      "<sensor name='s' class='X'><parameters file='parameters.yaml' section='scalar'/></sensor>"})
+    EXPECT_THROW(lp::declarations("<robot><litesim3d version='1'>" + child +
+        "</litesim3d></robot>", temp.path, resolver), std::runtime_error) << child;
+  const auto empty = lp::declarations("<robot><litesim3d version='1'>"
+      "<sensor name='s' class='X'><overrides/></sensor></litesim3d></robot>", temp.path, resolver);
+  ASSERT_EQ(empty.size(), 1u);
+  EXPECT_TRUE(empty[0].parameters.empty());
+  std::string children;
+  for (int i = 0; i < 65; ++i) children += "<sensor name='s" + std::to_string(i) + "' class='X'/>";
+  EXPECT_THROW(lp::declarations("<robot><litesim3d version='1'>" + children +
+      "</litesim3d></robot>", temp.path, resolver), std::runtime_error);
+}
+
+TEST(PluginDeclarations, ParameterYamlTypesAndBoundedParserFailures) {
+  ParameterDirectory temp;
+  const auto file = temp.path / "parameters.yaml";
+  std::ofstream(file) << "number: 1.25\nboolean: false\nempty: null\nquoted: 'true'\n"
+                        "explicit: !!str 2\ntext: 12mm\nlist: [1, true, name]\n";
+  const auto p = lp::readParameterFile(file);
+  EXPECT_EQ(p["number"], 1.25);
+  EXPECT_EQ(p["boolean"], false);
+  EXPECT_TRUE(p["empty"].is_null());
+  EXPECT_EQ(p["quoted"], "true");
+  EXPECT_EQ(p["explicit"], "2");
+  EXPECT_EQ(p["text"], "12mm");
+  EXPECT_EQ(p["list"], Json::array({1, true, "name"}));
+  for (const std::string &yaml : {"[]", "value: [", "key: 1\nkey: 2", "value: 1e9999", "value: nan"}) {
+    std::ofstream(file) << yaml;
+    EXPECT_THROW(lp::readParameterFile(file), std::runtime_error);
+  }
+  std::string deep = "x: ";
+  for (int i = 0; i < 33; ++i) deep += "[";
+  deep += "0";
+  for (int i = 0; i < 33; ++i) deep += "]";
+  std::ofstream(file) << deep;
+  EXPECT_THROW(lp::readParameterFile(file), std::runtime_error);
+  std::string sequence = "values: [0";
+  for (size_t i = 1; i < 65537; ++i) sequence += ",0";
+  std::ofstream(file) << sequence << "]\n";
+  EXPECT_THROW(lp::readParameterFile(file), std::runtime_error);
+  std::filesystem::resize_file(file, 4 * 1024 * 1024 + 1);
+  EXPECT_THROW(lp::readParameterFile(file), std::runtime_error);
+}
+
+TEST(PluginParameters, ModelGeometryRejectsWrongSidesRadiiWheelAxesAndSteeringBounds) {
+  auto geometry = [](const lp::Initialization &init) {
+    lp::ModelGeometry g;
+    g.model = init.model;
+    for (const auto &[name, joint] : g.model.joints)
+      if (joint.type == "continuous") g.wheel_radii[name] = .1;
+    return g;
+  };
+  const auto diff_values = config(diff, false);
+  for (int invalid = 0; invalid < 6; ++invalid) {
+    SCOPED_TRACE(invalid);
+    auto g = geometry(differential());
+    if (invalid == 0) g.model.joints.at("left_wheel_joint").position.y() = 0;
+    if (invalid == 1) g.model.joints.at("right_wheel_joint").position.y() = .25;
+    if (invalid == 2) g.model.joints.at("right_wheel_joint").position.y() = -.3;
+    if (invalid == 3) g.model.joints.at("left_wheel_joint").axis = Eigen::Vector3d::UnitX();
+    if (invalid == 4) g.wheel_radii["left_wheel_joint"] = 0;
+    if (invalid == 5) g.wheel_radii["left_wheel_joint"] = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(lp::differentialGeometry(g, diff_values), std::runtime_error);
+  }
+  auto four = geometry(differential(true));
+  auto four_values = diff_values;
+  four_values["left_joints"].push_back("front_left_joint");
+  four_values["right_joints"].push_back("front_right_joint");
+  four.model.joints.at("front_left_joint").position.y() = .3;
+  EXPECT_THROW(lp::differentialGeometry(four, four_values), std::runtime_error);
+
+  const auto ack_values = config(ack, false);
+  for (int invalid = 0; invalid < 9; ++invalid) {
+    SCOPED_TRACE(invalid);
+    auto g = geometry(ackermann());
+    if (invalid == 0) g.model.joints.at("front_left_wheel_joint").type = "fixed";
+    if (invalid == 1) g.model.joints.at("front_left_wheel_joint").mimic = "rear_left_wheel_joint";
+    if (invalid == 2) {
+      g.model.joints.at("front_left_wheel_joint").position.x() = 0;
+      g.model.joints.at("front_right_wheel_joint").position.x() = 0;
+    }
+    if (invalid == 3) {
+      g.model.joints.at("rear_left_wheel_joint").position.y() = -.2;
+      g.model.joints.at("rear_right_wheel_joint").position.y() = .2;
+    }
+    if (invalid == 4) g.model.joints.at("front_right_wheel_joint").position.x() = .7;
+    if (invalid == 5) g.model.joints.at("rear_left_wheel_joint").axis = Eigen::Vector3d::UnitX();
+    if (invalid >= 6) for (const auto &name : {"left_steering_joint", "right_steering_joint"}) {
+      const double limit = invalid == 6 ? std::numeric_limits<double>::infinity() : invalid == 7 ? 0 : 2;
+      g.model.joints.at(name).lower = -limit;
+      g.model.joints.at(name).upper = limit;
+    }
+    EXPECT_THROW(lp::ackermannGeometry(g, ack_values), std::runtime_error);
+  }
+
+  const auto omni_values = config(omni(3), false);
+  for (int invalid = 0; invalid < 6; ++invalid) {
+    SCOPED_TRACE(invalid);
+    auto g = geometry(omnidirectional(3));
+    auto p = omni_values;
+    if (invalid == 0) p.erase("wheels");
+    if (invalid == 1) p["wheels"] = "wheel";
+    if (invalid == 2) p["wheels"][0] = "wheel";
+    if (invalid == 3) p["wheels"][0] = Json::object();
+    if (invalid == 4) g.model.joints.at("wheel_0_joint").axis = Eigen::Vector3d::UnitZ();
+    if (invalid == 5) g.model.joints.at("wheel_0_joint").axis *= 2;
+    EXPECT_THROW(lp::omniGeometry(g, p), std::runtime_error);
+  }
+  auto g = geometry(omnidirectional(3));
+  auto wrapped = lp::omniGeometry(g, omni_values);
+  wrapped["wheels"][0]["rolling_angle_rad"] = wrapped["wheels"][0]["rolling_angle_rad"].get<double>() + 2 * pi;
+  const auto resolved = lp::omniGeometry(g, wrapped);
+  EXPECT_NEAR(resolved["wheels"][0]["rolling_angle_rad"].get<double>(), pi / 2, 1e-12);
 }

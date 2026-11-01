@@ -1,0 +1,5 @@
+<library path="contract_fault_plugins">
+  <class name="litesim3d_plugin_tests/ContractFaultChassis" type="litesim3d::plugins::ContractFaultChassis" base_class_type="litesim3d::plugins::ChassisPlugin"/>
+  <class name="litesim3d_plugin_tests/ContractFaultOdometry" type="litesim3d::plugins::ContractFaultOdometry" base_class_type="litesim3d::plugins::OdometryPlugin"/>
+  <class name="litesim3d_plugin_tests/ContractFaultSensor" type="litesim3d::plugins::ContractFaultSensor" base_class_type="litesim3d::plugins::SensorPlugin"/>
+</library>

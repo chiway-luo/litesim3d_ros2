@@ -5,7 +5,7 @@ namespace litesim3d_ros {
 LidarOutputs::LidarOutputs(rclcpp::Node &node, const litesim3d::Config &config,
     const std::string &topic_prefix, const std::string &frame_prefix,
     const std::string &interface, int xfer_format, int lidar_id,
-    const rclcpp::PublisherOptions &options) {
+    const rclcpp::PublisherOptions &options, PluginFactory factory) {
   using litesim3d::require;
   require(interface == "native" || interface == "auto" || interface == "livox",
           "lidar_interface must be native, auto or livox");
@@ -19,9 +19,13 @@ LidarOutputs::LidarOutputs(rclcpp::Node &node, const litesim3d::Config &config,
   require(interface != "livox" || mid360, "livox output requires a Mid-360 lidar");
   if (!mid360) return;
   try {
-    loader_ = std::make_unique<pluginlib::ClassLoader<LidarOutputPlugin>>(
-        "litesim3d_ros2", "litesim3d_ros::LidarOutputPlugin");
-    plugin_ = loader_->createSharedInstance("litesim3d_mid360/LivoxOutput");
+    if (factory) plugin_ = factory();
+    else {
+      loader_ = std::make_unique<pluginlib::ClassLoader<LidarOutputPlugin>>(
+          "litesim3d_ros2", "litesim3d_ros::LidarOutputPlugin");
+      plugin_ = loader_->createSharedInstance("litesim3d_mid360/LivoxOutput");
+    }
+    require(bool(plugin_), "plugin factory returned no output");
   } catch (const std::exception &error) {
     throw std::runtime_error(std::string("Mid-360 Livox output requires the litesim3d_mid360 plugin; "
         "build/source plugins/litesim3d_mid360, or select lidar_interface:=native: ") + error.what());

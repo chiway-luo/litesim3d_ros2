@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 #include <cstring>
 #include <set>
+#include <chrono>
+#include <fstream>
+#include <limits>
 
 namespace lp = litesim3d::plugins;
 using namespace litesim3d;
@@ -342,4 +345,80 @@ TEST(SensorPlugins, ConfigurableImuGravityIsUsedAndReported) {
   plugin->step(context,output); ASSERT_EQ(output.imus.size(),1u);
   EXPECT_DOUBLE_EQ(output.imus[0].acceleration.z(),9.7);
   EXPECT_DOUBLE_EQ(plugin->description().settings.at("gravity_mps2").get<double>(),9.7);
+}
+
+TEST(SensorPlugins, SettingsValidateVectorShapeIntegerBoundsAndRenderedBuffers) {
+  EXPECT_THROW(lp::sensorDefaults("unsupported"), std::runtime_error);
+  const Json binding = {{"link", "camera_optical_frame"}, {"topic", "camera/front"}};
+  for (const auto &width : {Json(0), Json(4097), Json(16.5)})
+    EXPECT_THROW(lp::cameraSettings("camera", "rgb", lp::merge(binding, {{"width", width}})), std::runtime_error);
+  for (const auto &vector : {Json(1), Json::array({0, 0})})
+    EXPECT_THROW(lp::imuSettings("imu", {{"link", "base_link"}, {"topic", "imu/raw"},
+        {"accel_bias", vector}}), std::runtime_error);
+
+  auto cfg = lp::cameraSettings("camera", "rgbd", lp::merge(binding, {{"width", 16}, {"height", 16}}));
+  auto frame = image("rgbd");
+  frame.height = 17;
+  EXPECT_THROW(lp::applyCameraNoise(cfg, 1, frame), std::runtime_error);
+  frame = image("rgbd");
+  frame.color.pop_back();
+  EXPECT_THROW(lp::applyCameraNoise(cfg, 1, frame), std::runtime_error);
+  frame = image("rgbd");
+  frame.depth.pop_back();
+  EXPECT_THROW(lp::applyCameraNoise(cfg, 1, frame), std::runtime_error);
+  frame = image("rgbd");
+  cfg.near_clip = 1;
+  cfg.depth_bias = -1.5;
+  lp::applyCameraNoise(cfg, 1, frame);
+  EXPECT_TRUE(std::isnan(value(frame.depth, 0)));
+}
+
+TEST(SensorPlugins, PatternCacheInvalidatesWhenTheSameResourceChanges) {
+  const auto file = std::filesystem::temp_directory_path() / ("litesim-pattern-cache-" +
+      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".csv");
+  struct Cleanup {
+    std::filesystem::path path;
+    ~Cleanup() { std::filesystem::remove(path); }
+  } cleanup{file};
+  std::ofstream(file) << "Time/s,Azimuth/deg,Zenith/deg\n1,0,90\n";
+  Json p = {{"link", "lidar_link"}, {"topic", "points"}, {"scan_pattern", "livox_mid360"},
+            {"columns", 20000}, {"pattern_file", file.string()}};
+  const auto original = lp::lidarSettings("lidar", p, file.parent_path());
+  const auto same = lp::lidarSettings("lidar", p, file.parent_path());
+  EXPECT_EQ(original.pattern_table, same.pattern_table);
+  std::ofstream(file) << "Time/s,Azimuth/deg,Zenith/deg\n1,90,90\n";
+  const auto changed = lp::lidarSettings("lidar", p, file.parent_path());
+  EXPECT_NE(original.pattern_table, changed.pattern_table);
+  EXPECT_NE(original.pattern_table->source_sha256, changed.pattern_table->source_sha256);
+  EXPECT_TRUE(changed.pattern_table->samples[0].direction.isApprox(Vec3::UnitY(), 1e-12));
+  EXPECT_TRUE(original.pattern_table->samples[0].direction.isApprox(Vec3::UnitX(), 1e-12));
+}
+
+TEST(SensorPlugins, DisabledSensorsEmitNothingAndNonCameraImageHookIsANoop) {
+  lp::Loader loader;
+  Scene scene;
+  const auto ctx = context(scene);
+  for (const auto &cls : classes) {
+    SCOPED_TRACE(cls);
+    auto plugin = loader.sensor(cls);
+    auto p = config(cls);
+    p["enabled"] = false;
+    if (cls == classes[0]) p["excluded_links"] = {"base_link"};
+    plugin->initialize(init(), p);
+    EXPECT_FALSE(plugin->description().enabled);
+    lp::SensorOutput output;
+    plugin->step(ctx, output);
+    if (auto *articulated = dynamic_cast<lp::LinkKinematicsSensor *>(plugin.get()))
+      articulated->stepWithKinematics(ctx, Kinematics{}, output);
+    EXPECT_TRUE(output.clouds.empty());
+    EXPECT_TRUE(output.imus.empty());
+    EXPECT_TRUE(output.cameras.empty());
+    if (cls == classes[0] || cls == classes[1]) {
+      auto frame = image("rgbd");
+      const auto before_color = frame.color, before_depth = frame.depth;
+      plugin->processImage(frame);
+      EXPECT_EQ(frame.color, before_color);
+      EXPECT_EQ(frame.depth, before_depth);
+    }
+  }
 }

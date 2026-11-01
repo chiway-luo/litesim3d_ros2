@@ -3,6 +3,8 @@
 #include "service_responses.hpp"
 #include "lidar_outputs.hpp"
 #include "joint_control.hpp"
+#include "world_backend.hpp"
+#include <typeinfo>
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -50,7 +52,22 @@ geometry_msgs::msg::Pose pose(const litesim3d::Pose &p) {
   return v;
 }
 } // namespace
+// Side effects are injected at the bridge boundary. Production defaults remain
+// ROS publishers, the node context, steady/system clocks and file streams.
+struct WorldNodeHooks {
+  std::function<std::unique_ptr<litesim3d_ros::WorldBackend>(const std::filesystem::path &)> load =
+      litesim3d_ros::loadWorldBackend<>;
+  std::function<std::chrono::steady_clock::time_point()> steady_now;
+  std::function<uint64_t()> wall_now;
+  std::function<bool()> ok;
+  std::function<void()> shutdown;
+  std::function<size_t(const std::string &)> publisher_count;
+  std::function<void(const std::string &, const std::type_info &, const void *)> publish;
+  std::function<std::unique_ptr<std::ostream>(const std::string &)> open_manifest;
+  litesim3d_ros::LidarOutputs::PluginFactory lidar_factory;
+};
 class WorldNode : public rclcpp::Node {
+  friend struct WorldNodeUnitAccess;
   struct Channels {
     std::string prefix;
     std::unique_ptr<litesim3d_ros::JointControl> joint_control;
@@ -71,12 +88,16 @@ class WorldNode : public rclcpp::Node {
     std::set<std::string> odom_sources;
     bool publish_tf = true;
     uint64_t published = 0, contact_index = 0, qos_conflicts = 0;
+    std::function<void(rclcpp::QOSOfferedIncompatibleQoSInfo &)> incompatible_qos;
   };
 
 public:
-  WorldNode() : Node("litesim3d_world") {
+  explicit WorldNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions(),
+                     WorldNodeHooks hooks = {})
+      : Node("litesim3d_world", options), hooks_(std::move(hooks)) {
+    started_wall_ns_ = wallNow();
     stats_ = create_publisher<std_msgs::msg::String>("/sim/stats", rclcpp::QoS(1).best_effort());
-    world_ = litesim3d::World::load(declare_parameter<std::string>("config", ""));
+    world_ = hooks_.load(declare_parameter<std::string>("config", ""));
     output_ = declare_parameter<std::string>("manifest_path", "");
     paused_ = declare_parameter<bool>("start_paused", false);
     cmd_mode_ = declare_parameter<std::string>("cmd_mode", "twist");
@@ -116,27 +137,31 @@ public:
           "/sim/ground_truth/" + r.config().robot_id + "/odom", 10);
       c.contacts = create_publisher<litesim3d_interfaces::msg::Contact>(
           "/sim/ground_truth/" + r.config().robot_id + "/contacts", 10);
-      if (r.config().control_mode == "ros2_control")
+      if (r.config().control_mode == "ros2_control") {
+        litesim3d_ros::JointControl::FeedbackSink feedback;
+        if (hooks_.publish) feedback = [this, i](const auto &message) {
+          hooks_.publish("/" + channels_[i].prefix + "sim/joint_feedback", typeid(message), &message);
+        };
         c.joint_control = std::make_unique<litesim3d_ros::JointControl>(*this, r,
-            [this, i](const auto &cmd) { return world_->jointCommand(i, cmd); }, "/" + c.prefix);
-      else c.joints = create_publisher<sensor_msgs::msg::JointState>(topic("joint_states"), 10);
+            [this, i](const auto &cmd) { return world_->jointCommand(i, cmd); }, "/" + c.prefix, feedback);
+      } else c.joints = create_publisher<sensor_msgs::msg::JointState>(topic("joint_states"), 10);
       c.description = create_publisher<std_msgs::msg::String>(
           topic("robot_description"), rclcpp::QoS(1).transient_local());
       std_msgs::msg::String description;
       description.data = r.model().xml;
-      c.description->publish(description);
+      emit(c.description, description);
       auto sensor_qos = rclcpp::QoS(5);
       if (sensor_reliable_)
         sensor_qos.reliable();
       else
         sensor_qos.best_effort();
       rclcpp::PublisherOptions options;
-      options.event_callbacks.incompatible_qos_callback =
-          [this, i](rclcpp::QOSOfferedIncompatibleQoSInfo &) {
-            ++channels_[i].qos_conflicts;
-          };
+      c.incompatible_qos = [this, i](rclcpp::QOSOfferedIncompatibleQoSInfo &) {
+        ++channels_[i].qos_conflicts;
+      };
+      options.event_callbacks.incompatible_qos_callback = c.incompatible_qos;
       c.livox = std::make_unique<litesim3d_ros::LidarOutputs>(*this, r.config(), "/" + c.prefix,
-          c.prefix, lidar_interface, xfer_format, lidar_id, options);
+          c.prefix, lidar_interface, xfer_format, lidar_id, options, hooks_.lidar_factory);
       for (const auto &l : r.config().lidars) {
         if (c.livox->handles(l.topic)) continue;
         c.clouds[l.topic] = create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -194,7 +219,7 @@ public:
         "/tf", rclcpp::QoS(100),
         [this](tf2_msgs::msg::TFMessage::ConstSharedPtr msg,
                const rclcpp::MessageInfo &info) {
-          if (failed_ || !rclcpp::ok())
+          if (failed_ || !running())
             return;
           for (const auto &t : msg->transforms)
             for (size_t i = 0; i < channels_.size(); ++i) {
@@ -215,22 +240,21 @@ public:
               }
             }
         });
-    pause_ = litesim3d_ros::createResponseService<std_srvs::srv::SetBool>(
-        *this, "/sim/pause", [this](std_srvs::srv::SetBool::Request::SharedPtr q,
+    pause_handler_ = [this](std_srvs::srv::SetBool::Request::SharedPtr q,
                              std_srvs::srv::SetBool::Response::SharedPtr a) {
           try {
             world_->pause(q->data);
             paused_ = q->data;
-            anchor_ = std::chrono::steady_clock::now();
+            anchor_ = steadyNow();
             anchor_stamp_ = time();
             a->success = true;
           } catch (const std::exception &e) {
             a->message = e.what();
           }
-        });
-    step_ = litesim3d_ros::createResponseService<litesim3d_interfaces::srv::Step>(
-        *this, "/sim/step",
-        [this](litesim3d_interfaces::srv::Step::Request::SharedPtr q,
+        };
+    pause_ = litesim3d_ros::createResponseService<std_srvs::srv::SetBool>(
+        *this, "/sim/pause", pause_handler_);
+    step_handler_ = [this](litesim3d_interfaces::srv::Step::Request::SharedPtr q,
                litesim3d_interfaces::srv::Step::Response::SharedPtr a) {
           try {
             std::vector<std::vector<litesim3d::Event>> events;
@@ -249,8 +273,10 @@ public:
             a->message = e.what();
             fail(e.what());
           }
-        });
-    anchor_ = std::chrono::steady_clock::now();
+        };
+    step_ = litesim3d_ros::createResponseService<litesim3d_interfaces::srv::Step>(
+        *this, "/sim/step", step_handler_);
+    anchor_ = steadyNow();
     anchor_stamp_ = time();
     const auto &cfg = world_->robot(0).config();
     timer_ = create_wall_timer(
@@ -264,7 +290,7 @@ public:
       try {
         publishStatus();
       } catch (const std::exception &e) {
-        if (rclcpp::ok())
+        if (running())
           fail(e.what());
       }
     });
@@ -286,7 +312,8 @@ private:
     world_->fault(reason);
     RCLCPP_ERROR(get_logger(), "%s", reason.c_str());
     save("fault");
-    rclcpp::shutdown();
+    if (hooks_.shutdown) hooks_.shutdown();
+    else rclcpp::shutdown(get_node_base_interface()->get_context());
   }
   void save(const std::string &reason) {
     if (output_.empty())
@@ -298,7 +325,7 @@ private:
     m["rmw"] = rmw_get_implementation_identifier();
     m["bridge_source_sha256"] = LWS_BRIDGE_SHA256;
     m["started_wall_ns"] = started_wall_ns_;
-    m["recorded_wall_ns"] = wallTime();
+    m["recorded_wall_ns"] = wallNow();
     m["ros_interface"] = {{"cmd_mode", cmd_mode_},
                           {"sensor_reliable", sensor_reliable_}};
     for (size_t i = 0; i < channels_.size(); ++i) {
@@ -307,7 +334,9 @@ private:
       m["ros_interface"]["publish_odom_tf"]
        [world_->robot(i).config().robot_id] = channels_[i].publish_tf;
     }
-    std::ofstream f(output_);
+    auto stream = hooks_.open_manifest ? hooks_.open_manifest(output_)
+                                      : std::make_unique<std::ofstream>(output_);
+    auto &f = *stream;
     litesim3d::require(bool(f), "cannot open world manifest");
     f << m.dump(2);
     litesim3d::require(bool(f), "cannot write world manifest");
@@ -324,7 +353,7 @@ private:
         js.velocity.push_back(
             s.joint_velocities.count(name) ? s.joint_velocities.at(name) : 0);
       }
-    if (c.joints) c.joints->publish(js);
+    if (c.joints) emit(c.joints, js);
     if (c.joint_control) c.joint_control->publish(js, s);
     if (!c.publish_tf)
       return;
@@ -337,12 +366,13 @@ private:
     t.transform.translation.y = p.position.y;
     t.transform.translation.z = p.position.z;
     t.transform.rotation = p.orientation;
-    tf_->sendTransform(t);
+    if (hooks_.publish) hooks_.publish("/tf", typeid(t), &t);
+    else tf_->sendTransform(t);
   }
   void publishClock() {
     rosgraph_msgs::msg::Clock clock;
     clock.clock = stamp(time());
-    clock_->publish(clock);
+    emit(clock_, clock);
   }
   void publish(const std::vector<std::vector<litesim3d::Event>> &events) {
     publishClock();
@@ -367,7 +397,7 @@ private:
         o.twist.twist.angular.z = e.snapshot.odom_w;
         o.pose.covariance = r.config().pose_covariance;
         o.twist.covariance = r.config().twist_covariance;
-        c.odom->publish(o);
+        emit(c.odom, o);
         o.header.frame_id = "world";
         o.pose.pose = pose(e.snapshot.world_base);
         o.twist.twist.linear.x = e.snapshot.v;
@@ -376,7 +406,7 @@ private:
         o.twist.twist.angular.z = e.snapshot.w;
         o.pose.covariance.fill(0);
         o.twist.covariance.fill(0);
-        c.truth->publish(o);
+        emit(c.truth, o);
       }
       for (const auto &p : e.clouds) {
         if (!c.livox->publish(p)) {
@@ -400,17 +430,17 @@ private:
             field.datatype = f == 4 ? 4 : 7;
             m.fields.push_back(field);
           }
-          c.clouds.at(p.topic)->publish(m);
+          emit(c.clouds.at(p.topic), m);
           if (!p.range_boundary.empty()) {
             m.data = p.range_boundary;
             m.is_dense = false;
-            c.clouds.at(p.topic + "/range_boundary")->publish(m);
+            emit(c.clouds.at(p.topic + "/range_boundary"), m);
           }
         }
         ++c.published;
         compute_.push_back(p.compute_ms);
         auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                       std::chrono::steady_clock::now().time_since_epoch())
+                       steadyNow().time_since_epoch())
                        .count();
         bridge_.push_back((now - p.compute_end_ns) * 1e-6);
         if (compute_.size() > 4096) {
@@ -432,7 +462,7 @@ private:
         m.angular_velocity.x = p.angular_velocity.x();
         m.angular_velocity.y = p.angular_velocity.y();
         m.angular_velocity.z = p.angular_velocity.z();
-        c.imus.at(p.topic)->publish(m);
+        emit(c.imus.at(p.topic), m);
       }
     }
     state(i, r.snapshot());
@@ -444,30 +474,30 @@ private:
       litesim3d_interfaces::msg::Contact m;
       m.header.stamp = stamp(p.stamp);
       m.header.frame_id = "world";
-      m.run_id = r.run_id;
+      m.run_id = r.runId();
       m.robot_link = c.prefix + p.robot_link;
       m.entity = p.entity;
       m.clearance = p.clearance;
-      c.contacts->publish(m);
+      emit(c.contacts, m);
     }
   }
   void update() {
-    if (!rclcpp::ok())
+    if (!running())
       return;
     try {
       if (!ready_) {
         ready_ = true;
         world_->pause(paused_);
-        anchor_ = std::chrono::steady_clock::now();
+        anchor_ = steadyNow();
         anchor_stamp_ = time();
       }
-      if (count_publishers("/clock") > 1) {
+      if ((hooks_.publisher_count ? hooks_.publisher_count("/clock") : count_publishers("/clock")) > 1) {
         fail("multiple /clock publishers");
         return;
       }
       // A continuously ready unpaced timer must also service wall-clock
       // diagnostics.
-      if (std::chrono::steady_clock::now() >= next_status_)
+      if (steadyNow() >= next_status_)
         publishStatus();
       if (paused_)
         return;
@@ -475,7 +505,7 @@ private:
       unsigned steps = 1;
       if (cfg.real_time_factor) {
         auto elapsed = std::chrono::duration<double>(
-                           std::chrono::steady_clock::now() - anchor_)
+                           steadyNow() - anchor_)
                            .count();
         uint64_t target =
             anchor_stamp_ + uint64_t(elapsed * cfg.real_time_factor * 1e9);
@@ -491,25 +521,25 @@ private:
               publishRobot(robot, events);
             });
     } catch (const std::exception &e) {
-      if (rclcpp::ok())
+      if (running())
         fail(e.what());
     }
   }
   void publishStatus() {
-    if (!rclcpp::ok())
+    if (!running())
       return;
     next_status_ =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+        steadyNow() + std::chrono::milliseconds(200);
     const auto &first = world_->robot(0);
-    const auto actual = rate_.sample(world_->run_id, time(), double(wallTime()) * 1e-9);
+    const auto actual = rate_.sample(world_->runId(), time(), double(wallNow()) * 1e-9);
     const bool paused = first.state() == litesim3d::State::Paused;
     const auto rate = paused ? litesim3d::Json(0.0) : (actual ? litesim3d::Json(*actual) : litesim3d::Json(nullptr));
     std_msgs::msg::String stats;
-    stats.data = litesim3d::Json({{"schema_version", 1}, {"run_id", world_->run_id},
+    stats.data = litesim3d::Json({{"schema_version", 1}, {"run_id", world_->runId()},
       {"stamp_ns", time()}, {"state", first.diagnostics()["state"]},
       {"actual_real_time_factor", rate}, {"target_real_time_factor", first.config().real_time_factor},
       {"collision_budget_enabled", first.config().collision_budget_enabled}, {"robot_count", world_->size()}}).dump();
-    stats_->publish(stats);
+    emit(stats_, stats);
     diagnostic_msgs::msg::DiagnosticArray msg;
     msg.header.stamp = stamp(time());
     auto p99 = [](const std::deque<double> &v) {
@@ -522,7 +552,7 @@ private:
     for (size_t i = 0; i < world_->size(); ++i) {
       auto d = world_->robot(i).diagnostics();
       d["ready"] = ready_;
-      d["world_run_id"] = world_->run_id;
+      d["world_run_id"] = world_->runId();
       d["published_clouds"] = channels_[i].published;
       auto matches = nlohmann::json::object();
       auto count_matches = [&matches](const auto &publisher) {
@@ -551,7 +581,7 @@ private:
       d["dds_delivery_drops"] = "unknown (measure at subscriber)";
       diagnostic_msgs::msg::DiagnosticStatus s;
       s.name = channels_[i].prefix + "sim";
-      s.hardware_id = world_->robot(i).run_id;
+      s.hardware_id = world_->robot(i).runId();
       s.level = failed_ ? 2
                         : ((channels_[i].qos_conflicts ||
                             d["command_timeout"].get<bool>() ||
@@ -568,20 +598,37 @@ private:
       }
       msg.status.push_back(s);
     }
-    status_->publish(msg);
+    emit(status_, msg);
   }
+  template<class Message>
+  void emit(const std::shared_ptr<rclcpp::Publisher<Message>> &publisher, const Message &message) {
+    if (hooks_.publish) hooks_.publish(publisher->get_topic_name(), typeid(Message), &message);
+    else publisher->publish(message);
+  }
+  std::chrono::steady_clock::time_point steadyNow() const {
+    return hooks_.steady_now ? hooks_.steady_now() : std::chrono::steady_clock::now();
+  }
+  uint64_t wallNow() const { return hooks_.wall_now ? hooks_.wall_now() : wallTime(); }
+  bool running() const {
+    return hooks_.ok ? hooks_.ok() : rclcpp::ok(get_node_options().context());
+  }
+  WorldNodeHooks hooks_;
   litesim3d::RealTimeRate rate_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr stats_;
-  std::unique_ptr<litesim3d::World> world_;
+  std::unique_ptr<litesim3d_ros::WorldBackend> world_;
   std::vector<Channels> channels_;
   std::string output_, error_, cmd_mode_;
   bool sensor_reliable_ = false;
-  uint64_t started_wall_ns_ = wallTime();
+  uint64_t started_wall_ns_ = 0;
   bool ready_ = false, paused_ = false, failed_ = false;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_watch_;
   rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr status_;
+  std::function<void(std_srvs::srv::SetBool::Request::SharedPtr,
+                     std_srvs::srv::SetBool::Response::SharedPtr)> pause_handler_;
+  std::function<void(litesim3d_interfaces::srv::Step::Request::SharedPtr,
+                     litesim3d_interfaces::srv::Step::Response::SharedPtr)> step_handler_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr pause_;
   rclcpp::Service<litesim3d_interfaces::srv::Step>::SharedPtr step_;
   rclcpp::TimerBase::SharedPtr timer_, status_timer_;
@@ -589,24 +636,41 @@ private:
   uint64_t anchor_stamp_ = 1;
   std::deque<double> compute_, bridge_;
 };
-int main(int argc, char **argv) {
-  rclcpp::init(argc, argv);
+// Lifecycle policy is independently callable without an executor or a real
+// world. Empty operations select exactly the normal ROS process operations.
+struct WorldMainHooks {
+  std::function<void(int, char **)> initialize;
+  std::function<std::shared_ptr<WorldNode>()> make_node;
+  std::function<void(const std::shared_ptr<WorldNode> &)> spin;
+  std::function<bool()> ok;
+  std::function<void()> shutdown;
+  std::function<void(const std::string &)> report;
+};
+int runWorldNode(int argc, char **argv, const WorldMainHooks &hooks = {}) {
+  if (hooks.initialize) hooks.initialize(argc, argv);
+  else rclcpp::init(argc, argv);
+  auto running = [&] { return hooks.ok ? hooks.ok() : rclcpp::ok(); };
   std::shared_ptr<WorldNode> node;
   int code = 0;
   try {
-    node = std::make_shared<WorldNode>();
-    rclcpp::spin(node);
+    node = hooks.make_node ? hooks.make_node() : std::make_shared<WorldNode>();
+    if (hooks.spin) hooks.spin(node);
+    else rclcpp::spin(node);
     code = node->failed() ? 1 : 0;
     node->finish();
   } catch (const std::exception &e) {
-    if (node && !rclcpp::ok() && !node->failed())
+    if (node && !running() && !node->failed())
       node->finish();
     else {
-      std::cerr << e.what() << '\n';
+      if (hooks.report) hooks.report(e.what());
+      else std::cerr << e.what() << '\n';
       code = 1;
     }
   }
-  if (rclcpp::ok())
-    rclcpp::shutdown();
+  if (running()) {
+    if (hooks.shutdown) hooks.shutdown();
+    else rclcpp::shutdown();
+  }
   return code;
 }
+int main(int argc, char **argv) { return runWorldNode(argc, argv); }

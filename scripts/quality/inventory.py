@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 DECLARATIONS = {
     "litesim3d_plugin_api/include/litesim3d_plugin_api/declarations.hpp",
     "litesim3d_plugin_api/include/litesim3d_plugin_api/motion.hpp",
+    "litesim3d_plugin_api/include/litesim3d_plugin_api/model_geometry.hpp",
     "litesim3d_core/include/litesim3d/sensor_plugin.hpp",
     "litesim3d_ros2/src/point_adapter.hpp",
     "litesim3d_ros2/include/litesim3d_ros2/lidar_output_plugin.hpp",

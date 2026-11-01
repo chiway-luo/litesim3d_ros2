@@ -18,6 +18,7 @@ namespace litesim3d_ros2_control {
 using hardware_interface::CallbackReturn;
 using hardware_interface::return_type;
 class LiteSimSystem : public hardware_interface::SystemInterface {
+  friend struct SystemUnitAccess;
   using Command = litesim3d_interfaces::msg::JointCommand;
   using Feedback = litesim3d_interfaces::msg::JointFeedback;
   using Clock = std::chrono::steady_clock;
@@ -131,7 +132,7 @@ public:
     while (rclcpp::ok() && elapsed(start) < activation_timeout_) {
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (healthy() && publisher_->get_subscription_count() == 1) {
+        if (healthy() && commandSubscriberCount() == 1) {
           std::copy(feedback_position_.begin(), feedback_position_.end(), position_.begin());
           std::copy(feedback_velocity_.begin(), feedback_velocity_.end(), velocity_.begin());
           std::copy(position_.begin(), position_.end(), position_command_.begin());
@@ -235,13 +236,20 @@ public:
     }
     msg.body_velocity.linear.x = body[0]; msg.body_velocity.linear.y = body[1];
     msg.body_velocity.linear.z = body[2]; msg.body_velocity.angular.z = body[3];
-    publisher_->publish(msg);
+    publishCommand(msg);
     return return_type::OK;
   }
+protected:
+  // Keep ROS endpoint discovery and publication at a narrow adapter boundary.
+  // Deterministic units can supply endpoint counts and inspect commands without
+  // connecting a simulator or depending on asynchronous middleware discovery.
+  virtual size_t feedbackPublisherCount() const { return subscription_->get_publisher_count(); }
+  virtual size_t commandSubscriberCount() const { return publisher_->get_subscription_count(); }
+  virtual void publishCommand(const Command &message) { publisher_->publish(message); }
 private:
   static double elapsed(Clock::time_point since) { return std::chrono::duration<double>(Clock::now() - since).count(); }
   bool healthy() const {
-    return received_ && !fault_ && elapsed(received_at_) <= timeout_ && subscription_->get_publisher_count() == 1;
+    return received_ && !fault_ && elapsed(received_at_) <= timeout_ && feedbackPublisherCount() == 1;
   }
   void receive(const Feedback &msg) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -316,7 +324,7 @@ private:
     std::fill(mode_.begin(), mode_.end(), Command::HOLD);
     if (!publisher_ || run_id_.empty()) return;
     Command msg; msg.run_id = run_id_; msg.header.stamp = stamp_;
-    publisher_->publish(msg); // Empty command set stops all independently controlled joints.
+    publishCommand(msg); // Empty command set stops all independently controlled joints.
   }
   const std::array<std::string, 11> body_names_{
       "linear.x.velocity", "linear.y.velocity", "linear.z.velocity", "angular.z.velocity",

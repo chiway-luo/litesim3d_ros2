@@ -76,6 +76,19 @@ void audit(const sdf::ElementPtr &e) {
   for (auto c = e->GetFirstElement(); c; c = c->GetNextElement()) audit(c);
 }
 std::set<std::string> auditedMeshes;
+void auditMeshMaterials(const aiScene &scene, const fs::path &file) {
+  require(scene.mNumAnimations==0,"animated meshes are unsupported: "+file.string());
+  for(unsigned i=0;i<scene.mNumMeshes;++i)require(!scene.mMeshes[i]->HasBones(),"skinned meshes are unsupported: "+file.string());
+  require(scene.mNumTextures == 0, "embedded mesh textures require export to external texture files: " + file.string());
+  for (unsigned i = 0; i < scene.mNumMaterials; ++i)
+    for (int t = aiTextureType_DIFFUSE; t <= aiTextureType_UNKNOWN; ++t)
+      for (unsigned n = 0; n < scene.mMaterials[i]->GetTextureCount(aiTextureType(t)); ++n) {
+        require(t==aiTextureType_DIFFUSE,
+          "mesh material uses a non-diffuse texture; declare that map in SDF PBR material: "+file.string());
+        aiString name; scene.mMaterials[i]->GetTexture(aiTextureType(t), n, &name);
+        resource(name.C_Str(), file.parent_path());
+      }
+}
 void auditMesh(const fs::path &file) {
   if (!auditedMeshes.insert(file.string()).second) return;
   if(file.extension()==".dae") {
@@ -93,17 +106,7 @@ void auditMesh(const fs::path &file) {
   Assimp::Importer importer;
   const auto *scene = importer.ReadFile(file.string(), aiProcess_Triangulate | aiProcess_ValidateDataStructure);
   require(scene && scene->HasMeshes(), "invalid mesh: " + file.string() + ": " + importer.GetErrorString());
-  require(scene->mNumAnimations==0,"animated meshes are unsupported: "+file.string());
-  for(unsigned i=0;i<scene->mNumMeshes;++i)require(!scene->mMeshes[i]->HasBones(),"skinned meshes are unsupported: "+file.string());
-  require(scene->mNumTextures == 0, "embedded mesh textures require export to external texture files: " + file.string());
-  for (unsigned i = 0; i < scene->mNumMaterials; ++i)
-    for (int t = aiTextureType_DIFFUSE; t <= aiTextureType_UNKNOWN; ++t)
-      for (unsigned n = 0; n < scene->mMaterials[i]->GetTextureCount(aiTextureType(t)); ++n) {
-        require(t==aiTextureType_DIFFUSE,
-          "mesh material uses a non-diffuse texture; declare that map in SDF PBR material: "+file.string());
-        aiString name; scene->mMaterials[i]->GetTexture(aiTextureType(t), n, &name);
-        resource(name.C_Str(), file.parent_path());
-      }
+  auditMeshMaterials(*scene,file);
   if (file.extension() == ".obj") {
     std::ifstream stream(file);
     for (std::string line; std::getline(stream, line);) {
@@ -189,6 +192,10 @@ J renderGeometry(const urdf::GeometrySharedPtr &g, const fs::path &base) {
   return {{"type","mesh"},{"uri",file.string()},{"scale",{mesh->scale.x,mesh->scale.y,mesh->scale.z}}};
 }
 struct Importer {
+  // The composed-model graph loader and final simulator validation are external
+  // boundaries. Tests replace them while exercising this adapter in-process.
+  using ModelLoader = std::function<litesim3d::Model(const fs::path &, const litesim3d::ModelOptions &)>;
+  ModelLoader loadModel = litesim3d::Model::load;
   fs::path source, output;
   YAML::Node runtime;
   J description = {{"schema_version",1}, {"visuals",J::array()}, {"lights",J::array()}};
@@ -218,7 +225,7 @@ struct Importer {
       require(file.extension()!=".xacro","expand Xacro with litesim3d_bringup prepare_config before sdf_import");
       const auto xml=litesim3d::readText(file);
       litesim3d::ModelOptions options;options.allow_visual_only=true;
-      auto model=litesim3d::Model::load(file,options); // validate graph before urdfdom traversal
+      auto model=loadModel(file,options); // validate graph before urdfdom traversal
       auto parsed=urdf::parseURDF(xml);require(bool(parsed),"invalid composed robot URDF");
       for(const auto &[name,link]:parsed->links_) {
         size_t index=0;
@@ -343,11 +350,31 @@ struct Importer {
     for(uint64_t i=0;i<m.ModelCount();++i)model(*m.ModelByIndex(i),world,name);
   }
 };
-} // namespace
-int main(int argc,char **argv) {
+void appendValidatedRuntime(Importer &importer, const litesim3d::Config &cfg,
+                            const litesim3d::Model &model, const litesim3d::Snapshot &snapshot) {
+  for(const auto &plugin:cfg.plugins)
+    for(const auto &file:plugin.parameter_files)manifest[file.string()]=litesim3d::sha256(file);
+  importer.description["cameras"]=J::array();
+  for(const auto &c:cfg.cameras)importer.description["cameras"].push_back(c.json());
+  auto frames=model.fk(snapshot.joints);
+  const auto wr=snapshot.world_base*frames.at(cfg.base_link).inverse();
+  for(const auto &[name,local]:frames) {
+    litesim3d::Pose p=wr*local;Eigen::Quaterniond q(p.linear());
+    importer.description["initial_link_poses"][name]={p.translation().x(),p.translation().y(),p.translation().z(),q.x(),q.y(),q.z(),q.w()};
+  }
+}
+void validateImportedRuntime(Importer &importer) {
+  litesim3d::Scene scene;auto cfg=litesim3d::Config::load(importer.output/"runtime.yaml",scene);
+  auto model=litesim3d::Model::load(cfg.urdf,cfg.model_options);
+  litesim3d::Simulator validation(cfg,model,scene);
+  appendValidatedRuntime(importer,validation.config(),model,validation.snapshot());
+}
+int importEntry(int argc,char **argv, const std::function<void(Importer &)> &validate,
+                const Importer::ModelLoader &loadModel=litesim3d::Model::load) {
   try {
     require(argc==5||argc==6,"usage: sdf_import WORLD.sdf RUNTIME.yaml OUTPUT_DIR COLLISION_BUDGET [TARGET_RTF]");
     Importer importer;importer.source=fs::canonical(argv[1]);importer.output=fs::absolute(argv[3]);
+    importer.loadModel=loadModel;
     require(std::string(argv[4])=="true"||std::string(argv[4])=="false","collision budget must be true or false");
     require(!fs::exists(importer.output)||fs::is_empty(importer.output),"output directory must be empty");
     fs::create_directories(importer.output);
@@ -409,19 +436,7 @@ int main(int argc,char **argv) {
     importer.description["source"]=importer.source.string();
     std::ofstream(importer.output/"runtime.yaml")<<importer.runtime;
     // Validate all kinematics, ray/collision geometry and budgets before launch.
-    litesim3d::Scene scene;auto cfg=litesim3d::Config::load(importer.output/"runtime.yaml",scene);
-    auto model=litesim3d::Model::load(cfg.urdf,cfg.model_options);
-    litesim3d::Simulator validation(cfg,model,scene);
-    for(const auto &plugin:validation.config().plugins)
-      for(const auto &file:plugin.parameter_files)manifest[file.string()]=litesim3d::sha256(file);
-    importer.description["cameras"]=J::array();
-    for(const auto &c:validation.config().cameras)importer.description["cameras"].push_back(c.json());
-    auto frames=model.fk(validation.snapshot().joints);
-    const auto wr=validation.snapshot().world_base*frames.at(cfg.base_link).inverse();
-    for(const auto &[name,local]:frames) {
-      litesim3d::Pose p=wr*local;Eigen::Quaterniond q(p.linear());
-      importer.description["initial_link_poses"][name]={p.translation().x(),p.translation().y(),p.translation().z(),q.x(),q.y(),q.z(),q.w()};
-    }
+    validate(importer);
     importer.description["resources"]=manifest;
     importer.description["scene_id"]=litesim3d::sha256Text(importer.description.dump());
     std::ofstream(importer.output/"scene.json")<<importer.description.dump(2)<<'\n';
@@ -430,3 +445,7 @@ int main(int argc,char **argv) {
     return 0;
   }catch(const std::exception &e){std::cerr<<"SDF import: "<<e.what()<<'\n';return 1;}
 }
+} // namespace
+#ifndef LITESIM_SDF_IMPORT_NO_MAIN
+int main(int argc,char **argv) { return importEntry(argc,argv,validateImportedRuntime); }
+#endif
