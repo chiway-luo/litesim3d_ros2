@@ -77,7 +77,7 @@ def generate_launch_description():
 
     control_description = xacro.process_file(control_xacro).toxml()
     manager = Node(
-        package="litesim3d_ros2_control", executable="spawn_when_ready.py", output="screen",
+        package="litesim3d_ros2_control", executable="spawn_when_ready", output="screen",
         arguments=["--executable", "ros2_control_node",
                    "--timeout", LaunchConfiguration("controller_startup_timeout"), "--"],
         # 不设置全局 name remap，防止动态加载的控制器被一并改名。
@@ -92,7 +92,7 @@ def generate_launch_description():
     ld.add_action(RegisterEventHandler(OnProcessExit(target_action=manager, on_exit=required_exit)))
     ld.add_action(manager)
     spawner = Node(
-        package="litesim3d_ros2_control", executable="spawn_when_ready.py", output="screen",
+        package="litesim3d_ros2_control", executable="spawn_when_ready", output="screen",
         arguments=["--timeout", LaunchConfiguration("controller_startup_timeout"), "--", "joint_state_broadcaster", "ackermann_controller", "-c", "/controller_manager",
                    "--controller-manager-timeout", "60"],
     )

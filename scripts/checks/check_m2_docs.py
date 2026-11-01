@@ -43,7 +43,9 @@ def main():
     for field in ['scan_mode: rolling','rate_hz: 200','topic: imu/data_raw','threads: 4','max_slope_deg: 20']:
         check('M2 documented default '+field,field in config)
     check('reset IDL installed','srv/Reset.srv' in (ROOT/'litesim3d_interfaces/CMakeLists.txt').read_text())
-    check('supervisor installed','configure_file(scripts/sim_session sim_session @ONLY)' in (ROOT/'litesim3d_ros2/CMakeLists.txt').read_text())
+    bridge_build=(ROOT/'litesim3d_ros2/CMakeLists.txt').read_text()
+    check('supervisor installed','add_executable(sim_session src/sim_session.cpp' in bridge_build
+          and 'install(TARGETS sim_session DESTINATION lib/${PROJECT_NAME})' in bridge_build)
     failed=[c['check'] for c in checks if not c['passed']]
     result={'status':'FAIL' if failed else 'PASS','checks':checks,'failures':failed,
             'scope':'Static consistency only; performance/soak must independently finish and pass.'}

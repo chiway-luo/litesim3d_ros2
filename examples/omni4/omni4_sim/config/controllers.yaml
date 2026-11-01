@@ -9,7 +9,7 @@
     omni_controller:
       type: litesim3d_ros2_control/OmniDriveController
     wheel_velocity_controller:
-      type: forward_command_controller/ForwardCommandController  # 可选轮速直控，默认不加载。
+      type: litesim3d_ros2_control/ReliableForwardCommandController  # 可选轮速直控，默认不加载。
 /joint_state_broadcaster:
   ros__parameters:
     use_local_topics: false  # 发布到全局 /joint_states，launch 可 remap。

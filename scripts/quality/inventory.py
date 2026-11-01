@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 # These files contain declarations and data initializers, but no function bodies.
 # Keep this explicit: a new header cannot silently disappear from coverage.
 DECLARATIONS = {
+    "litesim3d_bringup/src/model.hpp",
     "litesim3d_plugin_api/include/litesim3d_plugin_api/declarations.hpp",
     "litesim3d_plugin_api/include/litesim3d_plugin_api/motion.hpp",
     "litesim3d_plugin_api/include/litesim3d_plugin_api/model_geometry.hpp",

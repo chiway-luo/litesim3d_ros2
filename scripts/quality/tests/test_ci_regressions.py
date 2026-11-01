@@ -165,7 +165,7 @@ def test_asan_host_loads_plugin_and_detects_ub_and_leak_without_preloading_pytho
     spawner.write_text('#!/usr/bin/env python3\nimport json,os\n'
                        'print(json.dumps([os.environ.get("LD_PRELOAD", ""),os.environ.get("LSAN_OPTIONS", "")]))\n')
     spawner.chmod(0o755)
-    startup = project_bindir / "spawn_when_ready.py"
+    startup = project_bindir / "spawn_when_ready"
     startup.write_text(spawner.read_text())
     startup.chmod(0o755)
     before = os.environ.get("LD_PRELOAD")
@@ -193,7 +193,7 @@ def test_asan_host_loads_plugin_and_detects_ub_and_leak_without_preloading_pytho
             assert (result.returncode == 0) == (mode == ""), result.stdout + result.stderr
             assert expected in result.stdout + result.stderr
     for helper in (overlay / "lib/controller_manager/spawner",
-                   overlay / "lib/litesim3d_ros2_control/spawn_when_ready.py"):
+                   overlay / "lib/litesim3d_ros2_control/spawn_when_ready"):
         result = subprocess.run([str(helper)], env=env, capture_output=True, text=True, timeout=5)
         assert result.returncode == 0 and json.loads(result.stdout) == ["", env["LSAN_OPTIONS"]]
     assert os.environ.get("LD_PRELOAD") == before

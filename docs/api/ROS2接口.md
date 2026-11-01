@@ -72,7 +72,7 @@ NaN、Inf、不支持的分量、非法时间和 frame 会拒绝，且不刷新�
 
 Stamped 命令必须使用当前仿真时钟，而不是 `time.time()`、电脑日期或 ROS 默认墙钟。时间戳必须不晚于当前仿真时间，且不早于 `当前时间−command_timeout`。多机要求 frame 精确匹配，如 `r0/base_link`；单机使用配置的 base_link；带前缀名称由桥接移除前缀后交给内核校验，空 frame 也可被单机接受；接入端应固定发送准确的带前缀 base_link。
 
-[示例 ros_client.py](../examples/ros_client.py) 的 `--stamped` 模式已启用 use_sim_time，并等待时钟有效后发送；可以直接参考其写法。暂停时基于 ROS 时间的 timer 不会继续触发，必要的运行监测/超时应明确使用墙钟。
+[示例 ros_client.cpp](../../litesim3d_ros2/src/ros_client.cpp) 的 `--stamped` 模式已启用 use_sim_time，并等待时钟有效后发送；原 `python3 docs/examples/ros_client.py` 命令继续可用。暂停时基于 ROS 时间的 timer 不会继续触发，必要的运行监测/超时应明确使用墙钟。
 
 ## TF 发布责任
 

@@ -8,9 +8,9 @@
     diff_drive_controller:
       type: diff_drive_controller/DiffDriveController  # 默认车体速度控制器。
     wheel_velocity_controller:
-      type: forward_command_controller/ForwardCommandController  # 可选：第三方算法直接给各轮速度。
+      type: litesim3d_ros2_control/ReliableForwardCommandController  # 可选：第三方算法直接给各轮速度。
     wheel_position_controller:
-      type: forward_command_controller/ForwardCommandController  # 可选：第三方算法直接给各轮位置。
+      type: litesim3d_ros2_control/ReliableForwardCommandController  # 可选：第三方算法直接给各轮位置。
 /joint_state_broadcaster:
   ros__parameters:
     use_sim_time: true

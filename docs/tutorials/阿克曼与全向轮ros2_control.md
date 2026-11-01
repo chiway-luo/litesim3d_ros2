@@ -130,7 +130,9 @@ RSP 的 joint_states、tf、tf_static、robot_description 都有显式 remap。�
 ## 8. 第三方算法直接接管关节
 
 
-若算法输出车体 Twist，直接发布 /cmd_vel。若算法输出每轮速度或转向角，先加载本案例预留的 ForwardCommandController，再在一次切换中停用旧控制器并启用新控制器。保持 joint_state_broadcaster 和 RSP 运行，不增加 joint_state_publisher。
+若算法输出车体 Twist，直接发布 /cmd_vel。若算法输出每轮速度或转向角，先加载本案例预留的 ReliableForwardCommandController，再在一次切换中停用旧控制器并启用新控制器。保持 joint_state_broadcaster 和 RSP 运行，不增加 joint_state_publisher。
+
+案例使用 `litesim3d_ros2_control/ReliableForwardCommandController`，其 `commands` 订阅为 RELIABLE、VOLATILE、深度 1。自定义发布端使用 RELIABLE；下列 `ros2 topic pub` 命令保持默认 QoS 即可。
 
 阿克曼：
 
@@ -159,4 +161,4 @@ ros2 topic pub -r 20 /wheel_velocity_controller/commands std_msgs/msg/Float64Mul
 
 恢复时停用 wheel_velocity_controller、启用 omni_controller。自定义 ros2_control 控制器同样通过 controller_manager 声明并占用这些接口，无需改仿真器。
 
-ForwardCommandController 会保持最近值，没有算法消息超时；停止算法前发送零轮速或停用它。需要自动超时停车的第三方关节控制器应自行实现消息看门狗。硬件通信继续时，仿真 command_timeout 不能替代算法超时。接口为运动学位置/速度控制，不提供 effort 或轮胎接触力动力学。
+ReliableForwardCommandController 会保持最近值，没有算法消息超时；停止算法前发送零轮速或停用它。需要自动超时停车的第三方关节控制器应自行实现消息看门狗。硬件通信继续时，仿真 command_timeout 不能替代算法超时。接口为运动学位置/速度控制，不提供 effort 或轮胎接触力动力学。

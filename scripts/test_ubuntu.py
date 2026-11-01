@@ -275,7 +275,10 @@ class Profile:
         return True
 
     def native(self):
-        for package, binary in (("litesim3d_core", "sim_core_tests"),
+        for package, binary in (("litesim3d_runtime", "runtime_unit"),
+                                ("litesim3d_bringup", "native_model_unit"),
+                                ("litesim3d_ros2", "session_protocol_unit"),
+                                ("litesim3d_core", "sim_core_tests"),
                                 ("litesim3d_core", "core_cli_unit_tests"),
                                 ("litesim3d_plugin_tests", "plugin_contract_tests"),
                                 ("litesim3d_plugin_tests", "core_plugin_contract_tests"),
@@ -300,7 +303,7 @@ class Profile:
         # and shutdown process tests in the integration stage below.
         self.stage("control-unit", ["ctest", "--test-dir",
                    self.runtime / "build/litesim3d_ros2_control", "-R",
-                   "^(body_configuration|omni_configuration|control_loop_sleep|controller_units|system_units|spawner_unit)$",
+                   "^(body_configuration|omni_configuration|control_loop_sleep|controller_units|system_units|spawner_unit|readiness_unit)$",
                    "--output-on-failure"], 60, unit=True)
 
     def lifecycle(self):
@@ -314,18 +317,16 @@ class Profile:
                    *(["--instrumented"] if self.name in ("asan", "tsan") else [])], 600)
 
     def python_units(self):
-        # Exact in-process cases only. The existing controller-parameter suite
-        # executes the real model_geometry subprocess and stays integration.
+        # Native model preparation runs in a child process. Keep its adapters'
+        # in-process units here and the real executables in regression().
         self.stage("bringup-unit", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                   ROOT / "litesim3d_bringup/test/test_model.py",
                    ROOT / "litesim3d_bringup/test/test_launch_validation.py",
                    ROOT / "litesim3d_bringup/test/test_simulation_launch_unit.py",
                    ROOT / "litesim3d_bringup/test/test_controller_parameters_unit.py",
                    ROOT / "litesim3d_bringup/test/test_model_edges_unit.py",
                    f"--junitxml={self.evidence / 'bringup-cases.xml'}"], 300, unit=True)
         self.stage("python-runtime-unit", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                   "--import-mode=importlib", ROOT / "litesim3d_ros2/test/test_session_unit.py",
-                   ROOT / "litesim3d_ros2/test/test_launch_units.py",
+                   "--import-mode=importlib", ROOT / "litesim3d_ros2/test/test_launch_units.py",
                    ROOT / "litesim3d_ros2/test/test_integration_expectations_unit.py",
                    ROOT / "scripts/quality/tests/test_prepare_xacro_unit.py",
                    ROOT / "scripts/quality/tests/test_convert_mid360_unit.py",
@@ -347,7 +348,12 @@ class Profile:
                    f"--gtest_output=xml:{self.evidence / 'livox-output-plugin-integration-cases.xml'}"], 60)
         self.stage("controller-parameters-integration", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                    ROOT / "litesim3d_bringup/test/test_controller_parameters.py",
+                   ROOT / "litesim3d_bringup/test/test_model.py",
+                   ROOT / "litesim3d_bringup/test/test_model_edges.py",
+                   ROOT / "litesim3d_bringup/test/test_native_tools.py",
                    f"--junitxml={self.evidence / 'controller-parameters-cases.xml'}"], 300)
+        self.stage("runtime-process-integration", [self.runtime / "build/litesim3d_runtime/runtime_process_integration",
+                   f"--gtest_output=xml:{self.evidence / 'runtime-process-cases.xml'}"], 60)
         # These packages intentionally have identically named test modules.
         for example in ("ackermann", "omni3", "omni4"):
             self.stage(example, [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",

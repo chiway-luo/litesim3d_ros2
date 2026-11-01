@@ -7,6 +7,13 @@
 <p align="center">面向 Linux 与 ROS 2 的轻量机器人三维仿真器</p>
 
 <p align="center">
+  <a href="#测试覆盖率"><img src="https://img.shields.io/badge/unit%20lines-88.21%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="最近实测单元测试行覆盖率：88.21%"></a>
+  <a href="#测试覆盖率"><img src="https://img.shields.io/badge/unit%20branches-82.58%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="最近实测单元测试分支覆盖率：82.58%"></a>
+  <a href="#测试覆盖率"><img src="https://img.shields.io/badge/unit%20functions-85.15%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="最近实测单元测试函数覆盖率：85.15%"></a>
+</p>
+<p align="center"><sub>最近实测快照：2026-11-01 · <a href="#测试覆盖率">统计范围与状态</a></sub></p>
+
+<p align="center">
   <a href="README.md">English</a> · <strong>简体中文</strong>
 </p>
 
@@ -105,6 +112,18 @@ JSON 中 `success: true`、`checks.motion: true` 表示数据连通且里程计�
 版本号见 [VERSION](VERSION)。源码、文档与安装包应使用同一版本。
 
 反馈问题请附 Ubuntu/ROS 版本、仓库版本、启动命令、复现步骤和日志。维护者：[chiwayfpv@gmail.com](mailto:chiwayfpv@gmail.com)。
+
+### 测试覆盖率
+
+徽章采用 `codex/cpp-runtime` 分支在 2026-11-01 的最近一次**单元测试**实测记录，环境为 Ubuntu 22.04 / ROS 2 Humble、x86_64，不计入集成测试命中。
+
+| 指标 | 已覆盖 / 总数 | 覆盖率 |
+| --- | --- | --- |
+| 行 | 8,789 / 9,964 | 88.21% |
+| 分支 | 5,295 / 6,412 | 82.58% |
+| 函数 | 734 / 862 | 85.15% |
+
+覆盖率门禁**尚未通过**：三项指标都要求严格大于 90%，另有一项源码映射待处理。这份快照早于可靠指令适配器等后续修复，当前源码尚未重跑覆盖率。详见[结果摘要](docs/coverage-summary.json)和[统计规则与复现步骤](scripts/quality/README.md)。
 
 ## 许可证
 

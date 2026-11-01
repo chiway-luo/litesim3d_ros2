@@ -95,7 +95,7 @@ def generate_launch_description():
     control_description = xacro.process_file(control_xacro).toxml()
     controller_manager = Node(
         package="litesim3d_ros2_control",
-        executable="spawn_when_ready.py",
+        executable="spawn_when_ready",
         arguments=["--executable", "ros2_control_node",
                    "--timeout", LaunchConfiguration("controller_startup_timeout"), "--"],
         # 保留管理器默认名；避免全局 __node remap 把动态加载的控制器也改名。
@@ -118,7 +118,7 @@ def generate_launch_description():
     # 速度/位置直控控制器留给使用者按需加载与切换，避免争用轮关节。
     controller_spawner = Node(
         package="litesim3d_ros2_control",
-        executable="spawn_when_ready.py",
+        executable="spawn_when_ready",
         output="screen",
         arguments=["--timeout", LaunchConfiguration("controller_startup_timeout"), "--",
                    "joint_state_broadcaster", "diff_drive_controller",

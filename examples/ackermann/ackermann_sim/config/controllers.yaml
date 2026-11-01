@@ -9,9 +9,9 @@
     ackermann_controller:
       type: ackermann_steering_controller/AckermannSteeringController
     wheel_velocity_controller:
-      type: forward_command_controller/ForwardCommandController  # 可选轮速直控，默认不加载。
+      type: litesim3d_ros2_control/ReliableForwardCommandController  # 可选轮速直控，默认不加载。
     steering_position_controller:
-      type: forward_command_controller/ForwardCommandController  # 可选转角直控，与轮速直控一起使用。
+      type: litesim3d_ros2_control/ReliableForwardCommandController  # 可选转角直控，与轮速直控一起使用。
 /joint_state_broadcaster:
   ros__parameters:
     use_local_topics: false  # 发布到全局 /joint_states，launch 可 remap。
