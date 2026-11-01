@@ -77,7 +77,7 @@ LiteSim 3D 是面向 ROS 2 模型接入、传感器处理和算法联调的 C++1
 
 版本号见 [VERSION](VERSION)。源码、文档与安装包应使用同一版本。
 
-反馈问题请附 Ubuntu/ROS 版本、仓库版本、启动命令、复现步骤和日志。维护者：[chiwayfpv@gmail.com](mailto:chiwayfpv@gmail.com)。
+反馈问题请附 Ubuntu/ROS 版本、仓库版本、启动命令、复现步骤和日志。
 
 ### 测试覆盖率
 

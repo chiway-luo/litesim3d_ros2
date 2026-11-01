@@ -79,7 +79,7 @@ The project is still at an early stage and is not yet mature. Features, stabilit
 
 The version is recorded in [VERSION](VERSION). Use source, documentation, and installed packages from the same version.
 
-When reporting an issue, include Ubuntu/ROS versions, repository revision, launch command, reproduction steps, and relevant logs. Maintainer: [chiwayfpv@gmail.com](mailto:chiwayfpv@gmail.com).
+When reporting an issue, include Ubuntu/ROS versions, repository revision, launch command, reproduction steps, and relevant logs.
 
 ### Test coverage
 
