@@ -18,9 +18,10 @@
 </p>
 
 <p align="center">
+  <a href="#why-litesim-3d">Why LiteSim 3D</a> ·
   <a href="#features">Features</a> ·
-  <a href="#requirements">Requirements</a> ·
-  <a href="#quick-start">Quick start</a> ·
+  <a href="#compatibility">Compatibility</a> ·
+  <a href="docs/tutorials/快速开始.md">Quick start</a> ·
   <a href="#documentation">Documentation</a> ·
   <a href="#development">Contributing</a>
 </p>
@@ -33,6 +34,10 @@ LiteSim 3D is a C++17 kinematic simulator for ROS 2 model integration, sensor pr
 | --- | --- |
 | ![Office simulation](docs/images/office.png) | ![Drone simulation](docs/images/drone-arena.png) |
 
+## Why LiteSim 3D
+
+We built LiteSim 3D to make early robotics algorithm validation easier and faster. The aim is to reduce setup effort and the simulator's own resource use, leaving more computing resources for the algorithms being tested. We focus on making model integration, sensor processing, and control workflows easy to test repeatedly.
+
 ## Features
 
 - Differential, Ackermann, three/four ordinary omni-wheel chassis, and velocity-controlled multicopters; examples use ros2_control by default.
@@ -44,61 +49,20 @@ LiteSim 3D is a C++17 kinematic simulator for ROS 2 model integration, sensor pr
 The simulator uses kinematics and geometric constraints. It does not model contact forces, suspension, tire dynamics, motor thrust, or flight-controller dynamics.
 
 <a id="development-environment"></a>
-## Requirements
+<a id="requirements"></a>
+## Compatibility
 
-Ubuntu 22.04 LTS, ROS 2 Humble, Bash, C++17, CMake ≥ 3.20, Python ≥ 3.10, and colcon. The viewer and cameras also require Qt 5, Gazebo Rendering 6 / Ogre2, and a working graphics environment.
+**ROS 2 Humble is the only currently supported ROS 2 distribution.** The recommended platform is **Ubuntu 22.04 LTS**.
 
-For a native installation, complete [dependency installation](docs/usage/安装与构建.md#安装依赖). The [container option](docs/usage/容器运行.md) only requires Git and Docker on the host.
-
-## Quick start
-
-Without a local ROS installation, run `docker compose up --build desktop` from the repository root and open [the browser desktop](http://localhost:6080/vnc.html?autoconnect=1&resize=scale). See the [container guide](docs/usage/容器运行.md) for setup and headless use. The steps below use a native installation.
-
-### 1. Clone and build
-
-```bash
-source /opt/ros/humble/setup.bash
-git clone --branch humble https://github.com/chiway-luo/litesim3d_ros2.git
-cd litesim3d_ros2
-rosdep install --from-paths . --ignore-src --rosdistro humble -y
-bash scripts/build.sh
-source "$(python3 scripts/paths.py install)/setup.bash"
-```
-
-Continue after all packages finish without failures. Run the remaining commands from this repository directory.
-
-### 2. Start the robot
-
-Terminal A:
-
-```bash
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
-ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false rviz:=false cameras:=false lidar_profile:=vlp16 lidar_interface:=native
-```
-
-Keep terminal A running. This starts the office scene with VLP-16 and native PointCloud2, without windows or cameras. Run one simulation world per ROS domain.
-
-### 3. Send velocity commands and check feedback
-
-In terminal B, enter the same repository directory:
-
-```bash
-source /opt/ros/humble/setup.bash
-source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
-python3 docs/examples/ros_client.py --drive --linear 0.1 --angular 0.0 --duration 8 --require-imu --require-motion
-```
-
-JSON values `success: true` and `checks.motion: true` mean the client received data and observed at least 1 cm of odometry displacement. It sends zero velocity before exiting. Press Ctrl+C in terminal A to stop the simulation.
-
-To open the viewer, restart step 2 with `gui:=true`; add `rviz:=true` for RViz. See the [first-run tutorial](docs/tutorials/启动与控制.md) for individual checks.
+See [installation and build](docs/usage/安装与构建.md) for dependencies and build options. The [Docker guide](docs/usage/容器运行.md) covers hosts without a local ROS installation.
 
 ## Documentation
 
-Detailed guides are in Chinese. The [Chinese README](README.zh-CN.md) follows the same quick-start path.
+The quick start and detailed guides are in Chinese. A [Chinese README](README.zh-CN.md) is also available.
 
 | Task | Guide |
 | --- | --- |
+| Clone, build, and run your first simulation | [Quick start](docs/tutorials/快速开始.md) |
 | Try the simulator in a browser without installing ROS | [Container guide](docs/usage/容器运行.md) |
 | Install dependencies and choose a build method | [Installation and build](docs/usage/安装与构建.md) |
 | Set up a robot from a description package | [Dual MID-360 tutorial](docs/tutorials/双MID360从零搭建.md) |
@@ -111,9 +75,11 @@ See the [documentation index](docs/README.md) for all pages.
 
 ## Development
 
+The project is still at an early stage and is not yet mature. Features, stability, and documentation need further work. We welcome developers to try LiteSim 3D, contribute code, tests, or documentation, and report problems or suggestions through [Issues](https://github.com/chiway-luo/litesim3d_ros2/issues). [Pull requests](https://github.com/chiway-luo/litesim3d_ros2/pulls) are welcome. We will investigate and work to resolve reported issues as promptly as possible.
+
 The version is recorded in [VERSION](VERSION). Use source, documentation, and installed packages from the same version.
 
-When reporting an issue, include Ubuntu/ROS versions, repository revision, launch command, reproduction steps, and relevant logs. Maintainer: [chiwayfpv@gmail.com](mailto:chiwayfpv@gmail.com).
+When reporting an issue, include Ubuntu/ROS versions, repository revision, launch command, reproduction steps, and relevant logs.
 
 ### Test coverage
 

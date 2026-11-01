@@ -1,6 +1,6 @@
 # LiteSim 3D 文档
 
-使用环境：Ubuntu 22.04 + ROS 2 Humble。第一次运行按[安装与构建](usage/安装与构建.md) → [启动并控制小车](tutorials/启动与控制.md)操作。
+目前仅适配 ROS 2 Humble，推荐 Ubuntu 22.04。第一次运行从[快速开始](tutorials/快速开始.md)入手，详细构建选项见[安装与构建](usage/安装与构建.md)。
 
 没有 ROS 环境时，直接按[容器运行](usage/容器运行.md)在浏览器中启动。
 

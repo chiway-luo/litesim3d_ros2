@@ -18,7 +18,7 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py real_time_factor:=0.5 collis
 
 每次只运行其中一个世界。**左键拖动旋转视角，Shift + 左键拖动平移视角，滚轮缩放**。按住左键拖动时，按下 Shift 切换为平移，松开 Shift 恢复旋转；缩放无需按住 Shift。窗口没有选取、拖动模型、控制机器人、暂停、重置等操作。底栏为只读信息。
 
-关闭窗口后仿真继续。使用同一 ROS 环境和 `ROS_DOMAIN_ID` 可重新打开：
+关闭窗口后仿真继续。加载同一 ROS 环境后可重新打开：
 
 ```bash
 ros2 run litesim3d_gui viewer

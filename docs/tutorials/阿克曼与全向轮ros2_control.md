@@ -21,7 +21,6 @@ cd litesim3d_ros2
 rosdep install --from-paths . --ignore-src --rosdistro humble -y
 bash scripts/build.sh
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 launch ackermann_sim ackermann.launch.py gui:=false
 ```
 
@@ -32,7 +31,6 @@ ros2 launch ackermann_sim ackermann.launch.py gui:=false
 ```bash
 source /opt/ros/humble/setup.bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ros2 control list_controllers
 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.4}, angular: {z: 0.2}}'
 ```

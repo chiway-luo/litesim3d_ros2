@@ -9,7 +9,6 @@
 ```bash
 source /opt/ros/humble/setup.bash
 source "$(python3 scripts/paths.py install)/setup.bash"
-export ROS_DOMAIN_ID=70 ROS_LOCALHOST_ONLY=1
 ```
 
 标准 colcon 用户改为加载自己的 `install/setup.bash`。同一 domain 每次只运行一个案例；Ctrl+C 结束旧 launch 后再切换模型。
