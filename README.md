@@ -7,6 +7,13 @@
 <p align="center">Lightweight 3D robotics simulation for ROS 2 on Linux</p>
 
 <p align="center">
+  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20lines-88.21%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit line coverage: 88.21%"></a>
+  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20branches-82.58%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit branch coverage: 82.58%"></a>
+  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20functions-85.15%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit function coverage: 85.15%"></a>
+</p>
+<p align="center"><sub>Last measured snapshot: 2026-11-01 · <a href="#test-coverage">Scope and status</a></sub></p>
+
+<p align="center">
   <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -107,6 +114,18 @@ See the [documentation index](docs/README.md) for all pages.
 The version is recorded in [VERSION](VERSION). Use source, documentation, and installed packages from the same version.
 
 When reporting an issue, include Ubuntu/ROS versions, repository revision, launch command, reproduction steps, and relevant logs. Maintainer: [chiwayfpv@gmail.com](mailto:chiwayfpv@gmail.com).
+
+### Test coverage
+
+The badges show the last **unit-only** measurement on `codex/cpp-runtime`, recorded on 2026-11-01 with Ubuntu 22.04 / ROS 2 Humble, x86_64. Integration-test hits are excluded.
+
+| Metric | Covered / total | Coverage |
+| --- | --- | --- |
+| Lines | 8,789 / 9,964 | 88.21% |
+| Branches | 5,295 / 6,412 | 82.58% |
+| Functions | 734 / 862 | 85.15% |
+
+The coverage gate **has not passed**: each metric must be strictly greater than 90%, and one source mapping remains unresolved. This snapshot predates the latest fixes, including the reliable-command adapter; current-source coverage has not been rerun. See the [recorded summary](docs/coverage-summary.json) and [coverage rules and reproduction steps](scripts/quality/README.md).
 
 ## License
 

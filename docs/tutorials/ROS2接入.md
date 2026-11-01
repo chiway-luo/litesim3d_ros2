@@ -1,6 +1,6 @@
 # 编写 ROS 2 消费节点
 
-目标：理解并运行一个完整 Python 节点，订阅仿真数据，在显式允许时发布速度，并把缺失输入判定为失败。代码是 [ros_client.py](../examples/ros_client.py)，不需要额外 Python 包或下载算法。
+目标：理解并运行一个 C++ 节点，订阅仿真数据，在显式允许时发布速度，并把缺失输入判定为失败。实现见 [ros_client.cpp](../../litesim3d_ros2/src/ros_client.cpp)；[ros_client.py](../examples/ros_client.py) 保留原命令，执行后直接替换为已安装的 C++ 程序。
 
 ## 前置条件
 
@@ -10,10 +10,10 @@
 
 | 代码位置 | 作用 | 接入自己算法时保留的约定 |
 | --- | --- | --- |
-| 创建 `Node` | 设置 `use_sim_time=True` | 传感器处理使用消息时间和仿真时钟 |
-| `on_clock/on_cloud/on_imu/on_odom` | 保存消息计数、frame、布局和位姿 | 点云/IMU 使用 `qos_profile_sensor_data`，不把接收时刻当采样时刻 |
+| 创建 `Node` | 设置 `use_sim_time=true` | 传感器处理使用消息时间和仿真时钟 |
+| 四个订阅回调 | 保存消息计数、frame、布局和位姿 | 点云/IMU 使用 `rclcpp::SensorDataQoS`，不把接收时刻当采样时刻 |
 | `publish` 和主循环 | 显式 `--drive` 才发布；等待时钟、数据和订阅者 | 默认 Twist；Stamped 模式需要服务端类型一致 |
-| `finally` 和 `checks` | 退出发零速度，检查通信/必需 IMU/运动 | 返回码表达结果；失败时保留 JSON，而非仅打印“已连接” |
+| 主循环后的停止命令和 `checks` | 正常结束时发零速度，检查通信/必需 IMU/运动 | 返回码表达结果；失败时保留 JSON，而非仅打印“已连接” |
 
 完整字段、时间单位和 TF 发布责任见 [ROS 2 接口](../api/ROS2接口.md)与[传感器数据](../api/传感器数据.md)。
 
@@ -48,9 +48,9 @@ python3 docs/examples/ros_client.py --duration 3 --imu-topic imu/not_present --r
 
 ## 5. 改成自己的节点
 
-复制该脚本到自己的 ROS 包，先保持只读。在消息回调中接入处理逻辑，将处理结果发布到自己定义的话题；等时钟、frame、QoS 和时间单位都验证后，再显式接上控制输出。
+在自己的 ROS 包中参考 C++ 实现创建节点，先保持只读，并声明 `rclcpp` 及所用消息包的依赖。在消息回调中接入处理逻辑，将处理结果发布到自己定义的话题；等时钟、frame、QoS 和时间单位都验证后，再显式接上控制输出。Python 文件仅负责命令兼容，不包含消息处理代码。
 
-新增 IMU 教程的消费方式为 `--imu-topic imu/tutorial --require-imu --expect-imu-frame tutorial_imu_link`。其他话题可用 ROS remap，例如在命令末尾加 `--ros-args -r points_raw:=/my_points`。程序通过 `rclpy` 接收这些 ROS 参数。
+新增 IMU 教程的消费方式为 `--imu-topic imu/tutorial --require-imu --expect-imu-frame tutorial_imu_link`。其他话题可用 ROS remap，例如在命令末尾加 `--ros-args -r points_raw:=/my_points`。程序通过 `rclcpp` 接收这些 ROS 参数。
 
 | 常见现象 | 原因与处理 |
 | --- | --- |

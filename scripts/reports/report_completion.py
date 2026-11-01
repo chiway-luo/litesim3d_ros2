@@ -20,9 +20,15 @@ from reports.report_m3 import source_hash
 
 ROOT = REPO_ROOT
 OUT = EVIDENCE_DIR / 'completion-audit'
-BRIDGE = ['src/sim_node.cpp', 'src/sim_world_node.cpp', 'src/point_adapter.cpp',
-          'src/point_adapter.hpp', 'src/sim_ouster_adapter.cpp', 'src/sim_cloud_probe.cpp',
-          'launch/demo.launch.py', 'launch/world.launch.py', 'scripts/sim_session']
+# Keep the order identical to bridge_sources in litesim3d_ros2/CMakeLists.txt.
+BRIDGE = ['src/joint_control.hpp', 'src/robot_view.hpp', 'src/simulator_backend.hpp',
+          'src/world_backend.hpp', 'src/cloud_tool_boundary.hpp', 'src/lidar_outputs.cpp',
+          'src/lidar_outputs.hpp', 'include/litesim3d_ros2/lidar_output_plugin.hpp',
+          'src/sim_node.cpp', 'src/sim_world_node.cpp', 'src/point_adapter.cpp',
+          'src/point_adapter.hpp', 'src/service_responses.hpp', 'src/sim_ouster_adapter.cpp',
+          'src/sim_cloud_probe.cpp', 'launch/demo.launch.py', 'launch/world.launch.py',
+          'src/sim_session.cpp', 'src/session_protocol.cpp', 'src/session_protocol.hpp',
+          'src/ros_client.cpp']
 
 
 def digest(path):

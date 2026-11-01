@@ -1,0 +1,47 @@
+{
+  "branch": "codex/cpp-runtime",
+  "measurement_date": "2026-11-01",
+  "run_id": "20261101T150124Z-28961",
+  "base_revision": "1ec677d89a3b82d03733afeaa774a657f82313f1",
+  "source_snapshot_sha256": "15d04c59236b7b857a5a0a995424f3ff7ed2730cbfb701ec7f1022b05473ee8f",
+  "scope": "unit-only",
+  "status": "UNIT_ONLY_FAIL",
+  "current_source_measured": false,
+  "note": "Historical snapshot before the subsequent fixes, including ReliableForwardCommandController. Rerun coverage before treating these values as current-source results.",
+  "environment": {
+    "platform": "Linux-6.8.0-110-generic-x86_64-with-glibc2.35",
+    "architecture": "x86_64",
+    "ros_distro": "humble",
+    "rmw": "rmw_fastrtps_cpp"
+  },
+  "total": {
+    "lines": {
+      "covered": 8789,
+      "count": 9964,
+      "percent": 88.20754716981132
+    },
+    "branches": {
+      "covered": 5295,
+      "count": 6412,
+      "percent": 82.57953836556456
+    },
+    "functions": {
+      "covered": 734,
+      "count": 862,
+      "percent": 85.1508120649652
+    }
+  },
+  "thresholds": {
+    "comparison": ">",
+    "lines": 90,
+    "branches": 90,
+    "functions": 90
+  },
+  "failures": [
+    "Missing source coverage: litesim3d_ros2/src/session_protocol.hpp",
+    "Total lines: 88.21% <= 90%",
+    "Total branches: 82.58% <= 90%",
+    "Total functions: 85.15% <= 90%"
+  ],
+  "reproduction": "scripts/quality/README.md"
+}

@@ -3,7 +3,7 @@
 `litesim3d_ros2_control/LiteSimSystem` 是 Humble 的 `hardware_interface::SystemInterface` 插件。
 使用者的 bringup 启动 controller_manager、控制器、joint_state_broadcaster 和 RSP；公共仿真 launch 不启动这些节点。
 
-带相机或其他慢启动依赖的例子可使用 `spawn_when_ready.py --timeout 60 -- <原 spawner 参数>`。
+带相机或其他慢启动依赖的例子可使用 `spawn_when_ready --timeout 60 -- <原 spawner 参数>`。
 它等待 `/sim/status` 就绪和 `/clock` 实际推进，再执行原生 controller_manager spawner，保留其退出码。
 使用 `--executable ros2_control_node` 时以同样顺序启动管理器，`--` 后的 ROS 参数和 remap 原样传递；
 这样硬件接口不会在相机尚未就绪时提前激活、随后把初始化期间的反馈空窗误判为失联。
@@ -91,6 +91,12 @@ Humble 的控制器加载会等待管理器更新线程；相机初始化时停�
 每个 GPIO 接口可独立由控制器申领，未申领的速度轴为零。只有 multicopter 可申领机体指令；轮式模型可以只读机体状态，控制车轮仍走关节接口。错误名称、重复接口、第二个机体资源、unsupported command 会在初始化或能力握手时报错。速度限制、加减速、三维碰撞、仿真超时和硬件反馈失联处理都继续生效。此模型保持水平，零速度悬停；不模拟推力、姿态飞控、桨叶转动和自由落体。
 
 `BodyVelocityController` 申领四个速度接口，订阅 `~/cmd_vel`（Twist，可 remap）。参数 body_name 默认 body，command_timeout 默认 0.5 仿真秒，max_linear_velocity 默认 2.0 m/s（XYZ 向量模长），max_angular_velocity 默认 1.2 rad/s。非有限输入或非零 angular.x/y 会替换为停车目标；停用和再次激活清空旧指令。无需可动关节的无人机不启动 joint_state_broadcaster；RSP 仍独立发布固定安装 TF。
+
+## 关节直控
+
+`litesim3d_ros2_control/ReliableForwardCommandController` 复用标准 ForwardCommandController 的参数、接口申领、更新和生命周期逻辑，订阅 `~/commands`（Float64MultiArray）。`joints` 指定数组顺序，`interface_name` 选择 position 或 velocity。
+
+案例中的可选轮速、转角和轮位置控制器使用此插件。指令 QoS 为 `RELIABLE / VOLATILE / KEEP_LAST(1)`，发布端须使用 RELIABLE；`ros2 topic pub` 的默认配置兼容。显式可靠订阅避免 Humble 的 SystemDefaultsQoS 选择 BEST_EFFORT 后丢失一次性目标。控制器仍保持最近指令，没有算法输入超时；停用和激活沿用上游的缓存清空规则。
 
 ## 传感器、里程计与第三方算法
 

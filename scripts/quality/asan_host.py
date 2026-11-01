@@ -1,8 +1,10 @@
 """Apply process-local ASan runtime and LSan policy to ROS control hosts."""
 import argparse
 import json
+import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 
 
@@ -15,6 +17,26 @@ def runtime_library(compiler):
     return path.resolve()
 
 
+def preload_command(executable):
+    """Keep an x86-64 PIE host outside Clang ASan's fixed allocator range."""
+    command = [str(executable)]
+    if platform.system() != "Linux" or platform.machine().lower() not in {"x86_64", "amd64"}:
+        return command
+    headers = subprocess.check_output(
+        ["readelf", "--file-header", "--program-headers", "--wide", str(executable)],
+        text=True, env={**os.environ, "LC_ALL": "C"})
+    if not re.search(r"Type:\s+DYN\b", headers):
+        return command
+    match = re.search(r"\[Requesting program interpreter: ([^\]]+)\]", headers)
+    if not match or not Path(match[1]).is_absolute() or not Path(match[1]).is_file():
+        raise RuntimeError(f"Missing ELF interpreter for ASan host: {executable}")
+    # With mmap_rnd_bits=32, a kernel-loaded PIE can land in ASan 14's
+    # 0x600000000000..0x640000000000 allocator reservation and be overwritten
+    # before main. Invoking its own ELF loader maps the PIE as a shared object.
+    # This retains ASLR, the original binary, and all sanitizer checks.
+    return [match[1], *command]
+
+
 def write_wrapper(path, executable, runtime=None, suppression=None):
     # Python and ROS launch stay uninstrumented. Only exec of the native host
     # receives LD_PRELOAD; all project executables keep their linked runtime.
@@ -22,11 +44,12 @@ def write_wrapper(path, executable, runtime=None, suppression=None):
               if suppression else "")
     preload = (f"env['LD_PRELOAD'] = {str(runtime)!r} + (':' + env['LD_PRELOAD'] if env.get('LD_PRELOAD') else '')\n"
                if runtime else "")
+    command = preload_command(executable) if runtime else [str(executable)]
     path.write_text("#!/usr/bin/env python3\nimport os, sys\n"
-                    f"host = {str(executable)!r}\n"
+                    f"command = {command!r}\n"
                     "env = dict(os.environ)\n"
                     + preload + policy +
-                    "os.execve(host, [host, *sys.argv[1:]], env)\n")
+                    "os.execve(command[0], [*command, *sys.argv[1:]], env)\n")
     path.chmod(0o755)
 
 

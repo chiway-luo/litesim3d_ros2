@@ -1,0 +1,5 @@
+<library path="litesim3d_forward_controller">
+  <class name="litesim3d_ros2_control/ReliableForwardCommandController" type="litesim3d_ros2_control::ReliableForwardCommandController" base_class_type="controller_interface::ControllerInterface">
+    <description>Standard forward command controller with reliable, volatile, keep-last-one joint commands.</description>
+  </class>
+</library>

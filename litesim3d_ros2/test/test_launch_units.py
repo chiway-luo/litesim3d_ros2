@@ -152,14 +152,14 @@ def test_example_graph_preserves_controller_model_and_readiness_ownership(monkey
     managers = [(a, kw) for a, kw in nodes if '--executable' in kw.get('arguments', [])]
     assert len(managers) == 1
     manager = managers[0][1]
-    assert manager['package'] == 'litesim3d_ros2_control' and manager['executable'] == 'spawn_when_ready.py'
+    assert manager['package'] == 'litesim3d_ros2_control' and manager['executable'] == 'spawn_when_ready'
     assert manager['arguments'][:2] == ['--executable', 'ros2_control_node']
     assert 'name' not in manager
     assert any(source == '/' + controller + ('/reference_unstamped' if controller == 'ackermann_controller'
                                            else '/cmd_vel_unstamped' if controller == 'diff_drive_controller'
                                            else '/cmd_vel') and target == '/cmd_vel'
                for source, target in manager['remappings'])
-    spawners = [(a, kw) for a, kw in nodes if kw['executable'] == 'spawn_when_ready.py' and '--executable' not in kw['arguments']]
+    spawners = [(a, kw) for a, kw in nodes if kw['executable'] == 'spawn_when_ready' and '--executable' not in kw['arguments']]
     assert len(spawners) == 1 and controller in spawners[0][1]['arguments']
     assert ('joint_state_broadcaster' in spawners[0][1]['arguments']) is (controller != 'body_velocity_controller')
     assert len(captured.includes) == 1
@@ -208,12 +208,20 @@ def test_legacy_rsp_uses_prepared_model_and_simulator_frame_prefix(monkeypatch, 
         '/litesim3d': {'ros__parameters': {'frame_prefix': prefix}}}))
     description = module.generate_launch_description()
     context = declare(description, params=str(params), prepared_config=str(config))
+    # Model behavior is covered by native preparation tests. This unit checks
+    # only the launch graph and passes explicit model results across its boundary.
+    resolve = Mock(return_value=model)
+    description_value = Mock(return_value='<robot name="unit"/>')
+    monkeypatch.setattr(module, 'resolve', resolve)
+    monkeypatch.setattr(module, 'ros_robot_description', description_value)
     actions = module.setup_rsp(context)
     assert len(actions) == 2 and len(captured.nodes) == 1
     settings = captured.nodes[0][1]['parameters'][0]
     assert settings['use_sim_time'] is True and settings['publish_frequency'] == 25.
     assert settings['frame_prefix'] == prefix
-    assert settings['robot_description'].evaluate(context) == '<robot name="unit" />'
+    assert settings['robot_description'].evaluate(context) == '<robot name="unit"/>'
+    resolve.assert_called_once_with(model.name, str(tmp_path))
+    description_value.assert_called_once_with(model)
     assert [source for source, _ in captured.nodes[0][1]['remappings']] == ['joint_states', '/tf', '/tf_static', 'robot_description']
     assert_exit_contract(module)
 

@@ -54,7 +54,7 @@ ros2 launch wheel_car_4w_sim wheel_car_4w.launch.py gui:=false
 ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.3}, angular: {z: 0.2}}'
 ```
 
-选择 Mid360 时加 `lidar_profile:=mid360`。传感器配置与控制器独立，换雷达不需要改变底盘接口。需要算法直接发轮速时，可加载参数文件中已有的 wheel_velocity_controller，并通过 controller_manager 在一次 switch 中停用 diff_drive_controller、启用 wheel_velocity_controller；指令顺序是左后轮、右后轮，单位 rad/s。ForwardCommandController 不具备上游指令超时，长期使用时应由自己的控制器实现输入超时。
+选择 Mid360 时加 `lidar_profile:=mid360`。传感器配置与控制器独立，换雷达不需要改变底盘接口。需要算法直接发轮速时，可加载参数文件中已有的 wheel_velocity_controller，并通过 controller_manager 在一次 switch 中停用 diff_drive_controller、启用 wheel_velocity_controller；指令顺序是左后轮、右后轮，单位 rad/s，发布端使用 RELIABLE QoS。ReliableForwardCommandController 不具备上游指令超时，长期使用时应由自己的控制器实现输入超时。
 
 ## 3. 无人机：机体 GPIO 与传感器组合
 

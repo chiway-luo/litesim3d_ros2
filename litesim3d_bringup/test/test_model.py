@@ -85,7 +85,10 @@ def test_ros_mesh_urls_preserve_spaces_unicode_and_kinematics(tmp_path):
     ros = ET.fromstring(ros_robot_description(urdf))
     assert all(node.get("filename") == mesh.as_uri() for node in ros.findall(".//mesh"))
     assert ros.find(".//texture").get("filename") == texture.as_uri()
-    assert ET.tostring(ros.find("joint")) == ET.tostring(root.find("joint"))
+    # XML printers may change indentation; all joint attributes and structure
+    # must remain identical, including origin, parent and child bindings.
+    assert ET.canonicalize(ET.tostring(ros.find("joint")), strip_text=True) == \
+        ET.canonicalize(ET.tostring(root.find("joint")), strip_text=True)
     assert urdf.read_bytes() == before
 
 

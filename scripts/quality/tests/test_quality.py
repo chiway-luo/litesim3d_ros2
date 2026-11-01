@@ -548,14 +548,14 @@ class QualityTests(unittest.TestCase):
         Profile.native(profile)
         Profile.python_units(profile)
         isolated = {args[0]: (args, kwargs) for args, kwargs in stages}
-        for name in ("core_cli_unit_tests", "livox_outputs_unit", "test_sdf_import_units",
+        for name in ("runtime_unit", "native_model_unit", "session_protocol_unit", "core_cli_unit_tests", "livox_outputs_unit", "test_sdf_import_units",
                      "ros_event_loop_test", "render_helpers_test", "camera_view_unit",
                      "point_adapter_unit", "service_responses_unit", "joint_control_unit",
                      "lidar_outputs_unit", "cloud_tools_unit", "world_node_unit", "sim_node_unit",
                      "control-unit"):
             self.assertTrue(isolated[name][1]["unit"])
         control = isolated["control-unit"][0][1]
-        self.assertIn("^(body_configuration|omni_configuration|control_loop_sleep|controller_units|system_units|spawner_unit)$", control)
+        self.assertIn("^(body_configuration|omni_configuration|control_loop_sleep|controller_units|system_units|spawner_unit|readiness_unit)$", control)
         self.assertFalse(any("test_integration.py" in str(arg) or "test_shutdown.py" in str(arg)
                              or "test_controller_parameters.py" in str(arg)
                              for _, (args, _) in isolated.items() for arg in args))
