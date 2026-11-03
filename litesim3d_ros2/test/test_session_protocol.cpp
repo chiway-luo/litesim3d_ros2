@@ -91,3 +91,16 @@ TEST(SessionProtocol, ResetValidatesRequestsAndNeverEvictsCommittedResults) {
   request.request_id = "0"; state.stopping = true; state.reset(request, response, actions); EXPECT_TRUE(response.success); EXPECT_EQ(restart, 4096);
   request.request_id = "new"; state.reset(request, response, actions); EXPECT_EQ(response.message, "session not ready");
 }
+
+TEST(SessionProtocol, DefaultInitializationRetainsOwnershipAndSafeResetState) {
+  litesim3d::session::Members members;
+  EXPECT_TRUE(members.definitions.is_null());
+  EXPECT_EQ(members.owned_names,(std::set<std::string>{"sim_session","litesim3d","robot_state_publisher"}));
+  EXPECT_TRUE(members.topics.empty());
+  litesim3d::session::ResetActions actions;
+  EXPECT_FALSE(actions.check_participants);EXPECT_FALSE(actions.remember_topics);
+  EXPECT_FALSE(actions.validate_pose);EXPECT_FALSE(actions.restart);EXPECT_FALSE(actions.record);
+  litesim3d::session::ResetCoordinator coordinator;
+  EXPECT_TRUE(coordinator.run_id.empty());EXPECT_TRUE(coordinator.transitioning);
+  EXPECT_FALSE(coordinator.failed);EXPECT_FALSE(coordinator.stopping);
+}

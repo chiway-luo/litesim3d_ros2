@@ -276,8 +276,12 @@ class Profile:
 
     def native(self):
         for package, binary in (("litesim3d_runtime", "runtime_unit"),
+                                ("litesim3d_runtime", "runtime_process_unit"),
                                 ("litesim3d_bringup", "native_model_unit"),
+                                ("litesim3d_bringup", "native_cli_unit"),
                                 ("litesim3d_ros2", "session_protocol_unit"),
+                                ("litesim3d_ros2", "ros_client_unit"),
+                                ("litesim3d_ros2", "sim_session_unit"),
                                 ("litesim3d_core", "sim_core_tests"),
                                 ("litesim3d_core", "core_cli_unit_tests"),
                                 ("litesim3d_plugin_tests", "plugin_contract_tests"),
@@ -287,6 +291,9 @@ class Profile:
                                 ("litesim3d_assets", "test_sdf_import_units"),
                                 ("litesim3d_gui", "ros_event_loop_test"),
                                 ("litesim3d_gui", "render_helpers_test"),
+                                ("litesim3d_gui", "render_orchestration_unit"),
+                                ("litesim3d_gui", "viewer_unit"),
+                                ("litesim3d_ros2_control", "spawn_when_ready_unit"),
                                 ("litesim3d_gui", "camera_view_unit"),
                                 ("litesim3d_ros2", "point_adapter_unit"),
                                 ("litesim3d_ros2", "service_responses_unit"),

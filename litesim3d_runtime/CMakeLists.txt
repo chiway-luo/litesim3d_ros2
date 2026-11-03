@@ -18,6 +18,10 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(runtime_unit test/test_runtime.cpp)
   target_link_libraries(runtime_unit ${PROJECT_NAME})
+  # The actual process implementation is compiled with translation-unit-local
+  # deterministic POSIX boundaries; the subprocess suite remains integration-only.
+  ament_add_gtest(runtime_process_unit test/test_process_unit.cpp)
+  target_link_libraries(runtime_process_unit ${PROJECT_NAME})
   ament_add_gtest(runtime_process_integration test/test_process.cpp)
   target_link_libraries(runtime_process_integration ${PROJECT_NAME})
 endif()

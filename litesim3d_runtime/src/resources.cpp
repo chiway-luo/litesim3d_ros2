@@ -17,6 +17,7 @@ void require(bool condition, const std::string &message) {
 std::string read(const fs::path &path) {
   std::ifstream stream(path, std::ios::binary);
   require(bool(stream), "cannot read: " + path.string());
+  require(!fs::is_directory(path), "cannot read: " + path.string());
   std::ostringstream out; out << stream.rdbuf();
   require(!stream.bad(), "read failed: " + path.string());
   return out.str();
@@ -84,10 +85,14 @@ fs::path resolve(const std::string &uri, const fs::path &base) {
   if (uri.rfind("package://", 0) == 0) {
     const auto split = uri.find('/', 10);
     require(split != std::string::npos && split > 10, "invalid package resource: " + uri);
+    const auto package = uri.substr(10, split - 10);
+    // Match catkin_pkg's compatible package names, including legacy uppercase/hyphens.
+    static const std::regex package_name("[a-zA-Z0-9][a-zA-Z0-9_-]*");
+    require(std::regex_match(package, package_name), "invalid package resource: " + uri);
     const fs::path relative(decode_uri(uri.substr(split + 1)));
     require(!relative.empty() && !relative.is_absolute(), "invalid package resource: " + uri);
     for (const auto &part : relative) require(part != "..", "invalid package resource: " + uri);
-    path = package_share(uri.substr(10, split - 10)) / relative;
+    path = package_share(package) / relative;
   } else {
     const auto value = uri.rfind("file://", 0) == 0 ? decode_uri(uri.substr(7)) : uri;
     path = !value.empty() && value.front() == '~' ? canonical_path(value) : base / value;
