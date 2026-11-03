@@ -7,11 +7,11 @@
 <p align="center">Lightweight 3D robotics simulation for ROS 2 on Linux</p>
 
 <p align="center">
-  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20lines-88.21%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit line coverage: 88.21%"></a>
-  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20branches-82.58%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit branch coverage: 82.58%"></a>
-  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20functions-85.15%25-orange?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit function coverage: 85.15%"></a>
+  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20lines-97.45%25-brightgreen?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit line coverage: 97.45%"></a>
+  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20branches-95.56%25-brightgreen?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit branch coverage: 95.56%"></a>
+  <a href="#test-coverage"><img src="https://img.shields.io/badge/unit%20functions-96.53%25-brightgreen?style=flat-square&amp;logo=github&amp;logoColor=white" alt="Last measured unit function coverage: 96.53%"></a>
 </p>
-<p align="center"><sub>Last measured snapshot: 2026-11-01 · <a href="#test-coverage">Scope and status</a></sub></p>
+<p align="center"><sub>Last measured snapshot: 2026-11-02 · <a href="#test-coverage">Scope and status</a></sub></p>
 
 <p align="center">
   <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
@@ -83,15 +83,19 @@ When reporting an issue, include Ubuntu/ROS versions, repository revision, launc
 
 ### Test coverage
 
-The badges show the last **unit-only** measurement on `codex/cpp-runtime`, recorded on 2026-11-01 with Ubuntu 22.04 / ROS 2 Humble, x86_64. Integration-test hits are excluded.
+The badges show the reviewed **unit-only** measurement from 2026-11-02 on Ubuntu 22.04 / ROS 2 Humble, x86_64. Run `20261102T155839Z-89961` measured source snapshot `21201f0f18e084d00ed428ee5bf46e1bfe30f7642e79417e58d095dc77172afc`, published in commit [`7f683956`](https://github.com/chiway-luo/litesim3d_ros2/commit/7f6839567f5fab84958337343fe718081e862a64). Integration-test hits are excluded.
 
 | Metric | Covered / total | Coverage |
 | --- | --- | --- |
-| Lines | 8,789 / 9,964 | 88.21% |
-| Branches | 5,295 / 6,412 | 82.58% |
-| Functions | 734 / 862 | 85.15% |
+| Lines | 9,723 / 9,977 | 97.45% |
+| Branches | 6,129 / 6,414 | 95.56% |
+| Functions | 834 / 864 | 96.53% |
 
-The coverage gate **has not passed**: each metric must be strictly greater than 90%, and one source mapping remains unresolved. This snapshot predates the latest fixes, including the reliable-command adapter; current-source coverage has not been rerun. See the [recorded summary](docs/coverage-summary.json) and [coverage rules and reproduction steps](scripts/quality/README.md).
+The unit-only result is **UNIT_ONLY_PASS**: lines and functions are strictly greater than 90%, and branches are strictly greater than 95%. All aggregate and existing critical-core gates passed. The complete 102-source production inventory was retained, with no coverage denominator reductions.
+
+**889 business unit tests and 146 tooling tests passed** across 33 runner stages, with no failures, errors, skipped or not-run cases in the selected unit suite. Integration, graphical integration, sanitizer controls, release packaging and the full quality matrix were not run in this measurement. The separate full CI run for `7f683956` reported release-packaging and TSAN failures. These badges do not certify a passing full CI run; check [GitHub Actions](https://github.com/chiway-luo/litesim3d_ros2/actions) for current status.
+
+See the [recorded summary](docs/coverage-summary.json) and [coverage rules and reproduction steps](scripts/quality/README.md).
 
 ## License
 
