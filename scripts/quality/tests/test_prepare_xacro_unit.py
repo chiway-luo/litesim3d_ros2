@@ -47,3 +47,63 @@ def test_cli_executes_native_without_reparsing_arguments(monkeypatch):
     runpy.run_path(str(SOURCE), run_name='__main__')
     executable = '/prefix/lib/litesim3d_bringup/prepare_xacro'
     execute.assert_called_once_with(executable, [executable, 'source', 'output', 'x:=true'])
+
+
+def test_executable_uses_real_ament_package_index(module, monkeypatch, tmp_path):
+    prefix = tmp_path / 'native prefix 中文'
+    marker = prefix / 'share/ament_index/resource_index/packages/litesim3d_bringup'
+    marker.parent.mkdir(parents=True)
+    marker.write_text('')
+    monkeypatch.setenv('AMENT_PREFIX_PATH', str(prefix))
+    assert module._executable() == str(prefix / 'lib/litesim3d_bringup/prepare_xacro')
+
+
+@pytest.mark.parametrize('failure', [OSError('missing native executable'),
+                                      subprocess.TimeoutExpired('prepare_xacro', 90)])
+def test_native_transport_errors_propagate_without_retry_or_fallback(module, monkeypatch, failure):
+    monkeypatch.setattr(module, '_executable', lambda: '/native/prepare_xacro')
+    run = Mock(side_effect=failure)
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    with pytest.raises(type(failure)) as caught:
+        module.expand('source', 'output')
+    assert caught.value is failure
+    assert run.call_count == 1
+
+
+def test_corrupt_native_provenance_is_not_silently_replaced(module, monkeypatch):
+    monkeypatch.setattr(module, '_executable', lambda: '/native/prepare_xacro')
+    run = Mock(return_value=SimpleNamespace(stdout='{truncated'))
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    with pytest.raises(json.JSONDecodeError):
+        module.expand('source', 'output')
+    assert run.call_count == 1
+
+
+def test_empty_explicit_resource_base_is_not_confused_with_absent_option(module, monkeypatch):
+    monkeypatch.setattr(module, '_executable', lambda: '/native/prepare_xacro')
+    run = Mock(return_value=SimpleNamespace(stdout='{}'))
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    mappings = ['literal:=$(not-a-shell-command)', 'name:=space value']
+    original = list(mappings)
+    assert module.expand('source', 'output', mappings, resource_base='') == {}
+    assert mappings == original
+    run.assert_called_once_with(
+        ['/native/prepare_xacro', 'source', 'output', *original, '--resource-base', ''],
+        text=True, capture_output=True, check=True, timeout=90)
+
+
+def test_legacy_cli_propagates_exec_failure_without_replacing_argv(monkeypatch):
+    import ament_index_python.packages
+    import os
+    monkeypatch.setattr(ament_index_python.packages, 'get_package_prefix', lambda _: '/prefix')
+    argv = [str(SOURCE), '--', 'name:=中文 space']
+    monkeypatch.setattr(sys, 'argv', argv)
+    failure = OSError('exec unavailable')
+    execute = Mock(side_effect=failure)
+    monkeypatch.setattr(os, 'execv', execute)
+    with pytest.raises(OSError) as caught:
+        runpy.run_path(str(SOURCE), run_name='__main__')
+    assert caught.value is failure
+    assert argv == [str(SOURCE), '--', 'name:=中文 space']
+    executable = '/prefix/lib/litesim3d_bringup/prepare_xacro'
+    execute.assert_called_once_with(executable, [executable, '--', 'name:=中文 space'])

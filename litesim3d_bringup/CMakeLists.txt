@@ -27,6 +27,11 @@ if(BUILD_TESTING)
   ament_add_gtest(native_model_unit test/test_native_model.cpp test/test_native_xacro.cpp)
   target_include_directories(native_model_unit PRIVATE src)
   target_link_libraries(native_model_unit model_preparation)
+  # In-process orchestration units compile the real mains with provider spies;
+  # no model pipeline, signal installation or child process is executed.
+  ament_add_gtest(native_cli_unit test/test_native_cli_unit.cpp)
+  target_include_directories(native_cli_unit PRIVATE src)
+  target_link_libraries(native_cli_unit model_preparation)
   ament_add_pytest_test(model_preparation test APPEND_ENV PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 TIMEOUT 60)
 endif()
 ament_package()

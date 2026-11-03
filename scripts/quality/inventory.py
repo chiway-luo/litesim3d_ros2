@@ -12,7 +12,14 @@ DECLARATIONS = {
     "litesim3d_plugin_api/include/litesim3d_plugin_api/model_geometry.hpp",
     "litesim3d_core/include/litesim3d/sensor_plugin.hpp",
     "litesim3d_ros2/src/point_adapter.hpp",
+    "litesim3d_ros2/src/session_protocol.hpp",
     "litesim3d_ros2/include/litesim3d_ros2/lidar_output_plugin.hpp",
+}
+# This newly reviewed declaration header has no explicit function bodies.
+# Any byte change requires a fresh declaration/mapping review, even if the
+# legacy lexical body heuristic misses executable content in the changed file.
+DECLARATION_SHA256 = {
+    "litesim3d_ros2/src/session_protocol.hpp": "be8dec90a2d39a10cd4f237ace60cb9dac0bb85b3dcb860b5f2ae55b7df2eea3",
 }
 EXCLUDED_PACKAGES = {
     "litesim3d_interfaces": "Generated ROS message/service bindings",

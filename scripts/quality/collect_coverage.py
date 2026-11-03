@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Collect LLVM/Python coverage of the current source inventory, including misses."""
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -9,11 +10,12 @@ import subprocess
 import sys
 
 from audit import canonical_source, compilation_errors, has_function_body
-from inventory import inventory, python_aliases
+from inventory import DECLARATION_SHA256, inventory, python_aliases
 from python_startup.function_coverage import source_functions
 
 METRICS = ("lines", "branches", "functions")
 MINIMUM = 90
+TOTAL_MINIMUM = {"lines": 90, "branches": 95, "functions": 90}
 
 CRITICAL = {f"litesim3d_core/src/{name}.cpp" for name in
             ("geometry", "model", "simulator", "sensors", "terrain", "world")}
@@ -101,12 +103,13 @@ def gate(item, metrics, unit=False):
         elif name in metrics and Path(name).suffix in {".cpp", ".cc", ".cxx"} and metrics[name]["lines"]["count"] == 0:
             failures.append("No executable coverage mapping: " + name)
     total = sum_metrics(metrics)
-    # Integer arithmetic enforces strictly greater than 90%, even when the
-    # displayed percentage rounds to 90.00. Combined hits never rescue unit.
+    # Integer arithmetic enforces strict per-metric thresholds, even when the
+    # displayed percentage rounds to the limit. Combined hits never rescue unit.
     for kind in METRICS:
         value = total[kind]
-        if value["count"] == 0 or 100 * value["covered"] <= MINIMUM * value["count"]:
-            failures.append(f"Total {kind}: {value['percent']:.2f}% <= {MINIMUM}%")
+        minimum = TOTAL_MINIMUM[kind]
+        if value["count"] == 0 or 100 * value["covered"] <= minimum * value["count"]:
+            failures.append(f"Total {kind}: {value['percent']:.2f}% <= {minimum}%")
     for name in sorted(CRITICAL):
         if name not in metrics:
             continue
@@ -297,6 +300,9 @@ def collect(args):
     report.mkdir(exist_ok=True)
     failures = compilation_errors(args.root, args.build, item, "-fcoverage-mapping")
     for name, source in item["sources"].items():
+        expected = DECLARATION_SHA256.get(name)
+        if source["declarations_only"] and expected and hashlib.sha256((args.root / name).read_bytes()).hexdigest() != expected:
+            failures.append("Declaration-only source changed; re-review required: " + name)
         if source["declarations_only"] and has_function_body((args.root / name).read_text()):
             failures.append("Declaration-only exemption now contains a function: " + name)
     binary_paths = objects(args.build)
@@ -314,12 +320,12 @@ def collect(args):
         failures += [f"{kind}: {error}" for error in errors]
         (report / f"{kind}-coverage.json").write_text(json.dumps(summaries[kind], indent=2) + "\n")
     result = {"status": "FAIL" if failures else "PASS", "failures": failures,
-              "thresholds": {"comparison": ">", "unit_total": dict.fromkeys(METRICS, MINIMUM),
-                             "combined_total": dict.fromkeys(METRICS, MINIMUM),
+              "thresholds": {"comparison": ">", "unit_total": dict(TOTAL_MINIMUM),
+                             "combined_total": dict(TOTAL_MINIMUM),
                              "critical_core": dict.fromkeys(METRICS, MINIMUM)},
               "inventory": item, "objects": list(map(str, binary_paths)),
               "total": {kind: summary["total"] for kind, summary in summaries.items()},
-              "semantics": "Native: LLVM executable lines, source-condition outcomes and function-definition body locations, unioned across DSOs/templates/installed headers; independent per-object exports and exact raw-profile ELF build-ID attribution retain same-name functions without transferring hits from other executables. Python: coverage.py statements/branches plus measured function-entry calls for statically inventoried functions, methods and lambdas (not module/class bodies or generated comprehensions). Never average file percentages. All three aggregate metrics must be strictly >90% using unit execution alone; combined execution is reported and gated separately and cannot supply unit hits. Critical core files also require >90% for nonempty metrics. Full runtime source inventory and zero-hit native maps fix denominators. Uninstantiated C++ inline/template bodies without LLVM mappings are not measurable."}
+              "semantics": "Native: LLVM executable lines, source-condition outcomes and function-definition body locations, unioned across DSOs/templates/installed headers; independent per-object exports and exact raw-profile ELF build-ID attribution retain same-name functions without transferring hits from other executables. Python: coverage.py statements/branches plus measured function-entry calls for statically inventoried functions, methods and lambdas (not module/class bodies or generated comprehensions). Never average file percentages. Aggregate branches must be strictly >95%, and lines/functions strictly >90%, using unit execution alone; combined execution is reported and gated separately and cannot supply unit hits. Critical core files also require >90% for nonempty metrics. Full runtime source inventory and zero-hit native maps fix denominators. Uninstantiated C++ inline/template bodies without LLVM mappings are not measurable."}
     (report / "coverage-gate.json").write_text(json.dumps(result, indent=2) + "\n")
     rows = ["# Current-source coverage", "", result["semantics"], "",
             "| Package (unit only) | Lines | Branches | Functions |", "| --- | ---: | ---: | ---: |"]

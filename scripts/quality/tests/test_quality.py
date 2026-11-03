@@ -230,7 +230,7 @@ class QualityTests(unittest.TestCase):
         item = {"sources": {path: {"declarations_only": False}}}
         _, failures = gate(item, {path: {kind: counts(90, 100) for kind in ("lines", "branches", "functions")}})
         self.assertEqual(len(failures), 6)
-        _, failures = gate(item, {path: {kind: counts(91, 100) for kind in ("lines", "branches", "functions")}})
+        _, failures = gate(item, {path: {kind: counts(96 if kind == "branches" else 91, 100) for kind in ("lines", "branches", "functions")}})
         self.assertEqual(failures, [])
 
     def test_strict_total_gate_covers_noncritical_runtime_and_integer_boundary(self):
@@ -240,9 +240,24 @@ class QualityTests(unittest.TestCase):
             _, failures = gate(item, {path: {kind: counts(90, 100)
                 for kind in ("lines", "branches", "functions")}}, unit=unit)
             self.assertEqual(len(failures), 3)
-            _, failures = gate(item, {path: {kind: counts(900001, 1000000)
+            _, failures = gate(item, {path: {kind: counts(950001 if kind == "branches" else 900001, 1000000)
                 for kind in ("lines", "branches", "functions")}}, unit=unit)
             self.assertEqual(failures, [])
+
+    def test_branch_95_limit_is_strict_and_does_not_raise_other_metrics(self):
+        path = "runtime/src/client.cpp"
+        item = {"sources": {path: {"declarations_only": False}}}
+        for unit in (False, True):
+            for hit, passes in ((949999, False), (950000, False), (950001, True)):
+                metrics = {path: {"lines": counts(900001, 1000000),
+                                  "functions": counts(900001, 1000000),
+                                  "branches": counts(hit, 1000000)}}
+                _, failures = gate(item, metrics, unit=unit)
+                self.assertEqual(not failures, passes)
+                if not passes:
+                    self.assertEqual(len(failures), 1)
+                    self.assertIn("branches", failures[0])
+                    self.assertIn("<= 95%", failures[0])
 
     def test_declaration_exemption_cannot_hide_inline_function(self):
         self.assertFalse(has_function_body("struct A { int value=1; void run(); }; // void fake() {}"))
@@ -264,6 +279,43 @@ class QualityTests(unittest.TestCase):
         path.write_text(source.replace("virtual ~ModelParameters();",
                                        "virtual ~ModelParameters() {}"))
         self.assertTrue(has_function_body(path.read_text()))
+
+    def test_session_protocol_declaration_classification_preserves_inventory_and_rejects_future_bodies(self):
+        from unittest.mock import patch
+        import collect_coverage as collector
+        relative = "litesim3d_ros2/src/session_protocol.hpp"
+        source = (QUALITY.parents[1] / relative).read_text()
+        self.package("litesim3d_ros2")
+        path = self.write(relative, source)
+        initial = inventory(self.root)
+        self.assertIn(relative, initial["sources"])
+        self.assertTrue(initial["sources"][relative]["declarations_only"])
+        self.assertNotIn(relative, initial["exclusions"])
+        self.assertFalse(has_function_body(source))
+        evidence = self.root.parent / "declaration-evidence"
+        evidence.mkdir(exist_ok=True)
+        args = Namespace(root=self.root, build=self.root.parent / "build",
+                         prefix=self.root.parent / "install", evidence=evidence)
+        for addition in ("bool healthy() const { return !failed; }",
+                         "bool computed = [] { return true; }();",
+                         "ResetCoordinator() : run_id{} {}",
+                         "int check() noexcept(true) { return 1; }",
+                         'static constexpr const char *endpoint = "https://example.test"; bool healthy() const { return !failed; }',
+                         "// even a comment change requires a fresh review"):
+            path.write_text(source.replace(" public:", " public:\n  " + addition, 1))
+            current = inventory(self.root)
+            self.assertEqual(set(current["sources"]), set(initial["sources"]))
+            # The exact-source guard must fail closed even if the legacy
+            # text heuristic misses a URL/lambda/constructor body entirely.
+            with (patch.object(collector, "has_function_body", return_value=False),
+                  patch.object(collector, "compilation_errors", return_value=[]),
+                  patch.object(collector, "objects", return_value=[]),
+                  patch.object(collector, "native_report", return_value={}),
+                  patch.object(collector, "python_report", return_value={})):
+                self.assertTrue(collector.collect(args))
+            gate_result = json.loads((evidence / "coverage/coverage-gate.json").read_text())
+            self.assertIn("Declaration-only source changed; re-review required: " + relative,
+                          gate_result["failures"])
 
     def test_unit_gate_cannot_borrow_integration_hits(self):
         path = "litesim3d_core/src/geometry.cpp"
@@ -548,8 +600,9 @@ class QualityTests(unittest.TestCase):
         Profile.native(profile)
         Profile.python_units(profile)
         isolated = {args[0]: (args, kwargs) for args, kwargs in stages}
-        for name in ("runtime_unit", "native_model_unit", "session_protocol_unit", "core_cli_unit_tests", "livox_outputs_unit", "test_sdf_import_units",
-                     "ros_event_loop_test", "render_helpers_test", "camera_view_unit",
+        for name in ("runtime_unit", "runtime_process_unit", "native_model_unit", "native_cli_unit",
+                     "session_protocol_unit", "ros_client_unit", "sim_session_unit", "spawn_when_ready_unit", "core_cli_unit_tests", "livox_outputs_unit", "test_sdf_import_units",
+                     "ros_event_loop_test", "render_helpers_test", "render_orchestration_unit", "viewer_unit", "camera_view_unit",
                      "point_adapter_unit", "service_responses_unit", "joint_control_unit",
                      "lidar_outputs_unit", "cloud_tools_unit", "world_node_unit", "sim_node_unit",
                      "control-unit"):
@@ -562,6 +615,12 @@ class QualityTests(unittest.TestCase):
         self.assertTrue(isolated["bringup-unit"][1]["unit"])
         self.assertTrue(isolated["python-runtime-unit"][1]["unit"])
         self.assertNotIn("lifecycle", isolated)
+        self.assertNotIn("runtime-process-integration", isolated)
+        for name, package in (("runtime_process_unit", "litesim3d_runtime"),
+                              ("native_cli_unit", "litesim3d_bringup")):
+            command = isolated[name][0][1]
+            self.assertEqual(command[0], profile.runtime / "build" / package / name)
+            self.assertIn(f"--gtest_output=xml:{profile.evidence / (name + '-cases.xml')}", command)
         Profile.lifecycle(profile)
         lifecycle = next((args, kwargs) for args, kwargs in stages if args[0] == "lifecycle")
         self.assertFalse(lifecycle[1].get("unit", False))
@@ -572,6 +631,10 @@ class QualityTests(unittest.TestCase):
         cli = next((args, kwargs) for args, kwargs in stages if args[0] == "core-cli-integration")
         self.assertFalse(cli[1].get("unit", False))
         self.assertTrue(any("core_cli_integration_tests" in str(part) for part in cli[0][1]))
+        process = next((args, kwargs) for args, kwargs in stages
+                       if args[0] == "runtime-process-integration")
+        self.assertFalse(process[1].get("unit", False))
+        self.assertEqual(process[0][1][0], profile.runtime / "build/litesim3d_runtime/runtime_process_integration")
 
     def test_unit_only_cli_rejects_every_other_profile_before_execution(self):
         from contextlib import redirect_stderr
